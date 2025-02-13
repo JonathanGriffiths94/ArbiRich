@@ -1,0 +1,38 @@
+# VS Code settings
+.vscode/
+
+# Python dependencies
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+
+# Virtual environment (if using venv)
+venv/
+env/
+
+# Node.js dependencies (if using JS for front-end or scripts)
+node_modules/
+package-lock.json
+
+# Logs & temp files
+logs/
+*.log
+debug.log
+nohup.out
+
+# Exchange API keys & sensitive config
+config.json
+secrets.json
+*.pem
+
+# Jupyter Notebooks (if used for backtesting)
+.ipynb_checkpoints/
+
+# Docker files (if using Docker)
+docker-compose.override.yml
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
