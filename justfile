@@ -7,7 +7,7 @@ install:
 
 # Run the bot
 run:
-    poetry run python src/arbirich/main.py
+    poetry run python main.py
 
 format_all:
     poetry run ruff check . --select I --fix # sort imports
