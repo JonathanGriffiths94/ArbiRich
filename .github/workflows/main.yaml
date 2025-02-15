@@ -1,1 +1,13 @@
 name: 🚂 Main CI/CD Workflow
+
+on:
+  push:
+    branches:
+      "**"
+  pull_request:
+    branches:
+      - main
+
+jobs: 
+  ci: 
+    uses: ./.github/workflows/ci.yml

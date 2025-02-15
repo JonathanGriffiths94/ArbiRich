@@ -1,12 +1,7 @@
 name: 💚 CI
 
-on:
-  push:
-    branches:
-      "**"
-  pull_request:
-    branches:
-      - main
+on: 
+  workfow_call:
 
 jobs:
   u_test:
