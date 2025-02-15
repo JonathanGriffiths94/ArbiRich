@@ -1,1 +1,14 @@
 name: 🏗️ Build
+
+on: 
+  workflow_call:
+
+jobs:
+  build:
+    name: 🏗️ Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Echo some text
+        run: echo "Hello, this is the build job!"
+    
