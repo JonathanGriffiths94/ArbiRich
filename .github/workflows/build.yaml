@@ -9,6 +9,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Echo some text
-        run: echo "Hello, this is the build job!"
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build project
+        run: echo "Building the project..."
     

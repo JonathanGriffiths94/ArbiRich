@@ -7,12 +7,12 @@ on:
 
 jobs: 
   ci: 
-    uses: .github/workflows/ci.yaml
+    uses: ./.github/workflows/ci.yaml
 
   build:
-    uses: .github/workflows/build.yaml
+    uses: ./.github/workflows/build.yaml
     needs: ci
 
   deploy:
-    uses: .github/workflows/deploy.yaml
+    uses: ./.github/workflows/deploy.yaml
     needs: build

@@ -9,5 +9,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
       - name: Echo some text
-        run: echo "Hello, this is the deploy job!"
+        run: echo "Deploying the project..."
