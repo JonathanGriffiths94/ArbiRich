@@ -1,52 +1,29 @@
-[project]
+[tool.poetry]
 name = "arbirich"
 version = "0.1.0"
-description = ""
-authors = [
-    {name = "JonathanGriffiths94",email = "griffj147@gmail.com"}
-]
+description = "A project to detect and trade arbitrage opportunities."
+authors = ["JonathanGriffiths94"]
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "python-dotenv (>=1.0.1,<2.0.0)",
-    "ruff (>=0.9.6,<0.10.0)",
-    "fastapi (>=0.115.8,<0.116.0)"
-]
+package-mode = false
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115.8"
+uvicorn = "^0.34.0"
+python-dotenv = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.6"
 black = "^25.1.0"
 pytest = "^8.3.4"
-pytest-cov = "^6.0.0"
+pre-commit = "^4.1.0"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+arbirich = "main:app"
 
 [tool.ruff]
-select = [
-    "E",  # Enforce PEP 8 error rules
-    "F",  # Enforce "flake8" errors (imports, unused variables)
-    "W",  # Warnings related to code style and readability
-    "C90", # Checks for code complexity, e.g., cyclomatic complexity
-    "B",   # Checks for bug risks (e.g., `assert` statements, exception handling)
-]
-
-# Ignore specific rules (adjust depending on your preferences)
-ignore = [
-    "E203",  # Ignore spacing before `:` (related to Black)
-    "W503",  # Ignore line breaks before binary operators (another Black-related one)
-]
-
-# Customize maximum line length (e.g., 88 is the default for Black)
-max-line-length = 88
-
-# Set a max complexity score (for catching overly complex functions/methods)
-max-complexity = 10
-
-# Enable typing checks (useful if you are using type annotations)
-typing = true
+line-length = 90

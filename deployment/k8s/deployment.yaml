@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arbitrage-bot
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: arbitrage-bot
+  template:
+    metadata:
+      labels:
+        app: arbitrage-bot
+    spec:
+      containers:
+        - name: arbitrage-bot
+          image: <your_aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/arbitrage-bot:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: BINANCE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: arbitrage-secrets
+                  key: BINANCE_API_KEY
+            - name: KRAKEN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: arbitrage-secrets
+                  key: KRAKEN_API_KEY

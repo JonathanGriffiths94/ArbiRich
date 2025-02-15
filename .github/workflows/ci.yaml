@@ -1,24 +1,19 @@
-name: CI
+name: 💚 CI
 
-on:
-  push:
-    branches:
-      "**"
-  pull_request:
-    branches:
-      - main
+on: 
+  workflow_call:
 
 jobs:
   u_test:
     runs-on: ubuntu-latest
-    name: Run Unit Tests
+    name: 🧪 Run Unit Tests
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.13'
+          python-version: '3.12'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -29,14 +24,14 @@ jobs:
 
   i_test:
     runs-on: ubuntu-latest
-    name: Run Integration Tests
+    name: 🧪 Run Integration Tests
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.13'
+          python-version: '3.12'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -47,14 +42,14 @@ jobs:
 
   format_check:
     runs-on: ubuntu-latest
-    name: Run Code Format Check
+    name: 🎨 Run Code Format Check
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.13'
+          python-version: '3.12'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

@@ -1,38 +1,27 @@
-from dotenv import load_dotenv
-import os
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from app.services.price_service import PriceService
+import os
 
+import uvicorn
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from src.arbirich.app_factory import make_app
 
-logger.info("Bot started successfully!")
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+        ],
+    )
 
-load_dotenv()
+    logger = logging.getLogger(__name__)
 
-api_key = os.getenv("API_KEY")
-logger.info(f"API key: {api_key}")
+    logger.info("Starting the application...")
+    app = make_app()
 
-app = FastAPI()
+    host = os.getenv("WEB_HOST", "0.0.0.0")
+    port = int(os.getenv("WEB_PORT", 8088))
 
-# Initialize price service to fetch data from exchanges
-price_service = PriceService()
+    logger.info(f"Running the application on {host}:{port}")
 
-@app.websocket("/ws/arbitrage")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    try:
-        while True:
-            # Receive message from client (could be for strategy, etc.)
-            data = await websocket.receive_text()
-
-            # Simulating arbitrage data processing
-            arbitrage_opportunity = price_service.get_arbitrage_opportunity()
-
-            # Send back the result
-            await websocket.send_text(str(arbitrage_opportunity))
-
-    except WebSocketDisconnect:
-        print("Client disconnected")
+    uvicorn.run(app, host=host, port=port)

@@ -1,0 +1,18 @@
+name: 🚂 Main CI/CD Workflow
+
+on:
+  push:
+    branches:
+      "**"
+
+jobs: 
+  ci: 
+    uses: ./.github/workflows/ci.yaml
+
+  build:
+    uses: ./.github/workflows/build.yaml
+    needs: ci
+
+  deploy:
+    uses: ./.github/workflows/deploy.yaml
+    needs: build
