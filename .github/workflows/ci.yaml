@@ -1,7 +1,7 @@
 name: 💚 CI
 
 on: 
-  workfow_call:
+  workflow_call:
 
 jobs:
   u_test:
