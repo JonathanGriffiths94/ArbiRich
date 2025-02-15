@@ -1,32 +1,32 @@
 # Justfile for ArbiRich bot
+set dotenv-load
 
 # Install dependencies using Poetry
 install:
-    poetry install
+    poetry install --with dev --all-extras
 
 # Run the bot
 run:
     poetry run python src/arbirich/main.py
 
-# Run unit tests
-u_test:
-    poetry run pytest tests/units/
+format_all:
+    poetry run ruff check . --select I --fix # sort imports
+    poetry run ruff format .
 
-# Run integration tests
-i_test:
-    poetry run pytest tests/integrations/
-
-# Format code with black
-format:
-    poetry run black src/
-
-# Lint code with ruff
+# Run linter for python
 lint:
-    poetry run ruff src/
+    poetry run ruff check src tests
+
+# Run unit test
+u_test *arguments:
+  poetry run pytest tests/units {{arguments}}
+
+# Run integration test
+i_test *arguments:
+  poetry run pytest tests/integrations {{arguments}}
 
 # Run all jobs
-all: u_test i_test format lint
-
+all: u_test i_test format_all lint
 
 # Clean up virtual environment and poetry lock file
 clean:
