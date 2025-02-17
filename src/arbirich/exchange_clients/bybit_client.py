@@ -22,15 +22,15 @@ class BybitClient(ExchangeClient):
         """
         loop = asyncio.get_event_loop()
 
-        async def handle_msg(msg):
+        def handle_msg(msg):
             logger.debug(f"Received message: {msg}")
             if "data" in msg and "lastPrice" in msg["data"]:
                 price = float(msg["data"]["lastPrice"])
                 logger.debug(f"Received {self.symbol} price via WebSocket: {price}")
-                # Ensure callback runs in the correct event loop
+
                 future = asyncio.run_coroutine_threadsafe(callback(price), loop)
                 try:
-                    future.result()  # Ensure any exceptions are raised
+                    future.result()
                 except Exception as e:
                     logger.error(f"Error executing callback: {e}")
 

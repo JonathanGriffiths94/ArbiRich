@@ -22,10 +22,12 @@ class KuCoinClient(ExchangeClient):
         Calls the provided callback function with the latest price.
         """
 
-        def handle_msg(msg):
+        async def handle_msg(msg):
             if msg["topic"] == f"/market/ticker:{self.symbol}":
                 price = float(msg["data"]["price"])
-                callback(price)
+                logger.debug(f"Received {self.symbol} price via WebSocket: {price}")
+                if callback:
+                    await callback(price)
 
         ws_client = await KucoinWsClient.create(
             None, self.ws_client, handle_msg, private=False
