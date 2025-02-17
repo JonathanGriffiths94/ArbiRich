@@ -25,7 +25,6 @@ class KuCoinClient(ExchangeClient):
         async def handle_msg(msg):
             if msg["topic"] == f"/market/ticker:{self.symbol}":
                 price = float(msg["data"]["price"])
-                logger.debug(f"Received {self.symbol} price via WebSocket: {price}")
                 if callback:
                     await callback(price)
 
