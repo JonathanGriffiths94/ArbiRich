@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
+from arbirich.models.trade_request import TradeRequest
 from arbirich.services.trade_executor import execute_trade
-from src.arbirich.models.trade import TradeRequest
 
 router = APIRouter()
 

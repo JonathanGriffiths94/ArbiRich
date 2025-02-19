@@ -1,19 +1,19 @@
 import asyncio
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import List
 
 from aiokafka import AIOKafkaProducer
 from fastapi import APIRouter, FastAPI, WebSocket
 
-from arbirich.services.arbitrage import ArbitrageService
-from arbirich.services.data_consumer import consume_market_data
-from arbirich.services.price_service import PriceService
-from arbirich.services.websocket_producer import WebSocketManager
 from src.arbirich.exchange_clients.binance_client import BinanceClient
 from src.arbirich.exchange_clients.bybit_client import BybitClient
 from src.arbirich.exchange_clients.kucoin_client import KuCoinClient
+from src.arbirich.services.arbitrage import ArbitrageService
+from src.arbirich.services.data_consumer import consume_market_data
+from src.arbirich.services.price_service import PriceService
+from src.arbirich.services.websocket_producer import WebSocketManager
 
 router = APIRouter()
 
@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         market_data_task.cancel()
-        with asyncio.suppress(asyncio.CancelledError):
+        with suppress(asyncio.CancelledError):
             await market_data_task
         await ws_manager.stop()
         await alert_producer.stop()

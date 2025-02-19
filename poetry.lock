@@ -665,6 +665,23 @@ files = [
 ]
 
 [[package]]
+name = "kafka-python"
+version = "2.0.3"
+description = "Pure Python client for Apache Kafka"
+optional = false
+python-versions = "*"
+files = [
+    {file = "kafka-python-2.0.3.tar.gz", hash = "sha256:9ef48bc21f4ac78d80b9f424e5f0f0cd63a29652f5e5f4369960434806f1bbdd"},
+    {file = "kafka_python-2.0.3-py2.py3-none-any.whl", hash = "sha256:ff28bee2430359256d947cffaf951b95e9c66697b59af28014d5b28e160a6084"},
+]
+
+[package.extras]
+crc32c = ["crc32c"]
+lz4 = ["lz4"]
+snappy = ["python-snappy"]
+zstd = ["zstandard"]
+
+[[package]]
 name = "kucoin-python"
 version = "1.0.26"
 description = "kucoin-api-sdk"
@@ -1789,4 +1806,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.12"
-content-hash = "6406e0fe6239e004f3f7689fa32b68153a51d538c5a78b87e409aebc72a7d0dd"
+content-hash = "800fcc09a8733a66ec5191b871f3d800b486d072641a6c2dc70c2f162df2ce94"

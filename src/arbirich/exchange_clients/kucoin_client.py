@@ -4,7 +4,7 @@ import logging
 from kucoin.client import Market, WsToken
 from kucoin.ws_client import KucoinWsClient
 
-from src.arbirich.exchange_clients.exchange_client import ExchangeClient
+from src.arbirich.exchange_clients.exchange_client_base import ExchangeClient
 
 logger = logging.getLogger(__name__)
 
