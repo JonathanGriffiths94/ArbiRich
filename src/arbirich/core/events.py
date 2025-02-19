@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from src.arbirich.exchange_clients.binance_client import BinanceClient
 from src.arbirich.exchange_clients.bybit_client import BybitClient
 from src.arbirich.exchange_clients.kucoin_client import KuCoinClient
+from src.arbirich.services.arbitrage_service import ArbitrageService
 from src.arbirich.services.price_service import PriceService
 from src.arbirich.services.websocket_manager import WebSocketManager
 
@@ -26,9 +27,13 @@ async def lifespan(app: FastAPI):
     price_service = PriceService()
     app.state.price_service = price_service
 
+    # Initialize ArbitrageService
+    arbitrage_service = ArbitrageService(price_service, threshold=0.1)
+    app.state.arbitrage_service = arbitrage_service
+
     # Initialize WebSocket Manager
     ws_manager = WebSocketManager(
-        [bybit_client, binance_client, kucoin_client], price_service
+        [bybit_client, binance_client, kucoin_client], price_service, arbitrage_service
     )
     app.state.ws_manager = ws_manager
 

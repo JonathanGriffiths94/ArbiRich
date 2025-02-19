@@ -2,15 +2,22 @@ import asyncio
 import logging
 from contextlib import suppress
 
+from src.arbirich.services.arbitrage_service import ArbitrageService
 from src.arbirich.services.price_service import PriceService
 
 logger = logging.getLogger(__name__)
 
 
 class WebSocketManager:
-    def __init__(self, exchange_clients: list, price_service: PriceService):
+    def __init__(
+        self,
+        exchange_clients: list,
+        price_service: PriceService,
+        arbitrage_service: ArbitrageService,
+    ):
         self.exchange_clients = exchange_clients
         self.price_service = price_service
+        self.arbitrage_service = arbitrage_service
         self.websocket_tasks = []
 
     async def start(self):
@@ -31,6 +38,7 @@ class WebSocketManager:
             await self.price_service.update_price(
                 client.name, price
             )  # Store price update
+            self.arbitrage_service.detect_opportunity()  # Check for arbitrage opportunities
 
         delay = 1  # Initial delay for backoff
 
