@@ -2,7 +2,7 @@ import logging
 
 from binance import AsyncClient, BinanceSocketManager
 
-from src.arbirich.exchange_clients.exchange_client import ExchangeClient
+from arbirich.exchange_clients.exchange_client_base import ExchangeClient
 
 logger = logging.getLogger(__name__)
 
