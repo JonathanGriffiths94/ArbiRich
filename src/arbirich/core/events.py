@@ -34,9 +34,12 @@ async def lifespan(app: FastAPI):
     exchange_clients = [bybit_client, binance_client, kucoin_client]
 
     # Initialize services
+    # Run price service using byt
     price_service = PriceService()
 
     # Create Kafka producer for arbitrage alerts
+    # TODO: Replace kafka arbitrage alerts with redis
+    # Add kafka settings to environment variables
     try:
         alert_producer = AIOKafkaProducer(
             bootstrap_servers="localhost:9092",
