@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-import bytewax
 import websockets
 from bytewax.dataflow import Dataflow
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition, batch_async
@@ -13,14 +12,6 @@ from bytewax.run import cli_main
 
 from src.arbirich.market_data_service import MarketDataService
 
-# -----------------------------
-# Logging configuration
-# -----------------------------
-# logging.basicConfig(
-#     level=logging.INFO,  # Set to DEBUG for detailed logs
-#     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-#     handlers=[logging.StreamHandler()],
-# )
 logger = logging.getLogger(__name__)
 
 # -----------------------------
