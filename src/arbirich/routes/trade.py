@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
+from arbirich.execution import TradeExecutor
 from arbirich.models.trade_request import TradeRequest
-from arbirich.services.trade_executor import execute_trade
 
 router = APIRouter()
+trade_executor = TradeExecutor()
 
 
 @router.get("/")
@@ -15,7 +16,7 @@ async def read_trades():
 async def place_trade(trade: TradeRequest):
     """Places a trade on an exchange"""
     try:
-        response = await execute_trade(
+        response = trade_executor.execute_trade(
             exchange=trade.exchange,
             symbol=trade.symbol,
             side=trade.side,

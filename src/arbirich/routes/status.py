@@ -1,9 +1,9 @@
-import json
-
-from aiokafka import AIOKafkaConsumer
 from fastapi import APIRouter
 
+from arbirich.market_data_service import MarketDataService
+
 router = APIRouter()
+price_service = MarketDataService()
 
 
 @router.get("/")
@@ -11,22 +11,7 @@ async def health_check() -> dict[str, str]:
     return {"status": "OK", "status_code": "200"}
 
 
-@router.get("/prices")
-async def get_latest_prices():
-    """Fetch latest market prices from Kafka"""
-    consumer = AIOKafkaConsumer(
-        "market_data",
-        bootstrap_servers="localhost:9092",
-        value_deserializer=lambda x: json.loads(x.decode("utf-8")),
-        auto_offset_reset="latest",
-    )
-
-    latest_prices = {}
-    for message in consumer:
-        data = message.value
-        latest_prices[data["symbol"]] = data["price"]
-
-        # Stop reading after one iteration (avoids infinite loop in API)
-        # break  # Remove this line to read all messages
-
-    return latest_prices
+@router.get("/price/{exchange}/{pair}")
+async def get_price(exchange: str, pair: str):
+    price = price_service.get_price(exchange, pair.upper())
+    return {"exchange": exchange, "pair": pair, "price": price}

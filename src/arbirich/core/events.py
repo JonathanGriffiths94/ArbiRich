@@ -1,86 +1,36 @@
 import asyncio
-import json
 import logging
-from contextlib import asynccontextmanager, suppress
-from typing import List
 
-from aiokafka import AIOKafkaProducer
-from fastapi import APIRouter, FastAPI, WebSocket
-
-from src.arbirich.exchange_clients.binance_client import BinanceClient
-from src.arbirich.exchange_clients.bybit_client import BybitClient
-from src.arbirich.exchange_clients.kucoin_client import KuCoinClient
-from src.arbirich.services.arbitrage import ArbitrageService
-from src.arbirich.services.data_consumer import consume_market_data
-from src.arbirich.services.price_service import PriceService
-from src.arbirich.services.websocket_producer import WebSocketManager
-
-router = APIRouter()
+from src.arbirich.flows.ingestion import run_ingestion
 
 logger = logging.getLogger(__name__)
 
-active_connections: List[WebSocket] = []
+# Global variable to hold our background task, so we can cancel it on shutdown.
+bytewax_task = None
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Manages startup and shutdown events for the FastAPI application.
-    """
-    # Initialize exchange clients
-    bybit_client = BybitClient("XRPUSDT")
-    binance_client = BinanceClient("XRPUSDT")
-    kucoin_client = KuCoinClient("XRP-USDT")
-    exchange_clients = [bybit_client, binance_client, kucoin_client]
+async def startup_event():
+    """Logic to run on application startup."""
+    global bytewax_task
+    logger.info("Starting up application...")
 
-    # Initialize services
-    # Run price service using byt
-    price_service = PriceService()
+    # Start the Bytewax dataflow in the background.
+    # run_flow should be an async function defined in main_flow.py that starts your Bytewax flow.
+    bytewax_task = asyncio.create_task(run_ingestion())
+    logger.info("Bytewax flow has been started.")
 
-    # Create Kafka producer for arbitrage alerts
-    # TODO: Replace kafka arbitrage alerts with redis
-    # Add kafka settings to environment variables
-    try:
-        alert_producer = AIOKafkaProducer(
-            bootstrap_servers="localhost:9092",
-            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-        )
-        await alert_producer.start()
-        app.state.alert_producer = alert_producer
-    except Exception as e:
-        logger.error(f"Failed to start Kafka producer: {e}")
-        raise
 
-    arbitrage_service = ArbitrageService(
-        price_service=price_service,
-        threshold=0.5,
-        alert_producer=alert_producer,
-        alert_topic="arbitrage_alerts",
-    )
+async def shutdown_event():
+    """Logic to run on application shutdown."""
+    global bytewax_task
+    logger.info("Shutting down application...")
 
-    # Initialize and start WebSocketManager (publishing to "market_data")
-    try:
-        ws_manager = WebSocketManager(
-            exchange_clients=exchange_clients,
-            kafka_topic="market_data",
-            kafka_bootstrap_servers="localhost:9092",
-        )
-        app.state.ws_manager = ws_manager
-        await ws_manager.start()
-    except Exception as e:
-        logger.error(f"Failed to start WebSocket manager: {e}")
-        raise
+    if bytewax_task:
+        # Cancel the background task gracefully.
+        bytewax_task.cancel()
+        try:
+            await bytewax_task
+        except asyncio.CancelledError:
+            logger.info("Bytewax flow task cancelled successfully.")
 
-    # Start the Kafka consumer task to process market data
-    market_data_task = asyncio.create_task(
-        consume_market_data(price_service, arbitrage_service)
-    )
-
-    try:
-        yield
-    finally:
-        market_data_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await market_data_task
-        await ws_manager.stop()
-        await alert_producer.stop()
+    logger.info("Application shutdown complete.")

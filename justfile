@@ -6,8 +6,20 @@ install:
     poetry install --with dev --all-extras
 
 # Run the bot
-run:
+REDIS_CONTAINER := "redis-arbirich"
+
+start-redis:
+    docker run -d --rm --name {{REDIS_CONTAINER}} -p 6379:6379 redis:latest
+
+stop-redis:
+    docker stop {{REDIS_CONTAINER}}
+
+run-bot:
     poetry run python main.py
+
+# A recipe that starts Redis, runs the bot, then stops Redis.
+run: start-redis run-bot stop-redis
+
 
 format_all:
     poetry run ruff check . --select I --fix # sort imports
