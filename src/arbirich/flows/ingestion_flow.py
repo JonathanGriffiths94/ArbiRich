@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -10,14 +11,14 @@ from bytewax.dataflow import Dataflow
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition, batch_async
 from bytewax.run import cli_main
 
-from src.arbirich.market_data_service import MarketDataService
+from arbirich.market_data_service import MarketDataService
 
 logger = logging.getLogger(__name__)
 
 # -----------------------------
-# Arbitrage threshold (e.g., 0.2% spread)
+# Arbitrage threshold (e.g., 0.1% spread)
 # -----------------------------
-ARBITRAGE_THRESHOLD = 0.0005  # 0.2%
+ARBITRAGE_THRESHOLD = 0.00005  # 0.1%
 
 # -----------------------------
 # Exchange configuration dictionary
@@ -56,6 +57,8 @@ EXCHANGE_CONFIG = {
         else None,
     },
 }
+
+redis_client = MarketDataService(host="localhost", port=6379, db=0)
 
 
 # -----------------------------
@@ -217,7 +220,7 @@ def update_asset_state(
 # Detect arbitrage opportunities
 # -----------------------------
 def detect_arbitrage(
-    asset: str, state: AssetPriceState
+    asset: str, state: AssetPriceState, threshold: float
 ) -> Optional[Tuple[str, str, str, float, float, float]]:
     """
     Compare prices across exchanges for the given asset.
@@ -241,21 +244,6 @@ def detect_arbitrage(
     return None
 
 
-# -----------------------------
-# # Simulate trade execution (or integrate real trading logic)
-# # -----------------------------
-# def execute_trade(arbitrage_signal: Tuple[str, str, str, float, float, float]) -> str:
-#     asset, buy_ex, sell_ex, buy_price, sell_price, spread = arbitrage_signal
-#     trade_msg = f"Executing trade for {asset}: Buy from {buy_ex} at {buy_price}, Sell on {sell_ex} at {sell_price}, Spread: {spread:.4f}"
-#     logger.critical(trade_msg)
-#     # TODO: Insert real trade execution code via REST API.
-#     return trade_msg
-
-
-# Create a global or shared instance of your service (if possible)
-market_data_service = MarketDataService(host="localhost", port=6379, db=0)
-
-
 def push_trade_opportunity(opportunity):
     # If the opportunity is a tuple, convert it to a dictionary.
     if isinstance(opportunity, tuple):
@@ -275,11 +263,41 @@ def push_trade_opportunity(opportunity):
         opportunity["id"] = f"opp:{opportunity['timestamp']}"
 
     try:
-        market_data_service.store_trade_opportunity(opportunity)
+        redis_client.store_trade_opportunity(opportunity)
         logger.info(f"Pushed opportunity to Redis: {json.dumps(opportunity)}")
     except Exception as e:
         logger.error(f"Error pushing opportunity to Redis: {e}")
     return opportunity
+
+
+def debounce_opportunity(last_emit, opportunity):
+    """
+    Only emit opportunity if it differs from the last one or if enough time has passed.
+    last_emit: dictionary mapping asset to (timestamp, opportunity)
+    opportunity: tuple like (asset, buy_ex, sell_ex, buy_price, sell_price, spread)
+    """
+    asset, buy_ex, sell_ex, buy_price, sell_price, spread = opportunity
+    now = time.time()
+    key = asset
+    if key in last_emit:
+        last_time, last_opp = last_emit[key]
+        # Check if the opportunity has changed significantly (e.g. more than 0.1% difference)
+        if abs(buy_price - last_opp[3]) / last_opp[3] < 0.001 and (now - last_time) < 30:
+            # Opportunity hasn't changed much and 30 seconds hasn't passed; skip emitting.
+            return None
+    # Update last emit and allow this opportunity.
+    last_emit[key] = (now, opportunity)
+    return opportunity
+
+
+# In your flow, you could maintain a state dictionary for debouncing:
+debounce_state = {}
+
+
+def debouncer(opportunity):
+    global debounce_state
+    result = debounce_opportunity(debounce_state, opportunity)
+    return result
 
 
 # -----------------------------
@@ -307,21 +325,41 @@ def build_flow():
     ready_state = op.filter("ready", asset_state_stream, lambda kv: kv[1] is not None)
     # Detect arbitrage on the state (the key is asset).
     arb_stream = op.map(
-        "detect_arbitrage", ready_state, lambda kv: detect_arbitrage(kv[0], kv[1])
+        "detect_arbitrage",
+        ready_state,
+        lambda kv: detect_arbitrage(kv[0], kv[1], ARBITRAGE_THRESHOLD),
     )
-    # Filter out None (i.e. no arbitrage detected).
+    # Filter out None opportunities from detect_arbitrage
     arb_opportunities = op.filter("arb_filter", arb_stream, lambda x: x is not None)
-    # Output trade execution messages.
-    redis_sync = op.map(
-        "push_trade_opportunity", arb_opportunities, push_trade_opportunity
-    )
+    # Add debouncing
+    debounced = op.map("debounce", arb_opportunities, debouncer)
+    # Filter out None values from debouncer
+    final_opp = op.filter("final_filter", debounced, lambda x: x is not None)
+    redis_sync = op.map("push_trade_opportunity", final_opp, push_trade_opportunity)
     op.output("stdout", redis_sync, StdOutSink())
     return flow
 
 
-async def run_ingestion():
-    logger.info("Starting ingestion pipeline...")
-    flow = build_flow()
-    # This call will run the flow continuously.
-    # If bytewax.run() is blocking, consider running it in a thread or as an executor.
-    await asyncio.to_thread(cli_main, flow, workers_per_process=1)
+async def run_ingestion_flow():
+    try:
+        logger.info("Starting ingestion pipeline...")
+        flow = build_flow()
+
+        logger.info("Running cli_main in a separate thread.")
+        execution_task = asyncio.create_task(
+            asyncio.to_thread(cli_main, flow, workers_per_process=1)
+        )
+
+        # Allow interruption to propagate
+        try:
+            await execution_task
+        except asyncio.CancelledError:
+            logger.info("Ingestion task cancelled")
+            raise
+        logger.info("cli_main has finished running.")
+    except asyncio.CancelledError:
+        logger.info("Execution task cancelled")
+        raise
+    finally:
+        logger.info("Ingestion flow shutdown")
+        redis_client.close()

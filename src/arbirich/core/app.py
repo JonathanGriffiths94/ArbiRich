@@ -3,8 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from src.arbirich.core.events import shutdown_event, startup_event
-from src.arbirich.routes import status, trade
+from arbirich.core.events import shutdown_event, startup_event
+from arbirich.routes import status, trade
 
 logger = logging.getLogger(__name__)
 

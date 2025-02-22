@@ -1,4 +1,3 @@
-from arbirich.core.logging_config import logger
 from arbirich.market_data_service import MarketDataService
 
 

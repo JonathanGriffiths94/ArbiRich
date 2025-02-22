@@ -2,10 +2,10 @@ import logging
 import threading
 import time
 
-from src.arbirich.exchange_clients.binance_client import BinanceClient
-from src.arbirich.exchange_clients.bybit_client import BybitClient
-from src.arbirich.exchange_clients.kucoin_client import KuCoinClient
-from src.arbirich.market_data_service import MarketDataService
+from arbirich.exchange_clients.binance_client import BinanceClient
+from arbirich.exchange_clients.bybit_client import BybitClient
+from arbirich.exchange_clients.kucoin_client import KuCoinClient
+from arbirich.market_data_service import MarketDataService
 
 logger = logging.getLogger(__name__)
 

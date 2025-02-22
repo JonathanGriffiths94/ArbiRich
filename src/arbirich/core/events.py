@@ -1,36 +1,23 @@
-import asyncio
 import logging
 
-from src.arbirich.flows.ingestion import run_ingestion
+from arbirich.core.flow_manager import FlowManager
 
 logger = logging.getLogger(__name__)
 
-# Global variable to hold our background task, so we can cancel it on shutdown.
-bytewax_task = None
+# Global variables to hold background tasks, so we can cancel them on shutdown.
+ingestion_task = None
+execution_task = None
 
 
 async def startup_event():
-    """Logic to run on application startup."""
-    global bytewax_task
-    logger.info("Starting up application...")
-
-    # Start the Bytewax dataflow in the background.
-    # run_flow should be an async function defined in main_flow.py that starts your Bytewax flow.
-    bytewax_task = asyncio.create_task(run_ingestion())
-    logger.info("Bytewax flow has been started.")
+    global flow_manager
+    flow_manager = FlowManager()
+    await flow_manager.__aenter__()
+    logger.info("Flows started via FlowManager.")
 
 
 async def shutdown_event():
-    """Logic to run on application shutdown."""
-    global bytewax_task
-    logger.info("Shutting down application...")
-
-    if bytewax_task:
-        # Cancel the background task gracefully.
-        bytewax_task.cancel()
-        try:
-            await bytewax_task
-        except asyncio.CancelledError:
-            logger.info("Bytewax flow task cancelled successfully.")
-
-    logger.info("Application shutdown complete.")
+    global flow_manager
+    if flow_manager:
+        await flow_manager.__aexit__(None, None, None)
+        logger.info("Flows shut down via FlowManager.")
