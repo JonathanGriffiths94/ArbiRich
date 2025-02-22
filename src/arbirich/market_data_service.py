@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 from typing import Any, Callable, Dict, Generator, List, Optional
 
@@ -13,11 +14,9 @@ logger = logging.getLogger(__name__)
 class MarketDataService:
     """Handles real-time market data storage, retrieval, and event publishing using Redis"""
 
-    def __init__(
-        self, host="localhost", port=6379, db=0, retry_attempts=3, retry_delay=1
-    ):
+    def __init__(self, host=None, port=6379, db=0, retry_attempts=3, retry_delay=1):
         """Initialize Redis connection with retry logic"""
-        self.host = host
+        self.host = host or os.getenv("REDIS_HOST", "localhost")
         self.port = port
         self.db = db
         self.retry_attempts = retry_attempts

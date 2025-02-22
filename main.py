@@ -3,7 +3,7 @@ import os
 
 import uvicorn
 
-from arbirich.core.app import make_app
+from src.arbirich.core.app import make_app
 
 if __name__ == "__main__":
     logging.basicConfig(

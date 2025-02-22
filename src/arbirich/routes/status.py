@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from arbirich.market_data_service import MarketDataService
+from src.arbirich.market_data_service import MarketDataService
 
 router = APIRouter()
 price_service = MarketDataService()

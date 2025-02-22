@@ -1,6 +1,6 @@
 import logging
 
-from arbirich.core.flow_manager import FlowManager
+from src.arbirich.core.flow_manager import FlowManager
 
 logger = logging.getLogger(__name__)
 

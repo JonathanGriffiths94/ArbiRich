@@ -1,8 +1,8 @@
 import asyncio
 import logging
 
-from arbirich.flows.execution_flow import run_execution_flow
-from arbirich.flows.ingestion_flow import run_ingestion_flow
+from src.arbirich.flows.execution_flow import run_execution_flow
+from src.arbirich.flows.ingestion_flow import run_ingestion_flow
 
 logger = logging.getLogger(__name__)
 

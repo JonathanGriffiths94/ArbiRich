@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -58,7 +59,8 @@ EXCHANGE_CONFIG = {
     },
 }
 
-redis_client = MarketDataService(host="localhost", port=6379, db=0)
+redis_host = os.getenv("REDIS_HOST", "localhost")
+redis_client = MarketDataService(host=redis_host, port=6379, db=0)
 
 
 # -----------------------------

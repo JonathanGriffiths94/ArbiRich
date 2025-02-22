@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 
 from bytewax import operators as op
@@ -8,13 +9,14 @@ from bytewax.dataflow import Dataflow
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 from bytewax.run import cli_main
 
-from arbirich.market_data_service import MarketDataService
+from src.arbirich.market_data_service import MarketDataService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # Instantiate the Redis service.
-redis_client = MarketDataService(host="localhost", port=6379, db=0)
+redis_host = os.getenv("REDIS_HOST", "localhost")
+redis_client = MarketDataService(host=redis_host, port=6379, db=0)
 
 
 def execute_trade(opportunity):
