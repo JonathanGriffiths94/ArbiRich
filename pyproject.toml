@@ -23,6 +23,9 @@ bytewax-redis = "^0.1"
 redis = "^5.2.1"
 asyncpg = "^0.30.0"
 python-dateutil = "^2.9.0.post0"
+aioredis = "^2.0.1"
+pytest = "^8.3.4"
+pytest-asyncio = "^0.25.3"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.6"
