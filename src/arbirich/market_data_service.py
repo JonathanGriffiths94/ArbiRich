@@ -52,6 +52,20 @@ class MarketDataService:
                     )
                     raise
 
+    def _reconnect(self):
+        """Try to reconnect to Redis."""
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                logger.warning(
+                    f"Attempting Redis reconnect ({attempt}/{self.retry_attempts})..."
+                )
+                self._connect()
+                return True
+            except redis.ConnectionError:
+                time.sleep(2)  # Wait before retrying
+        logger.critical("Failed to reconnect to Redis after multiple attempts.")
+        return False
+
     def close(self) -> None:
         """Close Redis connection safely"""
         try:
@@ -60,23 +74,173 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
 
-    # === Trade Opportunity Methods ===
-    def store_trade_opportunity(self, opportunity_data: Dict[str, Any]) -> None:
+    # === Price Methods ===
+    def get_price(self, exchange, asset):
         """
-        Store a trade opportunity in Redis with an expiration of 300 seconds and publish it.
+        Retrieves the latest price of an asset from an exchange in Redis.
+        Returns None if no data is found or an error occurs.
+        """
+        key = f"price:{exchange}:{asset}"
+        try:
+            data = self.redis_client.get(key)
+            if data:
+                parsed = json.loads(data)
+                return parsed.get("price")
+            else:
+                logger.debug(f"No price data found for {exchange}:{asset}")
+                return None
+        except Exception as e:
+            logger.error(f"Error retrieving price for {exchange}:{asset} - {e}")
+            return None
+
+    def publish_price(self, exchange, asset, price: dict):
+        """
+        Publishes the latest price of an asset from an exchange to a Redis Pub/Sub channel.
+        Also stores it in Redis with a short TTL to ensure freshness.
+        """
+        key = f"price:{exchange}:{asset}"
+        value = json.dumps(price)  # Ensure correct JSON format
+
+        try:
+            # Store price with TTL (avoids stale data)
+            self.redis_client.setex(key, 10, value)  # Set key with 10s TTL
+
+            # Publish to Redis Pub/Sub
+            self.redis_client.publish("prices", value)
+
+            logger.debug(f"Published price for {exchange}:{asset} -> {price}")
+        except Exception as e:
+            logger.error(f"Error publishing price: {e}")
+
+    def subscribe_to_prices(
+        self, channel: str, callback: Optional[Callable] = None
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Subscribe to a Redis Pub/Sub channel and yield messages indefinitely.
+        Handles connection failures and restarts automatically.
+        """
+        pubsub = self.redis_client.pubsub()
+        pubsub.subscribe(channel)
+        logger.info(f"Subscribed to Redis channel: {channel}")
+
+        while True:
+            try:
+                message = pubsub.get_message(timeout=1)
+                if message and message["type"] == "message":
+                    try:
+                        data = json.loads(message["data"])
+                        if callback:
+                            callback(data)  # Optional callback function
+                        yield data
+                    except json.JSONDecodeError as e:
+                        logger.error(f"JSON decoding error in {channel}: {e}")
+
+                time.sleep(0.01)  # Prevent CPU overuse
+
+            except KeyboardInterrupt:
+                logger.info("Keyboard interrupt detected, unsubscribing...")
+                pubsub.unsubscribe()
+                pubsub.close()
+                return  # Return instead of raising StopIteration
+
+            except redis.exceptions.ConnectionError as e:
+                logger.error(f"Redis connection error: {e}, reconnecting in 2s...")
+                time.sleep(2)  # Pause before reconnecting
+                try:
+                    pubsub = self.redis_client.pubsub()  # Reinitialize pubsub
+                    pubsub.subscribe(channel)
+                    logger.info(f"Reconnected to Redis and resubscribed to {channel}")
+                except Exception as reconnect_error:
+                    logger.error(f"Reconnection failed: {reconnect_error}")
+                    time.sleep(5)  # Wait longer before retrying
+
+    def debounce_price(self, exchange, asset, price_data, expiry_seconds=5):
+        """
+        Store price updates in Redis only if the price changes significantly or if enough time has passed.
         """
         try:
-            # Generate an ID if not provided.
-            opportunity_id = (
-                opportunity_data.get("id")
-                or f"opp:{opportunity_data.get('timestamp', int(time.time()))}"
+            key = f"price:{exchange}:{asset}"
+            now = time.time()
+
+            # Fetch the last price from Redis
+            last_price_data = self.redis_client.get(key)
+
+            if last_price_data:
+                last_price_entry = json.loads(last_price_data)
+                last_time = last_price_entry["timestamp"]
+                last_price = last_price_entry["price"]
+
+                # Check if the price has changed by more than 0.01% or if `expiry_seconds` has passed
+                if (
+                    abs(price_data["price"] - last_price) / last_price < 0.0001
+                    and (now - last_time) < expiry_seconds
+                ):
+                    return None  # Skip storing if change is too small
+
+            # Store the new price in Redis with expiry
+            self.redis_client.setex(
+                key,
+                expiry_seconds,
+                json.dumps({"timestamp": now, "price": price_data["price"]}),
             )
-            key = f"trade_opportunity:{opportunity_id}"
-            self.redis_client.set(key, json.dumps(opportunity_data), ex=300)
-            self.publish_trade_opportunity(opportunity_data)
-        except RedisError as e:
-            logger.error(f"Redis error storing trade opportunity: {e}")
-            raise
+            return price_data  # Return stored price if it was updated
+
+        except Exception as e:
+            logger.error(f"Error in debounce_price: {e}", exc_info=True)
+            return None
+
+    # === Trade Opportunity Methods ===
+    def publish_trade_opportunity(self, opportunity, retries_left=None) -> dict:
+        """
+        Store a trade opportunity in Redis with an expiration of 300 seconds and publish it.
+        Ensures it does not enter infinite recursion.
+        """
+        if retries_left is None:
+            retries_left = self.retry_attempts  # Initialize retries
+
+        if isinstance(opportunity, tuple):
+            opportunity = {
+                "asset": opportunity[0],
+                "buy_exchange": opportunity[1],
+                "sell_exchange": opportunity[2],
+                "buy_price": opportunity[3],
+                "sell_price": opportunity[4],
+                "spread": opportunity[5],
+            }
+
+        # Ensure timestamp is set
+        if "timestamp" not in opportunity:
+            opportunity["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        # Generate a unique ID for the trade opportunity
+        opportunity_id = opportunity.get("id") or f"opp:{opportunity['timestamp']}"
+        key = f"trade_opportunity:{opportunity_id}"
+
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                # Store trade execution in Redis with expiration (300s)
+                self.redis_client.set(key, json.dumps(opportunity), ex=300)
+
+                # Publish trade execution to the "trade_opportunities" Redis channel
+                self.redis_client.publish("trade_opportunities", json.dumps(opportunity))
+
+                logger.info(f"Published trade opportunity: {opportunity}")
+                return opportunity  # Success, exit function
+            except (redis.ConnectionError, redis.TimeoutError) as e:
+                logger.error(f"Redis error storing trade execution: {e}")
+                if attempt < self.retry_attempts:  # Only retry if we have retries left
+                    logger.warning(
+                        f"Retrying trade opportunity storage ({self.retry_attempts - attempt} retries left)..."
+                    )
+                    self._reconnect()  # Try reconnecting
+                else:
+                    logger.critical(
+                        "Failed to store trade opportunity after multiple retries."
+                    )
+                    return None  # Return None after exhausting retries
+            except Exception as e:
+                logger.error(f"Unexpected error in Redis: {e}", exc_info=True)
+                return None  # Return None if an unknown error occurs
 
     def get_trade_opportunity(self, opportunity_id: str) -> Optional[Dict[str, Any]]:
         """Get trade opportunity by ID with error handling"""
@@ -111,21 +275,6 @@ class MarketDataService:
             logger.error(f"Redis error retrieving recent opportunities: {e}")
             return []
 
-    def publish_trade_opportunity(self, opportunity_data: Dict[str, Any]) -> bool:
-        """Publish trade opportunity with error handling"""
-        try:
-            channel = "trade_opportunity"
-            message = json.dumps(opportunity_data)
-            result = self.redis_client.publish(channel, message)
-            logger.debug(f"Published opportunity to {result} subscribers")
-            return result > 0
-        except RedisError as e:
-            logger.error(f"Redis error publishing trade opportunity: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Error publishing trade opportunity: {e}")
-            return False
-
     def subscribe_to_trade_opportunities(
         self, callback: Optional[Callable] = None
     ) -> Generator[Dict[str, Any], None, None]:
@@ -134,8 +283,8 @@ class MarketDataService:
         Yields messages as they arrive.
         """
         pubsub = self.redis_client.pubsub()
-        pubsub.subscribe("trade_opportunity")
-        logger.info("Subscribed to trade_opportunity channel.")
+        pubsub.subscribe("trade_opportunities")
+        logger.info("Subscribed to trade_opportunities channel.")
         try:
             while True:
                 try:
@@ -175,64 +324,85 @@ class MarketDataService:
                 logger.error(f"Error during subscription cleanup: {e}")
 
     # === Trade Execution Methods ===
-    def store_trade_execution(
-        self, execution_data: Dict[str, Any], expiry_seconds: int = 3600
+    def publish_trade_execution(
+        self, execution_data: dict, expiry_seconds: int = 3600
     ) -> str:
-        """Store trade execution with proper error handling"""
-        try:
-            # Generate ID if not provided
-            execution_id = (
-                execution_data.get("id")
-                or f"exec:{execution_data.get('timestamp', int(time.time()))}"
+        """
+        Store trade execution in Redis with expiration and handle failures.
+        Prevents infinite recursion by using a retry loop instead of calling itself.
+        """
+        # Ensure execution ID
+        execution_id = execution_data.get("id") or f"exec:{int(time.time())}"
+        key = f"trade_execution:{execution_id}"
+
+        # Check if trade execution already exists (to prevent duplicates)
+        if self.redis_client.exists(key):
+            logger.warning(
+                f"Trade execution already exists. Skipping duplicate: {execution_id}"
             )
-            key = f"trade_execution:{execution_id}"
+            return execution_id  # Skip storing duplicate execution
 
-            # Add metadata if not present
-            if "timestamp" not in execution_data:
-                execution_data["timestamp"] = int(time.time())
-            if "id" not in execution_data:
-                execution_data["id"] = execution_id
+        # Add timestamp if missing
+        if "timestamp" not in execution_data:
+            execution_data["timestamp"] = int(time.time())
+        if "id" not in execution_data:
+            execution_data["id"] = execution_id
 
-            # Ensure numeric fields are proper floats.
-            for field in ["buy_price", "sell_price", "spread"]:
-                if field in execution_data:
-                    execution_data[field] = float(execution_data[field])
+        # Convert numeric fields to floats
+        for field in ["buy_price", "sell_price", "spread"]:
+            if field in execution_data:
+                execution_data[field] = float(execution_data[field])
 
-            # Store the execution data.
-            self.redis_client.set(key, json.dumps(execution_data), ex=expiry_seconds)
-            self.publish_trade_execution(execution_data)
+        # Parse timestamp correctly
+        ts = execution_data.get("timestamp", int(time.time()))
+        if isinstance(ts, str):
+            try:
+                ts = dateutil.parser.parse(ts).timestamp()
+            except Exception as e:
+                logger.error(f"Error parsing timestamp {ts}: {e}")
+                ts = time.time()
 
-            # Add to sorted set for time-based retrieval.
-            ts = execution_data.get("timestamp", int(time.time()))
-            if isinstance(ts, str):
-                try:
-                    ts_converted = dateutil.parser.parse(ts).timestamp()
-                    logger.debug(f"Parsed timestamp from '{ts}' to {ts_converted}")
-                    ts = ts_converted
-                except Exception as e:
-                    logger.error(f"Error parsing timestamp {ts}: {e}")
-                    ts = time.time()
-            elif not isinstance(ts, (int, float)):
-                ts = float(ts)
-            logger.debug(f"Using timestamp {ts} (type: {type(ts)}) for sorted set")
+        # Store execution in Redis with retry logic
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                # Store trade execution with expiration
+                self.redis_client.set(key, json.dumps(execution_data), ex=expiry_seconds)
 
-            self.redis_client.zadd("trade_executions_by_time", {execution_id: ts})
+                # Publish trade execution
+                self.redis_client.publish("trade_executions", json.dumps(execution_data))
 
-            # If linked to an opportunity, create relationship
-            if "opportunity_id" in execution_data:
-                self.redis_client.set(
-                    f"execution_for_opportunity:{execution_data['opportunity_id']}",
-                    execution_id,
-                    ex=expiry_seconds,
+                # Add execution to sorted set
+                self.redis_client.zadd("trade_executions_by_time", {execution_id: ts})
+
+                # Link to trade opportunity if available
+                if "opportunity_id" in execution_data:
+                    self.redis_client.set(
+                        f"execution_for_opportunity:{execution_data['opportunity_id']}",
+                        execution_id,
+                        ex=expiry_seconds,
+                    )
+
+                logger.info(f"Trade execution stored successfully: {execution_data}")
+                return execution_id  # Success, exit function
+            except (redis.ConnectionError, redis.TimeoutError) as e:
+                logger.error(f"Redis error storing trade execution: {e}")
+                if attempt < self.retry_attempts:
+                    logger.warning(
+                        f"Retrying trade execution storage ({self.retry_attempts - attempt} retries left)..."
+                    )
+                    self._reconnect()
+                else:
+                    logger.critical(
+                        "Failed to store trade execution after multiple retries."
+                    )
+                    return None  # Return None after all retries fail
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error storing trade execution: {e}", exc_info=True
                 )
+                return None
 
-            return execution_id
-        except RedisError as e:
-            logger.error(f"Redis error storing trade execution: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Error storing trade execution: {e}")
-            raise
+        return None  # If it reaches here, execution failed
 
     def get_trade_execution(self, execution_id: str) -> Optional[Dict[str, Any]]:
         """Get trade execution by ID with error handling"""
@@ -266,21 +436,6 @@ class MarketDataService:
         except RedisError as e:
             logger.error(f"Redis error retrieving recent executions: {e}")
             return []
-
-    def publish_trade_execution(self, execution_data: Dict[str, Any]) -> bool:
-        """Publish trade execution with error handling"""
-        try:
-            channel = "trade_executions"
-            message = json.dumps(execution_data)
-            result = self.redis_client.publish(channel, message)
-            logger.debug(f"Published execution to {result} subscribers")
-            return result > 0
-        except RedisError as e:
-            logger.error(f"Redis error publishing trade execution: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Error publishing trade execution: {e}")
-            return False
 
     def subscribe_to_trade_executions(self, callback: Callable) -> None:
         """Subscribe to trade executions with proper error handling"""

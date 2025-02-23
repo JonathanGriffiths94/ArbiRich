@@ -19,35 +19,6 @@ redis_host = os.getenv("REDIS_HOST", "localhost")
 redis_client = MarketDataService(host=redis_host, port=6379, db=0)
 
 
-def execute_trade(opportunity):
-    """
-    Simulate trade execution for a given opportunity.
-    This is where you'd call your exchange's REST API.
-    """
-    # Ensure numeric fields are proper floats.
-    try:
-        opportunity["buy_price"] = float(opportunity["buy_price"])
-        opportunity["sell_price"] = float(opportunity["sell_price"])
-        opportunity["spread"] = float(opportunity["spread"])
-    except Exception as e:
-        logger.error(f"Error converting numeric fields: {e}")
-
-    trade_msg = (
-        f"Executing trade for {opportunity['asset']}: "
-        f"Buy from {opportunity['buy_exchange']} at {opportunity['buy_price']}, "
-        f"Sell on {opportunity['sell_exchange']} at {opportunity['sell_price']}, "
-        f"Spread: {opportunity['spread']:.4f}"
-    )
-    logger.critical(trade_msg)
-
-    try:
-        redis_client.store_trade_execution(opportunity)
-        logger.debug("Trade execution stored successfully in Redis.")
-    except Exception as e:
-        logger.error(f"Error storing trade execution: {e}")
-    return trade_msg
-
-
 # Define a custom partition that wraps your Redis subscription generator.
 class RedisOpportunityPartition(StatefulSourcePartition):
     def __init__(self):
@@ -106,6 +77,35 @@ class RedisOpportunitySource(FixedPartitionedSource):
     def build_part(self, step_id, for_key, _resume_state):
         logger.info(f"Building partition for key: {for_key}")
         return RedisOpportunityPartition()
+
+
+def execute_trade(opportunity):
+    """
+    Simulate trade execution for a given opportunity.
+    This is where you'd call your exchange's REST API.
+    """
+    # Ensure numeric fields are proper floats.
+    try:
+        opportunity["buy_price"] = float(opportunity["buy_price"])
+        opportunity["sell_price"] = float(opportunity["sell_price"])
+        opportunity["spread"] = float(opportunity["spread"])
+    except Exception as e:
+        logger.error(f"Error converting numeric fields: {e}")
+
+    trade_msg = (
+        f"Executing trade for {opportunity['asset']}: "
+        f"Buy from {opportunity['buy_exchange']} at {opportunity['buy_price']}, "
+        f"Sell on {opportunity['sell_exchange']} at {opportunity['sell_price']}, "
+        f"Spread: {opportunity['spread']:.4f}"
+    )
+    logger.critical(trade_msg)
+
+    try:
+        redis_client.publish_trade_execution(opportunity)
+        logger.debug("Trade execution stored successfully in Redis.")
+    except Exception as e:
+        logger.error(f"Error storing trade execution: {e}")
+    return trade_msg
 
 
 def build_flow():

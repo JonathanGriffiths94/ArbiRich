@@ -1,8 +1,9 @@
 import asyncio
 import logging
 
-from src.arbirich.flows.execution_flow import run_execution_flow
-from src.arbirich.flows.ingestion_flow import run_ingestion_flow
+from src.arbirich.flows.arbitrage import run_arbitrage_flow
+from src.arbirich.flows.execution import run_execution_flow
+from src.arbirich.flows.ingestion import run_ingestion_flow
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +17,15 @@ class FlowManager:
 
     def __init__(self):
         self.ingestion_task = None
+        self.arbitrage_task = None
         self.execution_task = None
 
     async def __aenter__(self):
         logger.info("FlowManager: Starting up flows...")
         self.ingestion_task = asyncio.create_task(run_ingestion_flow())
+        self.arbitrage_task = asyncio.create_task(run_arbitrage_flow())
         self.execution_task = asyncio.create_task(run_execution_flow())
-        logger.info("FlowManager: Both ingestion and execution flows have been started.")
+        logger.info("FlowManager: All flows have been started.")
         return self
 
     async def __aexit__(self, exc_type, exc_val, tb):

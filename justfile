@@ -15,7 +15,7 @@ stop-redis:
     docker stop {{REDIS_CONTAINER}}
 
 run-bot:
-    poetry run python main.py
+    RUST_BACKTRACE=1 poetry run python main.py
 
 # A recipe that starts Redis, runs the bot, then stops Redis.
 run: start-redis run-bot stop-redis
