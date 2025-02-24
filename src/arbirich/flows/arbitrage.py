@@ -251,7 +251,7 @@ def debounce_opportunity(redis_client, opportunity, expiry_seconds=30):
 def publish_trade_opportunity(opportunity: dict) -> dict:
     try:
         redis_client.publish_trade_opportunity(opportunity)
-        logger.info(f"Pushed arbitrage opportunity: {json.dumps(opportunity)}")
+        logger.info(f"Published trade opportunity: {json.dumps(opportunity)}")
         return opportunity
     except Exception as e:
         logger.error(f"Error pushing opportunity: {e}")
@@ -302,6 +302,7 @@ def build_arbitrage_flow():
     final_opp = op.filter(
         "final_filter", debounced_opportunities, lambda x: x is not None
     )
+
     redis_sync = op.map("push_trade_opportunity", final_opp, publish_trade_opportunity)
 
     op.output("stdout", redis_sync, StdOutSink())

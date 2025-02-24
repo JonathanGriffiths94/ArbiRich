@@ -219,12 +219,12 @@ class MarketDataService:
         for attempt in range(1, self.retry_attempts + 1):
             try:
                 # Store trade execution in Redis with expiration (300s)
-                self.redis_client.set(key, json.dumps(opportunity), ex=300)
+                self.redis_client.setex(key, 300, json.dumps(opportunity))
 
                 # Publish trade execution to the "trade_opportunities" Redis channel
                 self.redis_client.publish("trade_opportunities", json.dumps(opportunity))
 
-                logger.info(f"Published trade opportunity: {opportunity}")
+                logger.debug(f"Published trade opportunity: {opportunity}")
                 return opportunity  # Success, exit function
             except (redis.ConnectionError, redis.TimeoutError) as e:
                 logger.error(f"Redis error storing trade execution: {e}")

@@ -12,7 +12,6 @@ from bytewax.run import cli_main
 from src.arbirich.market_data_service import MarketDataService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 # Instantiate the Redis service.
 redis_host = os.getenv("REDIS_HOST", "localhost")
@@ -93,7 +92,7 @@ def execute_trade(opportunity):
         logger.error(f"Error converting numeric fields: {e}")
 
     trade_msg = (
-        f"Executing trade for {opportunity['asset']}: "
+        f"Executed trade for {opportunity['asset']}: "
         f"Buy from {opportunity['buy_exchange']} at {opportunity['buy_price']}, "
         f"Sell on {opportunity['sell_exchange']} at {opportunity['sell_price']}, "
         f"Spread: {opportunity['spread']:.4f}"
