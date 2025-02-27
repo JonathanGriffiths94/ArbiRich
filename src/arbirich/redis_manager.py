@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 import dateutil.parser
 import redis
@@ -74,45 +74,110 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
 
-    # === Price Methods ===
-    def get_price(self, exchange, asset):
+    def store_order_book(
+        self,
+        exchange: str,
+        symbol: str,
+        bids: List[dict],
+        asks: List[dict],
+        timestamp: float,
+    ):
+        key_bids = f"order_book:{exchange}:{symbol}:bids"
+        key_asks = f"order_book:{exchange}:{symbol}:asks"
+        key_timestamp = f"order_book:{exchange}:{symbol}:timestamp"
+
+        # Optionally clear existing data
+        self.redis_client.delete(key_bids)
+        self.redis_client.delete(key_asks)
+
+        # Store bids
+        for bid in bids:
+            try:
+                score = float(bid["price"])
+                member = json.dumps(bid)
+                self.redis_client.zadd(key_bids, {member: score})
+                logger.debug(f"Successfully pushed bids to Redis at {key_bids}")
+            except Exception as e:
+                logger.error(f"Error storing bid {bid}: {e}")
+
+        # Store asks
+        for ask in asks:
+            try:
+                score = float(ask["price"])
+                member = json.dumps(ask)
+                self.redis_client.zadd(key_asks, {member: score})
+                logger.debug(f"Successfully pushed asks to Redis at {key_asks}")
+            except Exception as e:
+                logger.error(f"Error storing ask {ask}: {e}")
+
+        # Store timestamp
+        self.redis_client.set(key_timestamp, timestamp)
+        logger.info(f"Successfully stored timestamp to redis at: {key_timestamp}")
+
+    def publish_order_book(
+        self,
+        exchange: str,
+        symbol: str,
+        bids: List[Tuple[float, float]],
+        asks: List[Tuple[float, float]],
+        timestamp: float,
+    ):
         """
-        Retrieves the latest price of an asset from an exchange in Redis.
-        Returns None if no data is found or an error occurs.
+        Publish top order book data to a Redis Pub/Sub channel.
         """
-        key = f"price:{exchange}:{asset}"
         try:
-            data = self.redis_client.get(key)
-            if data:
-                parsed = json.loads(data)
-                return parsed.get("price")
-            else:
-                logger.debug(f"No price data found for {exchange}:{asset}")
-                return None
+            message = {
+                "exchange": exchange,
+                "symbol": symbol,
+                "bids": bids,
+                "asks": asks,
+                "timestamp": timestamp,
+            }
+            self.redis_client.publish("order_book_updates", json.dumps(message))
+            logger.info(f"Published order book update: {exchange} {symbol}")
         except Exception as e:
-            logger.error(f"Error retrieving price for {exchange}:{asset} - {e}")
+            logger.error(f"Error publishing order book data: {e}")
+
+    def get_order_book(exchange: str, symbol: str):
+        """
+        Retrieve the latest order book data for a given exchange and symbol.
+        """
+        bids_key = f"order_book:{exchange}:{symbol}:bids"
+        asks_key = f"order_book:{exchange}:{symbol}:asks"
+        timestamp_key = f"order_book:{exchange}:{symbol}:timestamp"
+
+        try:
+            # Retrieve bids and asks from Redis
+            bids = self.redis_client.zrevrange(bids_key, 0, -1, withscores=True)
+            asks = self.redis_client.zrange(asks_key, 0, -1, withscores=True)
+            timestamp = self.redis_client.get(timestamp_key)
+
+            # Parse the JSON-encoded order book entries
+            bids = [
+                (
+                    json.loads(item.decode("utf-8"))["price"],
+                    json.loads(item.decode("utf-8"))["quantity"],
+                )
+                for item, _ in bids
+            ]
+            asks = [
+                (
+                    json.loads(item.decode("utf-8"))["price"],
+                    json.loads(item.decode("utf-8"))["quantity"],
+                )
+                for item, _ in asks
+            ]
+
+            return {
+                "bids": bids,
+                "asks": asks,
+                "timestamp": float(timestamp) if timestamp else None,
+            }
+        except Exception as e:
+            logger.error(f"Error retrieving order book data: {e}")
             return None
 
-    def publish_price(self, exchange, asset, price: dict):
-        """
-        Publishes the latest price of an asset from an exchange to a Redis Pub/Sub channel.
-        Also stores it in Redis with a short TTL to ensure freshness.
-        """
-        key = f"price:{exchange}:{asset}"
-        value = json.dumps(price)  # Ensure correct JSON format
-
-        try:
-            # Store price with TTL (avoids stale data)
-            self.redis_client.setex(key, 10, value)  # Set key with 10s TTL
-
-            # Publish to Redis Pub/Sub
-            self.redis_client.publish("prices", value)
-
-            logger.debug(f"Published price for {exchange}:{asset} -> {price}")
-        except Exception as e:
-            logger.error(f"Error publishing price: {e}")
-
-    def subscribe_to_prices(
+    def subscribe_to_orderbook_updates(
         self, channel: str, callback: Optional[Callable] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
@@ -153,41 +218,6 @@ class MarketDataService:
                 except Exception as reconnect_error:
                     logger.error(f"Reconnection failed: {reconnect_error}")
                     time.sleep(5)  # Wait longer before retrying
-
-    def debounce_price(self, exchange, asset, price_data, expiry_seconds=5):
-        """
-        Store price updates in Redis only if the price changes significantly or if enough time has passed.
-        """
-        try:
-            key = f"price:{exchange}:{asset}"
-            now = time.time()
-
-            # Fetch the last price from Redis
-            last_price_data = self.redis_client.get(key)
-
-            if last_price_data:
-                last_price_entry = json.loads(last_price_data)
-                last_time = last_price_entry["timestamp"]
-                last_price = last_price_entry["price"]
-
-                # Check if the price has changed by more than 0.01% or if `expiry_seconds` has passed
-                if (
-                    abs(price_data["price"] - last_price) / last_price < 0.0001
-                    and (now - last_time) < expiry_seconds
-                ):
-                    return None  # Skip storing if change is too small
-
-            # Store the new price in Redis with expiry
-            self.redis_client.setex(
-                key,
-                expiry_seconds,
-                json.dumps({"timestamp": now, "price": price_data["price"]}),
-            )
-            return price_data  # Return stored price if it was updated
-
-        except Exception as e:
-            logger.error(f"Error in debounce_price: {e}", exc_info=True)
-            return None
 
     # === Trade Opportunity Methods ===
     def publish_trade_opportunity(self, opportunity, retries_left=None) -> dict:
