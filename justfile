@@ -5,7 +5,6 @@ set dotenv-load
 install:
     poetry install --with dev --all-extras
 
-# Run the bot
 REDIS_CONTAINER := "redis-arbirich"
 
 start-redis:
@@ -17,9 +16,11 @@ stop-redis:
 run-bot:
     RUST_BACKTRACE=1 poetry run python main.py
 
-# A recipe that starts Redis, runs the bot, then stops Redis.
 run: start-redis run-bot stop-redis
 
+# Run the bot
+run_docker:
+    docker-compose up --abort-on-container-exit
 
 format_all:
     poetry run ruff check . --select I --fix # sort imports
@@ -31,11 +32,11 @@ lint:
 
 # Run unit test
 u_test *arguments:
-  poetry run pytest tests/units {{arguments}}
+    poetry run pytest tests/units {{arguments}}
 
 # Run integration test
 i_test *arguments:
-  poetry run pytest tests/integrations {{arguments}}
+    poetry run pytest tests/integrations {{arguments}}
 
 # Run all jobs
 all: u_test i_test format_all lint

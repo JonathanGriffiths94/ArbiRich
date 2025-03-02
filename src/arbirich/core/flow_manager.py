@@ -3,7 +3,7 @@ import logging
 
 from src.arbirich.flows.arbitrage import run_arbitrage_flow
 from src.arbirich.flows.execution import run_execution_flow
-from src.arbirich.flows.ingestion import run_ingestion_flow
+from src.arbirich.flows.ingestion_ws_base_class import run_ingestion_flow
 
 logger = logging.getLogger(__name__)
 

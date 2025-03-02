@@ -9,7 +9,8 @@ from bytewax.dataflow import Dataflow
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 from bytewax.run import cli_main
 
-from src.arbirich.market_data_service import MarketDataService
+from src.arbirich.models.dtos import TradeExecution, TradeOpportunity
+from src.arbirich.redis_manager import MarketDataService
 
 logger = logging.getLogger(__name__)
 
@@ -78,33 +79,51 @@ class RedisOpportunitySource(FixedPartitionedSource):
         return RedisOpportunityPartition()
 
 
-def execute_trade(opportunity):
+def execute_trade(opportunity_raw) -> dict:
     """
-    Simulate trade execution for a given opportunity.
-    This is where you'd call your exchange's REST API.
+    Convert raw trade opportunity data into a TradeOpportunity model,
+    simulate a trade execution, and return a TradeExecution model (as dict).
     """
-    # Ensure numeric fields are proper floats.
     try:
-        opportunity["buy_price"] = float(opportunity["buy_price"])
-        opportunity["sell_price"] = float(opportunity["sell_price"])
-        opportunity["spread"] = float(opportunity["spread"])
+        # Assume opportunity_raw is a dict that can be parsed by TradeOpportunity.
+        opp = TradeOpportunity(**opportunity_raw)
     except Exception as e:
-        logger.error(f"Error converting numeric fields: {e}")
+        logger.error(f"Error parsing trade opportunity: {e}")
+        return {}
+
+    # Simulate trade execution (for example, call an exchange API here).
+    # In this example, we simply mimic execution by copying prices and adding an execution timestamp.
+    execution_ts = time.time()
+
+    trade_exec = TradeExecution(
+        asset=opp.asset,
+        buy_exchange=opp.buy_exchange,
+        sell_exchange=opp.sell_exchange,
+        executed_buy_price=opp.buy_price,
+        executed_sell_price=opp.sell_price,
+        spread=opp.spread,
+        volume=opp.volume,
+        execution_timestamp=execution_ts,
+        execution_id=f"{opp.asset}-{int(execution_ts)}",  # for example, a simple id
+    )
 
     trade_msg = (
-        f"Executed trade for {opportunity['asset']}: "
-        f"Buy from {opportunity['buy_exchange']} at {opportunity['buy_price']}, "
-        f"Sell on {opportunity['sell_exchange']} at {opportunity['sell_price']}, "
-        f"Spread: {opportunity['spread']:.4f}"
+        f"Executed trade for {trade_exec.asset}: "
+        f"Buy from {trade_exec.buy_exchange} at {trade_exec.executed_buy_price}, "
+        f"Sell on {trade_exec.sell_exchange} at {trade_exec.executed_sell_price}, "
+        f"Spread: {trade_exec.spread:.4f}, Volume: {trade_exec.volume}, "
+        f"Timestamp: {trade_exec.execution_timestamp}"
     )
     logger.critical(trade_msg)
 
     try:
-        redis_client.publish_trade_execution(opportunity)
+        # Publish or store the trade execution in Redis (as an example).
+        redis_client.publish_trade_execution(trade_exec.dict())
         logger.debug("Trade execution stored successfully in Redis.")
     except Exception as e:
         logger.error(f"Error storing trade execution: {e}")
-    return trade_msg
+
+    return trade_exec.dict()  # Return as a dict for downstream serialization.
 
 
 def build_flow():

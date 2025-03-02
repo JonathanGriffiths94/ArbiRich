@@ -112,7 +112,7 @@ class MarketDataService:
 
         # Store timestamp
         self.redis_client.set(key_timestamp, timestamp)
-        logger.info(f"Successfully stored timestamp to redis at: {key_timestamp}")
+        logger.debug(f"Successfully stored timestamp to redis at: {key_timestamp}")
 
     def publish_order_book(
         self,
@@ -133,8 +133,8 @@ class MarketDataService:
                 "asks": asks,
                 "timestamp": timestamp,
             }
-            self.redis_client.publish("order_book_updates", json.dumps(message))
-            logger.info(f"Published order book update: {exchange} {symbol}")
+            self.redis_client.publish("order_book", json.dumps(message))
+            logger.debug(f"Published order book update: {exchange} {symbol}")
         except Exception as e:
             logger.error(f"Error publishing order book data: {e}")
 
@@ -177,7 +177,7 @@ class MarketDataService:
             logger.error(f"Error retrieving order book data: {e}")
             return None
 
-    def subscribe_to_orderbook_updates(
+    def subscribe_to_order_book_updates(
         self, channel: str, callback: Optional[Callable] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
