@@ -16,14 +16,14 @@ from src.arbirich.processing.process_arbitrage import (
     key_by_asset,
     update_asset_state,
 )
-from src.arbirich.redis_manager import MarketDataService
+from src.arbirich.redis_manager import ArbiDataService
 from src.arbirich.sources.redis_price_partition import RedisPriceSource
 from src.arbirich.utils.helpers import build_exchanges_dict
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-redis_client = MarketDataService(
+redis_client = ArbiDataService(
     host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
 )
 
