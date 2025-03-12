@@ -1,2 +1,2 @@
-def flow_test():
+def test_flow():
     pass
