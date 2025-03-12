@@ -8,9 +8,8 @@ from src.arbirich.models.dtos import TradeOpportunity
 from src.arbirich.redis_manager import MarketDataService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
-# Instantiate the Redis service.
 redis_client = MarketDataService(
     host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
 )
@@ -20,9 +19,10 @@ def debounce_opportunity(
     redis_client, opportunity: TradeOpportunity, expiry_seconds=30
 ) -> Optional[TradeOpportunity]:
     try:
+        logger.info(f"Opportunity: {opportunity}")
         key = f"last_opp:{opportunity.asset}:{opportunity.buy_exchange}:{opportunity.sell_exchange}"
         now = time.time()
-
+        logger.info(f"Key: {key}")
         last_opp_data = redis_client.redis_client.get(key)
         if last_opp_data:
             last_opp_entry = json.loads(last_opp_data)
@@ -42,17 +42,6 @@ def debounce_opportunity(
                 )
                 return None
 
-        redis_client.redis_client.setex(
-            key,
-            expiry_seconds,
-            json.dumps(
-                {
-                    "timestamp": now,
-                    "buy_price": opportunity.buy_price,
-                    "sell_price": opportunity.sell_price,
-                }
-            ),
-        )
         return opportunity
     except Exception as e:
         logger.error(f"Error in debounce_opportunity: {e}", exc_info=True)
@@ -60,10 +49,12 @@ def debounce_opportunity(
 
 
 def publish_trade_opportunity(opportunity: TradeOpportunity) -> TradeOpportunity:
+    if not opportunity:
+        return None
     try:
         # Publish the opportunity (if your redis_client expects a dict, convert it)
-        redis_client.publish_trade_opportunity(opportunity.dict())
-        logger.info(f"Published trade opportunity: {opportunity.json()}")
+        redis_client.publish_trade_opportunity(opportunity)
+        logger.info(f"Published trade opportunity: {opportunity}")
         return opportunity
     except Exception as e:
         logger.error(f"Error pushing opportunity: {e}")

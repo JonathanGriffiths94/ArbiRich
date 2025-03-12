@@ -4,9 +4,10 @@ import os
 import time
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
-import dateutil.parser
 import redis
 from redis.exceptions import ConnectionError, RedisError
+
+from src.arbirich.models.dtos import OrderBookUpdate, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 
@@ -74,111 +75,63 @@ class MarketDataService:
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
 
-    def store_order_book(
-        self,
-        exchange: str,
-        symbol: str,
-        bids: List[dict],
-        asks: List[dict],
-        timestamp: float,
-    ):
-        key_bids = f"order_book:{exchange}:{symbol}:bids"
-        key_asks = f"order_book:{exchange}:{symbol}:asks"
-        key_timestamp = f"order_book:{exchange}:{symbol}:timestamp"
+    def store_order_book(self, order_book: OrderBookUpdate) -> None:
+        """
+        Stores the order book update in Redis using a key formatted as:
+        "order_book:{symbol}:{exchange}".
 
-        # Optionally clear existing data
-        self.redis_client.delete(key_bids)
-        self.redis_client.delete(key_asks)
+        This function uses a Redis pipeline to atomically delete any existing value
+        and then set the new JSON-serialized order book update.
+        """
+        try:
+            # Create a consistent key; note the order of symbol and exchange.
+            key = f"order_book:{order_book.symbol}:{order_book.exchange}"
 
-        # Store bids
-        for bid in bids:
-            try:
-                score = float(bid["price"])
-                member = json.dumps(bid)
-                self.redis_client.zadd(key_bids, {member: score})
-                logger.debug(f"Successfully pushed bids to Redis at {key_bids}")
-            except Exception as e:
-                logger.error(f"Error storing bid {bid}: {e}")
+            # Create a pipeline for atomic execution of commands.
+            pipeline = self.redis_client.pipeline()
+            pipeline.delete(key)
+            order_book_json = order_book.model_dump_json()
+            pipeline.set(key, order_book_json)
+            # Optionally, you can set an expiry (e.g., 60 seconds) if needed:
+            # pipeline.expire(key, 60)
 
-        # Store asks
-        for ask in asks:
-            try:
-                score = float(ask["price"])
-                member = json.dumps(ask)
-                self.redis_client.zadd(key_asks, {member: score})
-                logger.debug(f"Successfully pushed asks to Redis at {key_asks}")
-            except Exception as e:
-                logger.error(f"Error storing ask {ask}: {e}")
+            # Execute all commands atomically.
+            results = pipeline.execute()
 
-        # Store timestamp
-        self.redis_client.set(key_timestamp, timestamp)
-        logger.debug(f"Successfully stored timestamp to redis at: {key_timestamp}")
+            # Check the results if needed (typically, an exception would be raised on error)
+            logger.info(f"Successfully stored order book update to Redis at key {key}")
+
+        except Exception as e:
+            logger.exception(f"Error storing order book update for key {key}: {e}")
+            # Optionally, re-raise or handle the error as appropriate.
+            raise
 
     def publish_order_book(
-        self,
-        exchange: str,
-        symbol: str,
-        bids: List[Tuple[float, float]],
-        asks: List[Tuple[float, float]],
-        timestamp: float,
+        self, order_book: OrderBookUpdate, channel: str = "order_book"
     ):
         """
         Publish top order book data to a Redis Pub/Sub channel.
         """
         try:
-            message = {
-                "exchange": exchange,
-                "symbol": symbol,
-                "bids": bids,
-                "asks": asks,
-                "timestamp": timestamp,
-            }
-            self.redis_client.publish("order_book", json.dumps(message))
-            logger.debug(f"Published order book update: {exchange} {symbol}")
+            self.redis_client.publish(channel, order_book.model_dump_json())
+            logger.debug(
+                f"Published order book update: {order_book.symbol} {order_book.exchange}"
+            )
         except Exception as e:
             logger.error(f"Error publishing order book data: {e}")
 
-    def get_order_book(exchange: str, symbol: str):
-        """
-        Retrieve the latest order book data for a given exchange and symbol.
-        """
-        bids_key = f"order_book:{exchange}:{symbol}:bids"
-        asks_key = f"order_book:{exchange}:{symbol}:asks"
-        timestamp_key = f"order_book:{exchange}:{symbol}:timestamp"
-
+    def get_order_book(self, exchange: str, symbol: str) -> Optional[OrderBookUpdate]:
+        key = f"order_book:{symbol}:{exchange}"
         try:
-            # Retrieve bids and asks from Redis
-            bids = self.redis_client.zrevrange(bids_key, 0, -1, withscores=True)
-            asks = self.redis_client.zrange(asks_key, 0, -1, withscores=True)
-            timestamp = self.redis_client.get(timestamp_key)
-
-            # Parse the JSON-encoded order book entries
-            bids = [
-                (
-                    json.loads(item.decode("utf-8"))["price"],
-                    json.loads(item.decode("utf-8"))["quantity"],
-                )
-                for item, _ in bids
-            ]
-            asks = [
-                (
-                    json.loads(item.decode("utf-8"))["price"],
-                    json.loads(item.decode("utf-8"))["quantity"],
-                )
-                for item, _ in asks
-            ]
-
-            return {
-                "bids": bids,
-                "asks": asks,
-                "timestamp": float(timestamp) if timestamp else None,
-            }
+            data = self.redis_client.get(key)
+            if data:
+                return OrderBookUpdate.model_validate_json(data.decode("utf-8"))
         except Exception as e:
-            logger.error(f"Error retrieving order book data: {e}")
-            return None
+            logger.error(f"Error retrieving order book: {e}")
+        return None
 
     def subscribe_to_order_book_updates(
-        self, channel: str, callback: Optional[Callable] = None
+        self, channel: str = "trade_opportunities", callback: Optional[Callable] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Subscribe to a Redis Pub/Sub channel and yield messages indefinitely.
@@ -220,7 +173,9 @@ class MarketDataService:
                     time.sleep(5)  # Wait longer before retrying
 
     # === Trade Opportunity Methods ===
-    def publish_trade_opportunity(self, opportunity, retries_left=None) -> dict:
+    def publish_trade_opportunity(
+        self, opportunity: TradeOpportunity, retries_left=None
+    ) -> dict:
         """
         Store a trade opportunity in Redis with an expiration of 300 seconds and publish it.
         Ensures it does not enter infinite recursion.
@@ -228,49 +183,34 @@ class MarketDataService:
         if retries_left is None:
             retries_left = self.retry_attempts  # Initialize retries
 
-        if isinstance(opportunity, tuple):
-            opportunity = {
-                "asset": opportunity[0],
-                "buy_exchange": opportunity[1],
-                "sell_exchange": opportunity[2],
-                "buy_price": opportunity[3],
-                "sell_price": opportunity[4],
-                "spread": opportunity[5],
-            }
-
-        # Ensure timestamp is set
-        if "timestamp" not in opportunity:
-            opportunity["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-        # Generate a unique ID for the trade opportunity
-        opportunity_id = opportunity.get("id") or f"opp:{opportunity['timestamp']}"
+        opportunity_id = opportunity.id or f"opp:{opportunity.timestamp}"
         key = f"trade_opportunity:{opportunity_id}"
 
         for attempt in range(1, self.retry_attempts + 1):
             try:
-                # Store trade execution in Redis with expiration (300s)
-                self.redis_client.setex(key, 300, json.dumps(opportunity))
+                self.redis_client.setex(key, 300, opportunity.model_dump_json())
 
-                # Publish trade execution to the "trade_opportunities" Redis channel
-                self.redis_client.publish("trade_opportunities", json.dumps(opportunity))
+                self.redis_client.publish(
+                    "trade_opportunities", opportunity.model_dump_json()
+                )
 
                 logger.debug(f"Published trade opportunity: {opportunity}")
-                return opportunity  # Success, exit function
+                return opportunity
             except (redis.ConnectionError, redis.TimeoutError) as e:
                 logger.error(f"Redis error storing trade execution: {e}")
-                if attempt < self.retry_attempts:  # Only retry if we have retries left
+                if attempt < self.retry_attempts:
                     logger.warning(
                         f"Retrying trade opportunity storage ({self.retry_attempts - attempt} retries left)..."
                     )
-                    self._reconnect()  # Try reconnecting
+                    self._reconnect()
                 else:
                     logger.critical(
                         "Failed to store trade opportunity after multiple retries."
                     )
-                    return None  # Return None after exhausting retries
+                    return None
             except Exception as e:
                 logger.error(f"Unexpected error in Redis: {e}", exc_info=True)
-                return None  # Return None if an unknown error occurs
+                return None
 
     def get_trade_opportunity(self, opportunity_id: str) -> Optional[Dict[str, Any]]:
         """Get trade opportunity by ID with error handling"""
@@ -306,14 +246,14 @@ class MarketDataService:
             return []
 
     def subscribe_to_trade_opportunities(
-        self, callback: Optional[Callable] = None
+        self, callback: Optional[Callable], channel: str = "trade_opportunities"
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Subscribe to the "trade_opportunity" channel using non-blocking polling.
         Yields messages as they arrive.
         """
         pubsub = self.redis_client.pubsub()
-        pubsub.subscribe("trade_opportunities")
+        pubsub.subscribe(channel)
         logger.info("Subscribed to trade_opportunities channel.")
         try:
             while True:
@@ -324,6 +264,8 @@ class MarketDataService:
                             data = json.loads(message["data"])
                             if callback:
                                 callback(data)
+
+                            logger.info(f"Data: {data}")
                             yield data
                         except json.JSONDecodeError as e:
                             logger.error(f"Error decoding Redis message: {e}")
@@ -353,17 +295,18 @@ class MarketDataService:
             except Exception as e:
                 logger.error(f"Error during subscription cleanup: {e}")
 
-    # === Trade Execution Methods ===
     def publish_trade_execution(
-        self, execution_data: dict, expiry_seconds: int = 3600
+        self, execution_data: TradeExecution, expiry_seconds: int = 3600
     ) -> str:
         """
         Store trade execution in Redis with expiration and handle failures.
         Prevents infinite recursion by using a retry loop instead of calling itself.
         """
+        logger.info(f"Storing trade execution: {execution_data}")
         # Ensure execution ID
-        execution_id = execution_data.get("id") or f"exec:{int(time.time())}"
+        execution_id = execution_data.id
         key = f"trade_execution:{execution_id}"
+        logger.info(f"execution_id: {execution_id}")
 
         # Check if trade execution already exists (to prevent duplicates)
         if self.redis_client.exists(key):
@@ -372,42 +315,29 @@ class MarketDataService:
             )
             return execution_id  # Skip storing duplicate execution
 
-        # Add timestamp if missing
-        if "timestamp" not in execution_data:
-            execution_data["timestamp"] = int(time.time())
-        if "id" not in execution_data:
-            execution_data["id"] = execution_id
-
-        # Convert numeric fields to floats
-        for field in ["buy_price", "sell_price", "spread"]:
-            if field in execution_data:
-                execution_data[field] = float(execution_data[field])
-
-        # Parse timestamp correctly
-        ts = execution_data.get("timestamp", int(time.time()))
-        if isinstance(ts, str):
-            try:
-                ts = dateutil.parser.parse(ts).timestamp()
-            except Exception as e:
-                logger.error(f"Error parsing timestamp {ts}: {e}")
-                ts = time.time()
-
         # Store execution in Redis with retry logic
         for attempt in range(1, self.retry_attempts + 1):
             try:
                 # Store trade execution with expiration
-                self.redis_client.set(key, json.dumps(execution_data), ex=expiry_seconds)
+                self.redis_client.set(
+                    key, execution_data.model_dump_json(), ex=expiry_seconds
+                )
 
                 # Publish trade execution
-                self.redis_client.publish("trade_executions", json.dumps(execution_data))
+                self.redis_client.publish(
+                    "trade_executions", execution_data.model_dump_json()
+                )
 
                 # Add execution to sorted set
-                self.redis_client.zadd("trade_executions_by_time", {execution_id: ts})
+                self.redis_client.zadd(
+                    "trade_executions_by_time",
+                    {execution_id: execution_data.execution_timestamp},
+                )
 
                 # Link to trade opportunity if available
-                if "opportunity_id" in execution_data:
+                if execution_data.opportunity_id:
                     self.redis_client.set(
-                        f"execution_for_opportunity:{execution_data['opportunity_id']}",
+                        f"execution_for_opportunity:{execution_data.opportunity_id}",
                         execution_id,
                         ex=expiry_seconds,
                     )
@@ -467,10 +397,12 @@ class MarketDataService:
             logger.error(f"Redis error retrieving recent executions: {e}")
             return []
 
-    def subscribe_to_trade_executions(self, callback: Callable) -> None:
+    def subscribe_to_trade_executions(
+        self, callback: Callable, channel: str = "trade_executions"
+    ) -> None:
         """Subscribe to trade executions with proper error handling"""
         pubsub = self.redis_client.pubsub()
-        pubsub.subscribe("trade_executions")
+        pubsub.subscribe(channel)
         logger.info("Subscribed to trade_executions channel.")
         try:
             for message in pubsub.listen():

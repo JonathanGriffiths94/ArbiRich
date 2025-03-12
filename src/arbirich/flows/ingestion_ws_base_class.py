@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 redis_client = MarketDataService(
-    host=REDIS_CONFIG["host"],
-    port=REDIS_CONFIG["port"],
-    db=REDIS_CONFIG["db"],
+    host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
 )
 
 
@@ -39,11 +37,8 @@ def build_flow():
 
     # Processor configurations for each exchange.
     source = MultiExchangeSource(exchanges=exchanges, processor_loader=load_processor)
-    logger.info(f"Source: {source}")
     raw_stream = op.input("extract", flow, source)
-    logger.info(f"Raw stream : {raw_stream}")
     processed = op.map("transform", raw_stream, process_order_book)
-    logger.info(f"Processed: {processed}")
     redis_sync = op.map("load", processed, store_order_book)
     op.output("stdout", redis_sync, StdOutSink())
     return flow
@@ -71,7 +66,3 @@ async def run_ingestion_flow():
     finally:
         logger.info("Ingestion flow shutdown")
         redis_client.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(run_ingestion_flow())

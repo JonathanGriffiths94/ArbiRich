@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import time
 
 from bytewax import operators as op
@@ -9,20 +8,20 @@ from bytewax.dataflow import Dataflow
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 from bytewax.run import cli_main
 
+from src.arbirich.config import REDIS_CONFIG
 from src.arbirich.models.dtos import TradeExecution, TradeOpportunity
 from src.arbirich.redis_manager import MarketDataService
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-# Instantiate the Redis service.
-redis_host = os.getenv("REDIS_HOST", "localhost")
-redis_client = MarketDataService(host=redis_host, port=6379, db=0)
+redis_client = MarketDataService(
+    host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
+)
 
 
-# Define a custom partition that wraps your Redis subscription generator.
 class RedisOpportunityPartition(StatefulSourcePartition):
     def __init__(self):
-        # Initialize the generator from the Redis subscription.
         logger.debug("Initializing RedisOpportunityPartition.")
         self.gen = redis_client.subscribe_to_trade_opportunities(
             lambda opp: logger.debug(f"Received: {opp}")
@@ -31,22 +30,18 @@ class RedisOpportunityPartition(StatefulSourcePartition):
         self._last_activity = time.time()
 
     def next_batch(self) -> list:
-        # Check if we've been idle too long (safety timeout)
         if time.time() - self._last_activity > 60:  # 1 minute timeout
             logger.warning("Safety timeout reached, checking Redis connection")
             self._last_activity = time.time()
-            # Ensure redis_client.is_healthy() is implemented appropriately
             if not redis_client.is_healthy():
                 logger.warning("Redis connection appears unhealthy")
                 return []
 
-        # If partition is marked as not running, return empty list.
         if not self._running:
             logger.info("Partition marked as not running, stopping")
             return []
 
         try:
-            # Try to get one message (non-blocking thanks to our generator design).
             result = next(self.gen, None)
             if result:
                 self._last_activity = time.time()
@@ -67,7 +62,6 @@ class RedisOpportunityPartition(StatefulSourcePartition):
         return None
 
 
-# Define a custom source that produces partitions.
 class RedisOpportunitySource(FixedPartitionedSource):
     def list_parts(self):
         parts = ["1"]
@@ -79,20 +73,18 @@ class RedisOpportunitySource(FixedPartitionedSource):
         return RedisOpportunityPartition()
 
 
-def execute_trade(opportunity_raw) -> dict:
+def execute_trade(opportunity_raw: dict) -> dict:
     """
     Convert raw trade opportunity data into a TradeOpportunity model,
     simulate a trade execution, and return a TradeExecution model (as dict).
     """
     try:
-        # Assume opportunity_raw is a dict that can be parsed by TradeOpportunity.
         opp = TradeOpportunity(**opportunity_raw)
     except Exception as e:
         logger.error(f"Error parsing trade opportunity: {e}")
         return {}
 
     # Simulate trade execution (for example, call an exchange API here).
-    # In this example, we simply mimic execution by copying prices and adding an execution timestamp.
     execution_ts = time.time()
 
     trade_exec = TradeExecution(
@@ -104,7 +96,7 @@ def execute_trade(opportunity_raw) -> dict:
         spread=opp.spread,
         volume=opp.volume,
         execution_timestamp=execution_ts,
-        execution_id=f"{opp.asset}-{int(execution_ts)}",  # for example, a simple id
+        opportunity_id=opp.id,
     )
 
     trade_msg = (
@@ -118,12 +110,12 @@ def execute_trade(opportunity_raw) -> dict:
 
     try:
         # Publish or store the trade execution in Redis (as an example).
-        redis_client.publish_trade_execution(trade_exec.dict())
+        redis_client.publish_trade_execution(trade_exec)
         logger.debug("Trade execution stored successfully in Redis.")
     except Exception as e:
         logger.error(f"Error storing trade execution: {e}")
 
-    return trade_exec.dict()  # Return as a dict for downstream serialization.
+    return trade_exec.model_dump()  # Return as a dict for downstream serialization.
 
 
 def build_flow():
@@ -135,7 +127,6 @@ def build_flow():
     logger.info("Building execution flow...")
     flow = Dataflow("execution")
 
-    # Use the custom RedisOpportunitySource.
     source = RedisOpportunitySource()
     stream = op.input("redis_input", flow, source)
     logger.debug("Input stream created from RedisOpportunitySource.")

@@ -8,6 +8,8 @@ import websockets
 from src.arbirich.config import EXCHANGE_CONFIGS
 from src.arbirich.io.websockets.base import BaseOrderBookProcessor
 
+# from src.arbirich.models.dtos import CryptocomOrderBookSnapshot
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -96,6 +98,26 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
         snapshot = response.json()["result"]["data"][0]
         return snapshot
 
+    # def fetch_snapshot(self):
+    #     if self.last_snapshot:
+    #         logger.info(f"Using WebSocket snapshot with timestamp {self.last_snapshot.get('t')}")
+    #         try:
+    #             snapshot = CryptocomOrderBookSnapshot(**self.last_snapshot)
+    #         except Exception as e:
+    #             logger.error(f"Snapshot validation error: {e}")
+    #             raise e
+    #         return snapshot
+    #     logger.info("Fetching snapshot from REST API")
+    #     response = requests.get(self.snapshot_url)
+    #     response.raise_for_status()
+    #     snapshot_data = response.json()["result"]["data"][0]
+    #     try:
+    #         snapshot = CryptocomOrderBookSnapshot(**snapshot_data)
+    #     except Exception as e:
+    #         logger.error(f"Snapshot validation error from REST: {e}")
+    #         raise e
+    #     return snapshot
+
     # def get_snapshot_update_id(self, snapshot):
     #     return snapshot.get("u")
 
@@ -155,6 +177,30 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
                 f"Received update with t: {event.get('t')}, pu: {event.get('pu')}, u: {event.get('u')}"
             )
             yield json.dumps(event)
+
+    # async def live_updates(self, websocket):
+    #     async for message in websocket:
+    #         data = json.loads(message)
+    #         if "result" not in data or "data" not in data["result"]:
+    #             continue
+    #         event_data = data["result"]["data"][0]
+    #         logger.info(f"Event_data: {event_data}")
+    #         try:
+    #             event = CryptocomOrderBookSnapshot(
+    #                 bids=event_data["bids"],  # [[price, quantity, lvl], [...] ]
+    #                 asks=event_data["asks"],
+    #                 u=event_data["u"],
+    #                 t=event_data["t"],
+    #                 pu=0,
+    #             )
+    #         except Exception as e:
+    #             logger.error(f"Event validation error: {e}")
+    #             continue
+    #         logger.debug(
+    #             f"Received update with t: {event.t}, pu: {event.pu}, u: {event.u}"
+    #         )
+    #         # Yield either the model or its JSON/dict representation as needed:
+    #         yield event.model_dump_json()  # or yield event.dict()
 
     def apply_event(self, event):
         # Process both bids ("bids") and asks ("asks").

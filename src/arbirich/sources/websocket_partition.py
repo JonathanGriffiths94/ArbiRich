@@ -35,7 +35,7 @@ class ExchangePartition(StatefulSourcePartition):
     def next_batch(self):
         try:
             batch = next(self._batcher)
-            logger.debug(f"Fetched batch for {self.exchange}-{self.product_id}: {batch}")
+            logger.debug(f"Fetched batch for {self.product_id}-{self.exchange}: {batch}")
             # Wrap each update to ensure it's a 3-tuple.
             wrapped_batch = [(self.exchange, self.product_id, update) for update in batch]
             return wrapped_batch
@@ -56,7 +56,7 @@ class MultiExchangeSource(FixedPartitionedSource):
 
     def list_parts(self):
         parts = [
-            f"{exchange}_{product}"
+            f"{product}_{exchange}"
             for exchange, products in self.exchanges.items()
             for product in products
         ]
@@ -69,7 +69,7 @@ class MultiExchangeSource(FixedPartitionedSource):
 
     def build_part(self, step_id, for_key, _resume_state):
         try:
-            exchange, product_id = for_key.split("_", 1)
+            product_id, exchange = for_key.split("_", 1)
             logger.info(f"Building partition for key: {for_key}")
             return ExchangePartition(
                 exchange, product_id, self.processor_loader(exchange)

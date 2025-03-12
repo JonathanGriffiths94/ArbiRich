@@ -25,7 +25,7 @@ redis_client = MarketDataService(host=redis_host, port=6379, db=0)
 
 
 class ExchangePartition(StatefulSourcePartition):
-    def __init__(self, exchange: str, product_id: str):
+    def __init__(self, product_id: str, exchange: str):
         self.exchange = exchange
         self.product_id = product_id
         self.url = (
@@ -339,7 +339,7 @@ class MultiExchangeSource(FixedPartitionedSource):
         Logs a warning if no valid partitions are found.
         """
         parts = [
-            f"{exchange}_{product}"
+            f"{product}_{exchange}"
             for exchange, products in self.exchanges.items()
             for product in products
         ]
@@ -360,7 +360,7 @@ class MultiExchangeSource(FixedPartitionedSource):
         try:
             exchange, product_id = for_key.split("_", 1)
             logger.info(f"Building partition for key: {for_key}")
-            return ExchangePartition(exchange, product_id)
+            return ExchangePartition(product_id, exchange)
         except Exception as e:
             logger.error(f"Invalid partition key: {for_key}, Error: {e}")
             return None  # Prevent panic by returning None if an error occurs

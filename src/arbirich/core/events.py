@@ -4,10 +4,6 @@ from src.arbirich.core.flow_manager import FlowManager
 
 logger = logging.getLogger(__name__)
 
-# Global variables to hold background tasks, so we can cancel them on shutdown.
-ingestion_task = None
-execution_task = None
-
 
 async def startup_event():
     global flow_manager

@@ -1,11 +1,10 @@
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 from pydantic import ValidationError
 
 from src.arbirich.models.dtos import (
     AssetPriceState,
-    ExchangeOrderBook,
     OrderBookUpdate,
     TradeOpportunity,
 )
@@ -18,8 +17,8 @@ def key_by_asset(record: dict) -> Optional[Tuple[str, OrderBookUpdate]]:
     try:
         asset = record["symbol"]
         update_order = OrderBookUpdate(**record)
-        # logger.info(f"Asset: {asset}")
-        # logger.info(f"Update order: {update_order}")
+        logger.debug(f"Asset: {asset}")
+        logger.debug(f"Update order: {update_order}")
         return asset, update_order
     except KeyError as e:
         logger.error(f"Missing key in key_by_asset: {e}, record: {record}")
@@ -32,37 +31,38 @@ def key_by_asset(record: dict) -> Optional[Tuple[str, OrderBookUpdate]]:
 def update_asset_state(
     state: Optional[AssetPriceState], new_data: OrderBookUpdate
 ) -> Tuple[AssetPriceState, Optional[AssetPriceState]]:
-    logger.info(f"New data: {new_data}")
+    logger.debug(f"New data: {new_data}")
     if state is None:
         state = AssetPriceState()
-
+    logger.debug(f"state: {state}")
     try:
         asset = new_data.symbol
         exchange = new_data.exchange
     except Exception as e:
         logger.error(f"Error unpacking new_data: {e}")
         return state, None
-
+    logger.debug(f"state: {state}")
+    logger.debug(f"asset: {asset}")
     # Initialize the nested state for this asset if it doesn't exist.
-    if asset not in state.exchanges:
-        state.exchanges[asset] = {}
-
+    if asset not in state.symbols:
+        state.symbols[asset] = {}
     # Initialize the sub-state for this exchange if it doesn't exist.
-    if exchange not in state.exchanges[asset]:
-        state.exchanges[asset][exchange] = ExchangeOrderBook(
-            bids=[], asks=[], timestamp=0.0
+    if exchange not in state.symbols[asset]:
+        state.symbols[asset][exchange] = OrderBookUpdate(
+            exchange=exchange, symbol=asset, bids=[], asks=[], timestamp=0.0
         )
-
+    logger.debug(f"state: {state}")
     try:
         # Update the exchange-specific order book for the asset.
-        state.exchanges[asset][exchange].bids = new_data.bids
-        state.exchanges[asset][exchange].asks = new_data.asks
-        state.exchanges[asset][exchange].timestamp = new_data.timestamp
+        state.symbols[asset][exchange].bids = new_data.id
+        state.symbols[asset][exchange].bids = new_data.bids
+        state.symbols[asset][exchange].asks = new_data.asks
+        state.symbols[asset][exchange].timestamp = new_data.timestamp
     except KeyError as e:
         logger.error(f"Missing data key in update_asset_state: {e}, data: {new_data}")
         return state, None
 
-    logger.info(f"State for asset {asset} after update: {state.exchanges[asset]}")
+    logger.debug(f"State for asset {asset} after update: {state.symbols[asset]}")
     return state, state
 
 
@@ -81,8 +81,8 @@ def detect_arbitrage(
     """
     logger.info(f"Detecting arbitrage for asset: {asset} with threshold: {threshold}")
 
-    # Retrieve the order book state for the asset.
-    asset_state = state.exchanges.get(asset)
+    # Retrieve the order book state for the asset from symbols.
+    asset_state = state.symbols.get(asset)
     if asset_state is None:
         logger.warning(f"No state available for asset: {asset}")
         return None

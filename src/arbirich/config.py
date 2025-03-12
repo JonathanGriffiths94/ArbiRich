@@ -1,9 +1,15 @@
 import os
 
+from dotenv import load_dotenv
+
 from src.arbirich.exchange_configs import EXCHANGE_CONFIGS
 
-EXCHANGES = ["bybit", "cryptocom"]
+load_dotenv()
+
 ASSETS = [("BTC", "USDT")]
+
+EXCHANGES = ["cryptocom", "bybit"]
+
 EXCHANGE_CONFIGS = EXCHANGE_CONFIGS
 
 REDIS_CONFIG = {
@@ -12,16 +18,17 @@ REDIS_CONFIG = {
     "db": 0,
 }
 
-POSTGRES_CONFIG = {
-    "host": os.getenv("POSTGRES_HOST", "localhost"),
-    "port": int(os.getenv("POSTGRES_PORT", 5432)),
-    "user": os.getenv("POSTGRES_USER", "your_user"),
-    "password": os.getenv("POSTGRES_PASSWORD", "your_password"),
-    "database": os.getenv("POSTGRES_DB", "your_database"),
-}
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_USER = os.getenv("DB_USER", "arbiuser")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "arbipassword")
+DB_NAME = os.getenv("DB_NAME", "arbidb")
+
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+
 
 STRATEGIES = {
     "arbitrage": {
-        "threshold": 0.00001,
+        "threshold": 0.0001,
     },
 }

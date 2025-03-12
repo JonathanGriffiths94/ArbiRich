@@ -1,5 +1,3 @@
-import hashlib
-import json
 import logging
 
 from arbirich.models.dtos import OrderBookUpdate
@@ -18,27 +16,6 @@ redis_client = MarketDataService(
 LAST_ORDER_BOOK = {}
 
 
-def normalise_order_book(order_book: OrderBookUpdate) -> dict:
-    return {
-        "exchange": order_book.exchange,
-        "symbol": order_book.symbol,
-        "timestamp": order_book.timestamp,
-        "bids": [order.model_dump() for order in order_book.bids],
-        "asks": [order.model_dump() for order in order_book.asks],
-    }
-
-
-def get_order_book_hash(order_book: OrderBookUpdate) -> str:
-    data = json.dumps(
-        {
-            "bids": order_book["bids"],
-            "asks": order_book["asks"],
-        },
-        sort_keys=True,
-    )
-    return hashlib.md5(data.encode("utf-8")).hexdigest()
-
-
 def store_order_book(order_book: OrderBookUpdate):
     """
     Store and publish the processed order book data.
@@ -47,37 +24,23 @@ def store_order_book(order_book: OrderBookUpdate):
     if not order_book:
         return None
 
-    normalised = normalise_order_book(order_book)
-
     key = (order_book.exchange, order_book.symbol)
-    new_hash = get_order_book_hash(normalised)
+
     last_hash = LAST_ORDER_BOOK.get(key)
 
-    if new_hash == last_hash:
+    if order_book.hash == last_hash:
         logger.debug(f"Duplicate update for {key}, skipping publishing.")
-        return normalised
+        return order_book
 
-    LAST_ORDER_BOOK[key] = new_hash
+    LAST_ORDER_BOOK[key] = order_book.hash
 
-    redis_client.publish_order_book(
-        normalised["exchange"],
-        normalised["symbol"],
-        normalised["bids"],
-        normalised["asks"],
-        normalised["timestamp"],
-    )
+    redis_client.publish_order_book(order_book)
     logger.info(
-        f"Successfully published to 'order_book' channel: {normalised['exchange']}:{normalised['symbol']} - {normalised['timestamp']}"
+        f"Successfully published to 'order_book' channel: {order_book.symbol}:{order_book.exchange} - {order_book.timestamp}"
     )
 
-    redis_client.store_order_book(
-        normalised["exchange"],
-        normalised["symbol"],
-        normalised["bids"],
-        normalised["asks"],
-        normalised["timestamp"],
-    )
+    redis_client.store_order_book(order_book)
     logger.info(
-        f"Successfully pushed to cache: {normalised['exchange']}:{normalised['symbol']} - {normalised['timestamp']}"
+        f"Successfully pushed to cache: {order_book.symbol}:{order_book.exchange} - {order_book.timestamp}"
     )
-    return normalised
+    return order_book
