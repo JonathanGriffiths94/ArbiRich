@@ -23,6 +23,8 @@ jobs:
         run: poetry run pytest tests/units
       - name: ✅ Run integration tests
         run: poetry run pytest tests/integrations
+      - name: ✅ Run flow tests
+        run: poetry run pytest tests/flows
 
   format_check:
     runs-on: ubuntu-latest
