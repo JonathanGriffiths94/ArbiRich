@@ -1,4 +1,4 @@
-name: 🚂 Main CI/CD Workflow
+name: 🚂 Main
 
 on:
   push:
