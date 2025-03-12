@@ -6,7 +6,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    name: 🧪 Run Unit Tests
+    name: 🧪 Run Python Tests
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v2
