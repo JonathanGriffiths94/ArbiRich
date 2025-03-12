@@ -11,13 +11,13 @@ from arbirich.sinks.order_book import store_order_book
 from arbirich.sources.websocket_partition import MultiExchangeSource
 from src.arbirich.config import REDIS_CONFIG
 from src.arbirich.io.websockets.load_websocket_processor import load_processor
-from src.arbirich.redis_manager import MarketDataService
+from src.arbirich.redis_manager import ArbiDataService
 from src.arbirich.utils.helpers import build_exchanges_dict
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = MarketDataService(
+redis_client = ArbiDataService(
     host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
 )
 

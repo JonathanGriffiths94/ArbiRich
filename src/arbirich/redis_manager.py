@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 import redis
 from redis.exceptions import ConnectionError, RedisError
@@ -12,7 +12,7 @@ from src.arbirich.models.dtos import OrderBookUpdate, TradeExecution, TradeOppor
 logger = logging.getLogger(__name__)
 
 
-class MarketDataService:
+class ArbiDataService:
     """Handles real-time market data storage, retrieval, and event publishing using Redis"""
 
     def __init__(self, host=None, port=6379, db=0, retry_attempts=3, retry_delay=1):

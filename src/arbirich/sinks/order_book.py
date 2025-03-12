@@ -2,11 +2,11 @@ import logging
 
 from arbirich.models.dtos import OrderBookUpdate
 from src.arbirich.config import REDIS_CONFIG
-from src.arbirich.redis_manager import MarketDataService
+from src.arbirich.redis_manager import ArbiDataService
 
 logger = logging.getLogger(__name__)
 
-redis_client = MarketDataService(
+redis_client = ArbiDataService(
     host=REDIS_CONFIG["host"],
     port=REDIS_CONFIG["port"],
     db=REDIS_CONFIG["db"],

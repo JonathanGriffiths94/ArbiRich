@@ -14,14 +14,14 @@ from bytewax.dataflow import Dataflow
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition, batch_async
 from bytewax.run import cli_main
 
-from arbirich.redis_manager import MarketDataService
+from arbirich.redis_manager import ArbiDataService
 from src.arbirich.config import EXCHANGE_CONFIG
 
 logger = logging.getLogger(__name__)
 logger.setLevel("INFO")
 
 redis_host = os.getenv("REDIS_HOST", "localhost")
-redis_client = MarketDataService(host=redis_host, port=6379, db=0)
+redis_client = ArbiDataService(host=redis_host, port=6379, db=0)
 
 
 class ExchangePartition(StatefulSourcePartition):

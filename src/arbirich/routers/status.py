@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 
-from arbirich.redis_manager import MarketDataService
+from arbirich.redis_manager import ArbiDataService
 
 router = APIRouter()
-price_service = MarketDataService()
+price_service = ArbiDataService()
 
 
 @router.get("/")
