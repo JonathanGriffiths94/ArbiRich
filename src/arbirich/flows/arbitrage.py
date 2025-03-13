@@ -6,18 +6,18 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from arbirich.processing.arbitrage_process import (
+from src.arbirich.config import REDIS_CONFIG, STRATEGIES
+from src.arbirich.processing.arbitrage_process import (
     detect_arbitrage,
     key_by_asset,
     update_asset_state,
 )
-from arbirich.sinks.opportunity_sink import (
+from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.sinks.opportunity_sink import (
     debounce_opportunity,
     publish_trade_opportunity,
 )
-from arbirich.sources.order_book_source import RedisPriceSource
-from src.arbirich.config import REDIS_CONFIG, STRATEGIES
-from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.sources.order_book_source import RedisPriceSource
 from src.arbirich.utils.helpers import build_exchanges_dict
 
 logger = logging.getLogger(__name__)

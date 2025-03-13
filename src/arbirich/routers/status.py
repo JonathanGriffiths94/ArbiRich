@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from arbirich.redis_manager import ArbiDataService
+from src.arbirich.redis_manager import ArbiDataService
 
 router = APIRouter()
 price_service = ArbiDataService()

@@ -1,44 +1,54 @@
 import json
 import logging
-from datetime import datetime
+
+from pydantic import ValidationError
+
+from src.arbirich.models.dtos import TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 
 
 def db_sink(state, item):
-    # Assume item is a JSON string representing either a trade opportunity or execution.
     try:
         data = json.loads(item)
-    except Exception as e:
-        print(f"Error parsing JSON: {e}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing JSON: {e}")
         return state
 
-    # Determine the type of message based on its contents
     db_manager = state["db_manager"]
+
     if "buy_price" in data:
-        # Process trade opportunity
-        db_manager.create_trade_opportunity(
-            trading_pair_id=data["trading_pair_id"],
-            buy_exchange_id=data["buy_exchange_id"],
-            sell_exchange_id=data["sell_exchange_id"],
-            buy_price=data["buy_price"],
-            sell_price=data["sell_price"],
-            spread=data["spread"],
-            volume=data["volume"],
-            opportunity_timestamp=datetime.fromisoformat(data["opportunity_timestamp"]),
-        )
+        try:
+            opportunity = TradeOpportunity(**data)
+            db_manager.create_trade_opportunity(
+                trading_pair_id=opportunity.asset,
+                buy_exchange_id=opportunity.buy_exchange,
+                sell_exchange_id=opportunity.sell_exchange,
+                buy_price=opportunity.buy_price,
+                sell_price=opportunity.sell_price,
+                spread=opportunity.spread,
+                volume=opportunity.volume,
+                opportunity_timestamp=opportunity.opportunity_timestamp,
+            )
+        except ValidationError as e:
+            logger.error(f"Validation error for trade opportunity: {e}")
     elif "executed_buy_price" in data:
-        # Process trade execution
-        db_manager.create_trade_execution(
-            trading_pair_id=data["trading_pair_id"],
-            buy_exchange_id=data["buy_exchange_id"],
-            sell_exchange_id=data["sell_exchange_id"],
-            executed_buy_price=data["executed_buy_price"],
-            executed_sell_price=data["executed_sell_price"],
-            spread=data["spread"],
-            volume=data["volume"],
-            execution_timestamp=datetime.fromisoformat(data["execution_timestamp"]),
-            execution_id=data.get("execution_id"),
-            opportunity_id=data.get("opportunity_id"),
-        )
+        try:
+            execution = TradeExecution(**data)
+            db_manager.create_trade_execution(
+                trading_pair_id=execution.asset,
+                buy_exchange_id=execution.buy_exchange,
+                sell_exchange_id=execution.sell_exchange,
+                executed_buy_price=execution.executed_buy_price,
+                executed_sell_price=execution.executed_sell_price,
+                spread=execution.spread,
+                volume=execution.volume,
+                execution_timestamp=execution.execution_timestamp,
+                execution_id=execution.execution_id,
+                opportunity_id=execution.opportunity_id,
+            )
+        except ValidationError as e:
+            logger.error(f"Validation error for trade execution: {e}")
+    else:
+        logger.error(f"Invalid data: {data}")
     return state

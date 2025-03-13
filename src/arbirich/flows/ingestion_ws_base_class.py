@@ -6,12 +6,12 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from arbirich.processing.ingestion_process import process_order_book
-from arbirich.sinks.order_book_sink import store_order_book
-from arbirich.sources.websocket_source import MultiExchangeSource
 from src.arbirich.config import REDIS_CONFIG
 from src.arbirich.io.websockets.load_websocket_processor import load_processor
+from src.arbirich.processing.ingestion_process import process_order_book
 from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.sinks.order_book_sink import store_order_book
+from src.arbirich.sources.websocket_source import MultiExchangeSource
 from src.arbirich.utils.helpers import build_exchanges_dict
 
 logger = logging.getLogger(__name__)

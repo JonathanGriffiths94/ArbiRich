@@ -14,8 +14,8 @@ from bytewax.dataflow import Dataflow
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition, batch_async
 from bytewax.run import cli_main
 
-from arbirich.redis_manager import ArbiDataService
 from src.arbirich.config import EXCHANGE_CONFIG
+from src.arbirich.redis_manager import ArbiDataService
 
 logger = logging.getLogger(__name__)
 logger.setLevel("INFO")

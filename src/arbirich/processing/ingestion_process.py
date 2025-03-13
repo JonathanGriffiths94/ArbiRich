@@ -1,6 +1,6 @@
 import logging
 
-from arbirich.models.dtos import Order, OrderBookUpdate
+from src.arbirich.models.dtos import Order, OrderBookUpdate
 from src.arbirich.processing.helpers import normalise_timestamp
 
 logger = logging.getLogger(__name__)

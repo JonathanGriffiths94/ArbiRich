@@ -1,7 +1,7 @@
 import logging
 
-from arbirich.models.dtos import OrderBookUpdate
 from src.arbirich.config import REDIS_CONFIG
+from src.arbirich.models.dtos import OrderBookUpdate
 from src.arbirich.redis_manager import ArbiDataService
 
 logger = logging.getLogger(__name__)

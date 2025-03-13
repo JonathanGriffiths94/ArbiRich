@@ -4,11 +4,12 @@ import logging
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from arbirich.database_manager import DatabaseManager
-from arbirich.sinks.database_sink import db_sink
+from src.arbirich.database_manager import DatabaseManager
+from src.arbirich.sinks.database_sink import db_sink
+from src.arbirich.sources.database_source import RedisDatabaseSource
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 db_manager = DatabaseManager()
 
@@ -16,17 +17,10 @@ db_manager = DatabaseManager()
 def build_database_flow():
     flow = Dataflow()
 
-    # Assume you have a source that emits messages from Redis or any other source.
-    # For demonstration, we use a simple list of JSON strings.
-    messages = [
-        '{"trading_pair_id":1, "buy_exchange_id":1, "sell_exchange_id":2, "buy_price":50000, "sell_price":50500, "spread":0.001, "volume":0.1, "opportunity_timestamp": "2023-03-01T12:00:00"}',
-        '{"trading_pair_id":1, "buy_exchange_id":1, "sell_exchange_id":2, "executed_buy_price":50000, "executed_sell_price":50500, "spread":0.001, "volume":0.1, "execution_timestamp": "2023-03-01T12:00:05", "execution_id": "exec123"}',
-    ]
+    channels = ["trade_opportunities", "trade_executions"]
+    source = RedisDatabaseSource(channels)
+    flow.input("redis_input", source)
 
-    # For a real-world scenario, replace this with your actual source
-    flow.input("inp", messages)
-
-    # Here we directly send the messages to our sink
     flow.sink("db_sink", db_sink)
 
     return flow
@@ -40,7 +34,6 @@ async def run_database_flow():
         logger.info("Running cli_main in a separate thread.")
         execution_task = asyncio.create_task(asyncio.to_thread(cli_main, flow, workers_per_process=1))
 
-        # Allow interruption to propagate
         try:
             await execution_task
         except asyncio.CancelledError:

@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # STARTUP: Initialize all services (e.g., Bytewax flows, scanners, executors)
+    logger.info("Starting application services...")
     await startup_event()
     try:
         yield
     finally:
-        # SHUTDOWN: Clean up background tasks and external connections
+        logger.info("Shutting down application services...")
         await shutdown_event()
 
 

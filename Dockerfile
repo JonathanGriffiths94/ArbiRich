@@ -31,4 +31,4 @@ RUN poetry install --without dev --no-interaction --no-root --all-extras
 
 COPY . .
 
-CMD ["sh", "-c", "poetry run uvicorn main:app --host 0.0.0.0 --port 8080"]
+CMD ["sh", "-c", "RUST_BACKTRACE=1 poetry run python main.py"]
