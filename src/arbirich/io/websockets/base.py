@@ -15,7 +15,11 @@ class OrderBookGapException(Exception):
 
 class BaseOrderBookProcessor(ABC):
     def __init__(
-        self, exchange: str, product: str, subscription_type: str, use_rest_snapshot: bool
+        self,
+        exchange: str,
+        product: str,
+        subscription_type: str,
+        use_rest_snapshot: bool,
     ):
         self.exchange = exchange
         self.product = product
@@ -42,9 +46,7 @@ class BaseOrderBookProcessor(ABC):
 
                     # Buffer initial events and record the first event.
                     buffered_events, first_event = await self.buffer_events(websocket)
-                    snapshot = (
-                        self.fetch_snapshot() if self.use_rest_snapshot else first_event
-                    )
+                    snapshot = self.fetch_snapshot() if self.use_rest_snapshot else first_event
                     logger.info(f"Snapshot: {snapshot}")
 
                     # Get snapshot id
@@ -60,27 +62,20 @@ class BaseOrderBookProcessor(ABC):
                         yield self.order_book
 
                     # For delta subscriptions, verify that the snapshot is recent.
-                    if (
-                        self.subscription_type == "delta"
-                        and snapshot_update_id < first_event.get("U", snapshot_update_id)
+                    if self.subscription_type == "delta" and snapshot_update_id < first_event.get(
+                        "U", snapshot_update_id
                     ):
-                        logger.warning(
-                            "Snapshot is older than first buffered event. Restarting..."
-                        )
+                        logger.warning("Snapshot is older than first buffered event. Restarting...")
                         continue
 
                     # Get valid events from buffered events where the snapshot id is greater than the current id
                     valid_events = [
-                        e
-                        for e in buffered_events
-                        if self.get_snapshot_update_id(snapshot) > snapshot_update_id
+                        e for e in buffered_events if self.get_snapshot_update_id(snapshot) > snapshot_update_id
                     ]
 
                     # In delta mode, filter events whose update id is greater than the snapshot.
                     if self.subscription_type == "delta":
-                        deadline = (
-                            asyncio.get_event_loop().time() + 5
-                        )  # wait an extra 2 seconds
+                        deadline = asyncio.get_event_loop().time() + 5  # wait an extra 2 seconds
                         # Look for the next update id
                         while (
                             not any(
@@ -92,17 +87,14 @@ class BaseOrderBookProcessor(ABC):
                             and asyncio.get_event_loop().time() < deadline
                         ):
                             try:
-                                message = await asyncio.wait_for(
-                                    websocket.recv(), timeout=0.5
-                                )
+                                message = await asyncio.wait_for(websocket.recv(), timeout=0.5)
                                 event = json.loads(message)
                                 if "U" in event and "u" in event:
                                     buffered_events.append(event)
                                     valid_events = [
                                         e
                                         for e in buffered_events
-                                        if self.get_snapshot_update_id(snapshot)
-                                        > snapshot_update_id
+                                        if self.get_snapshot_update_id(snapshot) > snapshot_update_id
                                     ]
                             except asyncio.TimeoutError:
                                 pass
@@ -127,26 +119,16 @@ class BaseOrderBookProcessor(ABC):
                     # Initialize the local order book.
                     self.order_book = self.init_order_book(snapshot)
                     self.local_update_id = snapshot_update_id
-                    logger.info(
-                        f"Initialized local order book with update ID: {self.local_update_id}"
-                    )
+                    logger.info(f"Initialized local order book with update ID: {self.local_update_id}")
 
                     # Process live updates continuously.
                     async for message in self.live_updates(websocket):
                         event = json.loads(message)
 
                         # For delta subscriptions, if a previous update ID is provided, check it.
-                        if (
-                            self.subscription_type == "delta"
-                            and self.get_first_update_id(event) is not None
-                        ):
-                            if (
-                                self.get_first_update_id(event)
-                                != self.local_update_id + 1
-                            ):
-                                logger.error(
-                                    "Delta update sequence mismatch; re-subscribing..."
-                                )
+                        if self.subscription_type == "delta" and self.get_first_update_id(event) is not None:
+                            if self.get_first_update_id(event) != self.local_update_id + 1:
+                                logger.error("Delta update sequence mismatch; re-subscribing...")
                                 await self.resubscribe(websocket)
                                 break
 

@@ -19,12 +19,8 @@ def process_order_book(order_book_update: tuple) -> OrderBookUpdate:
 
     normalised_timestamp = normalise_timestamp(order_book["timestamp"])
 
-    bids = [
-        Order(price=float(k), quantity=float(v)) for k, v in order_book["bids"].items()
-    ]
-    asks = [
-        Order(price=float(k), quantity=float(v)) for k, v in order_book["asks"].items()
-    ]
+    bids = [Order(price=float(k), quantity=float(v)) for k, v in order_book["bids"].items()]
+    asks = [Order(price=float(k), quantity=float(v)) for k, v in order_book["asks"].items()]
 
     order_book_update = OrderBookUpdate(
         exchange=exchange,

@@ -6,26 +6,24 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from arbirich.sinks.trade_opportunity import (
-    debounce_opportunity,
-    publish_trade_opportunity,
-)
-from src.arbirich.config import REDIS_CONFIG, STRATEGIES
-from src.arbirich.processing.process_arbitrage import (
+from arbirich.processing.arbitrage_process import (
     detect_arbitrage,
     key_by_asset,
     update_asset_state,
 )
+from arbirich.sinks.opportunity_sink import (
+    debounce_opportunity,
+    publish_trade_opportunity,
+)
+from arbirich.sources.order_book_source import RedisPriceSource
+from src.arbirich.config import REDIS_CONFIG, STRATEGIES
 from src.arbirich.redis_manager import ArbiDataService
-from src.arbirich.sources.redis_price_partition import RedisPriceSource
 from src.arbirich.utils.helpers import build_exchanges_dict
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(
-    host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
-)
+redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
 
 
 def build_arbitrage_flow():
@@ -67,9 +65,7 @@ def build_arbitrage_flow():
     )
 
     # Filter out None values from debouncer
-    final_opp = op.filter(
-        "final_filter", debounced_opportunities, lambda x: x is not None
-    )
+    final_opp = op.filter("final_filter", debounced_opportunities, lambda x: x is not None)
 
     redis_sync = op.map("push_trade_opportunity", final_opp, publish_trade_opportunity)
 
@@ -84,9 +80,7 @@ async def run_arbitrage_flow():
         flow = build_arbitrage_flow()
 
         logger.info("Running cli_main in a separate thread.")
-        execution_task = asyncio.create_task(
-            asyncio.to_thread(cli_main, flow, workers_per_process=1)
-        )
+        execution_task = asyncio.create_task(asyncio.to_thread(cli_main, flow, workers_per_process=1))
 
         # Allow interruption to propagate
         try:

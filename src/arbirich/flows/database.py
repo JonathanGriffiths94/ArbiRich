@@ -1,53 +1,19 @@
-import json
-from datetime import datetime
+import asyncio
+import logging
 
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from src.arbirich.db_manager import DatabaseManager
+from arbirich.database_manager import DatabaseManager
+from arbirich.sinks.database_sink import db_sink
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+db_manager = DatabaseManager()
 
 
-# Define a sink function that writes to the database.
-def db_sink(state, item):
-    # Assume item is a JSON string representing either a trade opportunity or execution.
-    try:
-        data = json.loads(item)
-    except Exception as e:
-        print(f"Error parsing JSON: {e}")
-        return state
-
-    # Determine the type of message based on its contents
-    db_manager = state["db_manager"]
-    if "buy_price" in data:
-        # Process trade opportunity
-        db_manager.create_trade_opportunity(
-            trading_pair_id=data["trading_pair_id"],
-            buy_exchange_id=data["buy_exchange_id"],
-            sell_exchange_id=data["sell_exchange_id"],
-            buy_price=data["buy_price"],
-            sell_price=data["sell_price"],
-            spread=data["spread"],
-            volume=data["volume"],
-            opportunity_timestamp=datetime.fromisoformat(data["opportunity_timestamp"]),
-        )
-    elif "executed_buy_price" in data:
-        # Process trade execution
-        db_manager.create_trade_execution(
-            trading_pair_id=data["trading_pair_id"],
-            buy_exchange_id=data["buy_exchange_id"],
-            sell_exchange_id=data["sell_exchange_id"],
-            executed_buy_price=data["executed_buy_price"],
-            executed_sell_price=data["executed_sell_price"],
-            spread=data["spread"],
-            volume=data["volume"],
-            execution_timestamp=datetime.fromisoformat(data["execution_timestamp"]),
-            execution_id=data.get("execution_id"),
-            opportunity_id=data.get("opportunity_id"),
-        )
-    return state
-
-
-def build_flow():
+def build_database_flow():
     flow = Dataflow()
 
     # Assume you have a source that emits messages from Redis or any other source.
@@ -66,10 +32,30 @@ def build_flow():
     return flow
 
 
-if __name__ == "__main__":
-    # Initialize the database manager and pass it as part of the state.
-    initial_state = {"db_manager": DatabaseManager()}
+async def run_database_flow():
     try:
-        cli_main(build_flow, initial_state=initial_state)
+        logger.info("Starting database pipeline...")
+        flow = build_database_flow()
+
+        logger.info("Running cli_main in a separate thread.")
+        execution_task = asyncio.create_task(asyncio.to_thread(cli_main, flow, workers_per_process=1))
+
+        # Allow interruption to propagate
+        try:
+            await execution_task
+        except asyncio.CancelledError:
+            logger.info("Database task cancelled")
+            raise
+        logger.info("cli_main has finished running.")
+    except asyncio.CancelledError:
+        logger.info("Database task cancelled")
+        raise
     finally:
-        initial_state["db_manager"].close()
+        logger.info("Database flow shutdown")
+        db_manager.close()
+
+
+flow = run_database_flow()
+
+if __name__ == "__main__":
+    asyncio.run(cli_main(flow, workers_per_process=1))

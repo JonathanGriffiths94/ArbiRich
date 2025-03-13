@@ -66,9 +66,7 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
             if data["result"].get("channel") == "book":
                 first_event = data["result"]["data"][0]
                 logger.debug(f"First event: {first_event}")
-                logger.info(
-                    f"Received snapshot message with update ID: {first_event.get('u')}"
-                )
+                logger.info(f"Received snapshot message with update ID: {first_event.get('u')}")
                 buffered_events.append(first_event)
                 # Optionally save this snapshot.
                 self.last_snapshot = first_event
@@ -78,19 +76,14 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
                     first_event = data["result"]["data"][0]
                     logger.info(f"First delta buffered event U: {first_event.get('u')}")
                 buffered_events.append(data["data"])
-                if (
-                    asyncio.get_event_loop().time() - start > 1
-                    or len(buffered_events) >= 5
-                ):
+                if asyncio.get_event_loop().time() - start > 1 or len(buffered_events) >= 5:
                     break
         return buffered_events, first_event
 
     def fetch_snapshot(self):
         # In snapshot mode, we may choose to use the WebSocket snapshot already received.
         if self.last_snapshot:
-            logger.info(
-                f"Using WebSocket snapshot with timestamp {self.last_snapshot.get('t')}"
-            )
+            logger.info(f"Using WebSocket snapshot with timestamp {self.last_snapshot.get('t')}")
             return self.last_snapshot
         logger.info("Fetching snapshot from REST API")
         response = requests.get(self.snapshot_url)
@@ -173,9 +166,7 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
             ## Check this!!!
             event["pu"] = self.get_first_update_id(event)
 
-            logger.debug(
-                f"Received update with t: {event.get('t')}, pu: {event.get('pu')}, u: {event.get('u')}"
-            )
+            logger.debug(f"Received update with t: {event.get('t')}, pu: {event.get('pu')}, u: {event.get('u')}")
             yield json.dumps(event)
 
     # async def live_updates(self, websocket):
@@ -219,9 +210,7 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
                                 logger.error(f"Error converting entry {entry}: {e}")
                                 continue
                         else:
-                            logger.warning(
-                                f"Unexpected entry format (list too short): {entry}"
-                            )
+                            logger.warning(f"Unexpected entry format (list too short): {entry}")
                             continue
                     elif isinstance(entry, dict):
                         if "p" in entry and "q" in entry:
@@ -255,7 +244,8 @@ async def run_crypto_orderbook():
         logging.root.removeHandler(handler)
 
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     logger.info("Starting Crypto.com order book processor...")

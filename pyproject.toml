@@ -13,9 +13,6 @@ uvicorn = "^0.34.0"
 python-dotenv = "^1.0.1"
 websockets = "^14.2"
 requests = "^2.32.3"
-pybit = "5.5.0"
-python-binance = "^1.0.27"
-kucoin-python = "^1.0.26"
 setuptools = "^75.8.0"
 six = "^1.17.0"
 bytewax = "^0.21.1"
@@ -43,4 +40,7 @@ build-backend = "poetry.core.masonry.api"
 arbirich = "main:app"
 
 [tool.ruff]
-line-length = 90
+line-length = 120
+
+[tool.black]
+line-length = 120

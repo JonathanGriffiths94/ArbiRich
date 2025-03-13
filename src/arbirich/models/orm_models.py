@@ -33,9 +33,7 @@ class TradingPair(Base):
     base_currency = Column(String, nullable=False)
     quote_currency = Column(String, nullable=False)
 
-    __table_args__ = (
-        UniqueConstraint("base_currency", "quote_currency", name="uix_base_quote"),
-    )
+    __table_args__ = (UniqueConstraint("base_currency", "quote_currency", name="uix_base_quote"),)
 
 
 class TradeOpportunity(Base):

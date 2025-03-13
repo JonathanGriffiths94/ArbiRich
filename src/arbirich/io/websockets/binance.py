@@ -6,7 +6,10 @@ import requests
 import websockets
 
 from src.arbirich.config import EXCHANGE_CONFIGS
-from src.arbirich.io.websockets.base import BaseOrderBookProcessor, OrderBookGapException
+from src.arbirich.io.websockets.base import (
+    BaseOrderBookProcessor,
+    OrderBookGapException,
+)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -131,7 +134,8 @@ async def run_binance_orderbook():
         logging.root.removeHandler(handler)
 
     logging.basicConfig(
-        level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     logger.info("Starting Binance order book processor...")

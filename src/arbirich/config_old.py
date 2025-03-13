@@ -36,16 +36,16 @@ EXCHANGE_CONFIG = {
                 "book_update_frequency": 10,
             }
         ),
-        "extract": lambda data: {
-            "bids": data["result"]["data"][0]["bids"],
-            "asks": data["result"]["data"][0]["asks"],
-            "timestamp": data["result"]["data"][0]["t"],
-        }
-        if "result" in data and "data" in data["result"]
-        else None,
-        "message_type": lambda message: "snapshot"
-        if message.get("method") == "subscribe"
-        else "delta",
+        "extract": lambda data: (
+            {
+                "bids": data["result"]["data"][0]["bids"],
+                "asks": data["result"]["data"][0]["asks"],
+                "timestamp": data["result"]["data"][0]["t"],
+            }
+            if "result" in data and "data" in data["result"]
+            else None
+        ),
+        "message_type": lambda message: ("snapshot" if message.get("method") == "subscribe" else "delta"),
     },
     "binance": {
         "url": lambda product_id: f"wss://stream.binance.com:9443/ws/{product_id.lower()}@depth",
@@ -58,27 +58,29 @@ EXCHANGE_CONFIG = {
                 "id": 1,
             }
         ),
-        "extract": lambda data: {
-            "bids": data["b"],
-            "asks": data["a"],
-            "timestamp": data["E"],
-        }
-        if ("b" in data and "a" in data and "E" in data)
-        else None,
+        "extract": lambda data: (
+            {
+                "bids": data["b"],
+                "asks": data["a"],
+                "timestamp": data["E"],
+            }
+            if ("b" in data and "a" in data and "E" in data)
+            else None
+        ),
         "message_type": lambda message: "delta",
     },
     "bybit": {
         "url": "wss://stream.bybit.com/v5/public/spot",
-        "subscribe": lambda product_id: json.dumps(
-            {"op": "subscribe", "args": [f"orderbook.200.{product_id}"]}
+        "subscribe": lambda product_id: json.dumps({"op": "subscribe", "args": [f"orderbook.200.{product_id}"]}),
+        "extract": lambda data: (
+            {
+                "bids": data.get("b"),
+                "asks": data.get("a"),
+                "timestamp": data.get("ts"),
+            }
+            if "b" in data and "a" in data and "ts" in data
+            else None
         ),
-        "extract": lambda data: {
-            "bids": data.get("b"),
-            "asks": data.get("a"),
-            "timestamp": data.get("ts"),
-        }
-        if "b" in data and "a" in data and "ts" in data
-        else None,
         "message_type": None,
     },
     "kucoin": {
@@ -92,20 +94,15 @@ EXCHANGE_CONFIG = {
                 "response": True,
             }
         ),
-        "extract": lambda data: {
-            "bids": data["data"]["bids"],
-            "asks": data["data"]["asks"],
-            "timestamp": data["data"]["time"],
-        }
-        if (
-            "data" in data
-            and "bids" in data["data"]
-            and "asks" in data["data"]
-            and "time" in data["data"]
-        )
-        else None,
-        "message_type": lambda message: "snapshot"
-        if message.get("subject") == "orderBookSnapshot"
-        else "delta",
+        "extract": lambda data: (
+            {
+                "bids": data["data"]["bids"],
+                "asks": data["data"]["asks"],
+                "timestamp": data["data"]["time"],
+            }
+            if ("data" in data and "bids" in data["data"] and "asks" in data["data"] and "time" in data["data"])
+            else None
+        ),
+        "message_type": lambda message: ("snapshot" if message.get("subject") == "orderBookSnapshot" else "delta"),
     },
 }

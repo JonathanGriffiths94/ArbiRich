@@ -77,12 +77,8 @@ def upgrade() -> None:
         sa.Column("trading_pair_id", sa.Integer(), nullable=True),
         sa.Column("buy_exchange_id", sa.Integer(), nullable=True),
         sa.Column("sell_exchange_id", sa.Integer(), nullable=True),
-        sa.Column(
-            "executed_buy_price", sa.Numeric(precision=18, scale=8), nullable=False
-        ),
-        sa.Column(
-            "executed_sell_price", sa.Numeric(precision=18, scale=8), nullable=False
-        ),
+        sa.Column("executed_buy_price", sa.Numeric(precision=18, scale=8), nullable=False),
+        sa.Column("executed_sell_price", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("spread", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("volume", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("execution_timestamp", sa.TIMESTAMP(), nullable=False),

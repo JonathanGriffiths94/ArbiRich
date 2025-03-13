@@ -18,11 +18,11 @@ REDIS_CONFIG = {
     "db": 0,
 }
 
+DB_NAME = os.getenv("DB_NAME", "arbidb")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_USER = os.getenv("DB_USER", "arbiuser")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "arbipassword")
-DB_NAME = os.getenv("DB_NAME", "arbidb")
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 

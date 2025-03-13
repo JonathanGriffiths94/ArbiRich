@@ -48,18 +48,14 @@ class ArbiDataService:
                     )
                     time.sleep(self.retry_delay)
                 else:
-                    logger.error(
-                        f"Failed to connect to Redis after {self.retry_attempts} attempts: {e}"
-                    )
+                    logger.error(f"Failed to connect to Redis after {self.retry_attempts} attempts: {e}")
                     raise
 
     def _reconnect(self):
         """Try to reconnect to Redis."""
         for attempt in range(1, self.retry_attempts + 1):
             try:
-                logger.warning(
-                    f"Attempting Redis reconnect ({attempt}/{self.retry_attempts})..."
-                )
+                logger.warning(f"Attempting Redis reconnect ({attempt}/{self.retry_attempts})...")
                 self._connect()
                 return True
             except redis.ConnectionError:
@@ -106,17 +102,13 @@ class ArbiDataService:
             # Optionally, re-raise or handle the error as appropriate.
             raise
 
-    def publish_order_book(
-        self, order_book: OrderBookUpdate, channel: str = "order_book"
-    ):
+    def publish_order_book(self, order_book: OrderBookUpdate, channel: str = "order_book"):
         """
         Publish top order book data to a Redis Pub/Sub channel.
         """
         try:
             self.redis_client.publish(channel, order_book.model_dump_json())
-            logger.debug(
-                f"Published order book update: {order_book.symbol} {order_book.exchange}"
-            )
+            logger.debug(f"Published order book update: {order_book.symbol} {order_book.exchange}")
         except Exception as e:
             logger.error(f"Error publishing order book data: {e}")
 
@@ -173,9 +165,7 @@ class ArbiDataService:
                     time.sleep(5)  # Wait longer before retrying
 
     # === Trade Opportunity Methods ===
-    def publish_trade_opportunity(
-        self, opportunity: TradeOpportunity, retries_left=None
-    ) -> dict:
+    def publish_trade_opportunity(self, opportunity: TradeOpportunity, retries_left=None) -> dict:
         """
         Store a trade opportunity in Redis with an expiration of 300 seconds and publish it.
         Ensures it does not enter infinite recursion.
@@ -190,9 +180,7 @@ class ArbiDataService:
             try:
                 self.redis_client.setex(key, 300, opportunity.model_dump_json())
 
-                self.redis_client.publish(
-                    "trade_opportunities", opportunity.model_dump_json()
-                )
+                self.redis_client.publish("trade_opportunities", opportunity.model_dump_json())
 
                 logger.debug(f"Published trade opportunity: {opportunity}")
                 return opportunity
@@ -204,9 +192,7 @@ class ArbiDataService:
                     )
                     self._reconnect()
                 else:
-                    logger.critical(
-                        "Failed to store trade opportunity after multiple retries."
-                    )
+                    logger.critical("Failed to store trade opportunity after multiple retries.")
                     return None
             except Exception as e:
                 logger.error(f"Unexpected error in Redis: {e}", exc_info=True)
@@ -229,9 +215,7 @@ class ArbiDataService:
         """Get most recent trade opportunities"""
         try:
             # Get latest opportunity IDs from sorted set
-            opp_ids = self.redis_client.zrevrange(
-                "trade_opportunities_by_time", 0, count - 1
-            )
+            opp_ids = self.redis_client.zrevrange("trade_opportunities_by_time", 0, count - 1)
             opportunities = []
 
             # Fetch each opportunity
@@ -295,9 +279,7 @@ class ArbiDataService:
             except Exception as e:
                 logger.error(f"Error during subscription cleanup: {e}")
 
-    def publish_trade_execution(
-        self, execution_data: TradeExecution, expiry_seconds: int = 3600
-    ) -> str:
+    def publish_trade_execution(self, execution_data: TradeExecution, expiry_seconds: int = 3600) -> str:
         """
         Store trade execution in Redis with expiration and handle failures.
         Prevents infinite recursion by using a retry loop instead of calling itself.
@@ -310,23 +292,17 @@ class ArbiDataService:
 
         # Check if trade execution already exists (to prevent duplicates)
         if self.redis_client.exists(key):
-            logger.warning(
-                f"Trade execution already exists. Skipping duplicate: {execution_id}"
-            )
+            logger.warning(f"Trade execution already exists. Skipping duplicate: {execution_id}")
             return execution_id  # Skip storing duplicate execution
 
         # Store execution in Redis with retry logic
         for attempt in range(1, self.retry_attempts + 1):
             try:
                 # Store trade execution with expiration
-                self.redis_client.set(
-                    key, execution_data.model_dump_json(), ex=expiry_seconds
-                )
+                self.redis_client.set(key, execution_data.model_dump_json(), ex=expiry_seconds)
 
                 # Publish trade execution
-                self.redis_client.publish(
-                    "trade_executions", execution_data.model_dump_json()
-                )
+                self.redis_client.publish("trade_executions", execution_data.model_dump_json())
 
                 # Add execution to sorted set
                 self.redis_client.zadd(
@@ -352,14 +328,10 @@ class ArbiDataService:
                     )
                     self._reconnect()
                 else:
-                    logger.critical(
-                        "Failed to store trade execution after multiple retries."
-                    )
+                    logger.critical("Failed to store trade execution after multiple retries.")
                     return None  # Return None after all retries fail
             except Exception as e:
-                logger.error(
-                    f"Unexpected error storing trade execution: {e}", exc_info=True
-                )
+                logger.error(f"Unexpected error storing trade execution: {e}", exc_info=True)
                 return None
 
         return None  # If it reaches here, execution failed
@@ -381,9 +353,7 @@ class ArbiDataService:
         """Get most recent trade executions"""
         try:
             # Get latest execution IDs from sorted set
-            exec_ids = self.redis_client.zrevrange(
-                "trade_executions_by_time", 0, count - 1
-            )
+            exec_ids = self.redis_client.zrevrange("trade_executions_by_time", 0, count - 1)
             executions = []
 
             # Fetch each execution
@@ -397,9 +367,7 @@ class ArbiDataService:
             logger.error(f"Redis error retrieving recent executions: {e}")
             return []
 
-    def subscribe_to_trade_executions(
-        self, callback: Callable, channel: str = "trade_executions"
-    ) -> None:
+    def subscribe_to_trade_executions(self, callback: Callable, channel: str = "trade_executions") -> None:
         """Subscribe to trade executions with proper error handling"""
         pubsub = self.redis_client.pubsub()
         pubsub.subscribe(channel)
@@ -437,21 +405,14 @@ class ArbiDataService:
             logger.error(f"Error recording metric {metric_name}: {e}")
             return False
 
-    def get_recent_metrics(
-        self, metric_name: str, count: int = 60
-    ) -> List[Dict[str, Any]]:
+    def get_recent_metrics(self, metric_name: str, count: int = 60) -> List[Dict[str, Any]]:
         """Get recent metrics for a given name"""
         try:
             # Get timestamp-value pairs
-            raw_metrics = self.redis_client.zrevrange(
-                f"metrics:{metric_name}", 0, count - 1, withscores=True
-            )
+            raw_metrics = self.redis_client.zrevrange(f"metrics:{metric_name}", 0, count - 1, withscores=True)
 
             # Convert to list of dicts
-            metrics = [
-                {"timestamp": int(timestamp), "value": value}
-                for value, timestamp in raw_metrics
-            ]
+            metrics = [{"timestamp": int(timestamp), "value": value} for value, timestamp in raw_metrics]
 
             return metrics
         except RedisError as e:

@@ -6,9 +6,9 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from arbirich.processing.process_ingestion import process_order_book
-from arbirich.sinks.order_book import store_order_book
-from arbirich.sources.websocket_partition import MultiExchangeSource
+from arbirich.processing.ingestion_process import process_order_book
+from arbirich.sinks.order_book_sink import store_order_book
+from arbirich.sources.websocket_source import MultiExchangeSource
 from src.arbirich.config import REDIS_CONFIG
 from src.arbirich.io.websockets.load_websocket_processor import load_processor
 from src.arbirich.redis_manager import ArbiDataService
@@ -17,9 +17,7 @@ from src.arbirich.utils.helpers import build_exchanges_dict
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(
-    host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
-)
+redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
 
 
 def build_flow():
@@ -50,9 +48,7 @@ async def run_ingestion_flow():
         flow = build_flow()
 
         logger.info("Running cli_main in a separate thread.")
-        execution_task = asyncio.create_task(
-            asyncio.to_thread(cli_main, flow, workers_per_process=1)
-        )
+        execution_task = asyncio.create_task(asyncio.to_thread(cli_main, flow, workers_per_process=1))
 
         try:
             await execution_task

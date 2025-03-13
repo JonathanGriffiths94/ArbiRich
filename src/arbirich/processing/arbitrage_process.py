@@ -66,9 +66,7 @@ def update_asset_state(
     return state, state
 
 
-def detect_arbitrage(
-    asset: str, state: AssetPriceState, threshold: float
-) -> Optional[TradeOpportunity]:
+def detect_arbitrage(asset: str, state: AssetPriceState, threshold: float) -> Optional[TradeOpportunity]:
     """
     Detect arbitrage opportunities for a given normalized asset (e.g. "BTC_USDT")
     using a nested state structure that stores exchange-specific order book data.
@@ -128,16 +126,10 @@ def detect_arbitrage(
             if ob2.bids and ob1.asks:
                 top_bid_rev = max(ob2.bids, key=lambda o: o.price)
                 top_ask_rev = min(ob1.asks, key=lambda o: o.price)
-                logger.info(
-                    f"Comparing {exch2} bid {top_bid_rev} vs {exch1} ask {top_ask_rev}"
-                )
+                logger.info(f"Comparing {exch2} bid {top_bid_rev} vs {exch1} ask {top_ask_rev}")
                 if top_bid_rev.price > top_ask_rev.price:
-                    spread_rev = (
-                        top_bid_rev.price - top_ask_rev.price
-                    ) / top_ask_rev.price
-                    logger.info(
-                        f"Spread for {exch2} (bid) vs {exch1} (ask): {spread_rev}"
-                    )
+                    spread_rev = (top_bid_rev.price - top_ask_rev.price) / top_ask_rev.price
+                    logger.info(f"Spread for {exch2} (bid) vs {exch1} (ask): {spread_rev}")
                     if spread_rev > threshold:
                         ts = ob2.timestamp if ob2.timestamp else ob1.timestamp
                         opp = TradeOpportunity(

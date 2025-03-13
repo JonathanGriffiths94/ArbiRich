@@ -34,9 +34,7 @@ class ExchangePartition(StatefulSourcePartition):
             else EXCHANGE_CONFIG[exchange]["url"]
         )
         self.subscribe_message = (
-            EXCHANGE_CONFIG[exchange]["subscribe"](product_id)
-            if EXCHANGE_CONFIG[exchange]["subscribe"]
-            else None
+            EXCHANGE_CONFIG[exchange]["subscribe"](product_id) if EXCHANGE_CONFIG[exchange]["subscribe"] else None
         )
         self.extract = EXCHANGE_CONFIG[exchange]["extract"]
 
@@ -61,12 +59,8 @@ class ExchangePartition(StatefulSourcePartition):
 
                     async for message in websocket:
                         data = json.loads(message)
-                        logger.debug(
-                            f"Raw WebSocket message from {self.exchange}: {data}"
-                        )
-                        message_type = EXCHANGE_CONFIG[self.exchange]["message_type"](
-                            data
-                        )
+                        logger.debug(f"Raw WebSocket message from {self.exchange}: {data}")
+                        message_type = EXCHANGE_CONFIG[self.exchange]["message_type"](data)
                         self.process_message(message_type, data)
 
                         if self.order_book:
@@ -105,10 +99,7 @@ class ExchangePartition(StatefulSourcePartition):
                             logger.info(f"First depthUpdate U: {data['U']}")
                         buffered_events.append(data)
                         # Buffer for 1 second or until we have a few events
-                        if (
-                            asyncio.get_event_loop().time() - start_time > 1
-                            or len(buffered_events) >= 5
-                        ):
+                        if asyncio.get_event_loop().time() - start_time > 1 or len(buffered_events) >= 5:
                             buffering = False
 
                     # Fetch the snapshot from REST.
@@ -127,42 +118,26 @@ class ExchangePartition(StatefulSourcePartition):
                         continue
 
                     # Discard buffered events with u <= snapshot_lastUpdateId.
-                    valid_events = [
-                        e for e in buffered_events if e["u"] > snapshot_lastUpdateId
-                    ]
+                    valid_events = [e for e in buffered_events if e["u"] > snapshot_lastUpdateId]
                     if not valid_events:
-                        logger.warning(
-                            "No valid buffered events after snapshot; restarting..."
-                        )
+                        logger.warning("No valid buffered events after snapshot; restarting...")
                         buffered_events.clear()
                         first_event = None
                         continue
 
                     # The first valid event should cover snapshot_lastUpdateId.
-                    if not (
-                        valid_events[0]["U"]
-                        <= snapshot_lastUpdateId
-                        <= valid_events[0]["u"]
-                    ):
-                        logger.warning(
-                            "Buffered events do not cover snapshot_lastUpdateId. Restarting process..."
-                        )
+                    if not (valid_events[0]["U"] <= snapshot_lastUpdateId <= valid_events[0]["u"]):
+                        logger.warning("Buffered events do not cover snapshot_lastUpdateId. Restarting process...")
                         buffered_events.clear()
                         first_event = None
                         continue
 
                     # Initialize local order book using snapshot.
-                    self.order_book["bids"] = {
-                        float(price): float(qty) for price, qty, *_ in snapshot["bids"]
-                    }
-                    self.order_book["asks"] = {
-                        float(price): float(qty) for price, qty, *_ in snapshot["asks"]
-                    }
+                    self.order_book["bids"] = {float(price): float(qty) for price, qty, *_ in snapshot["bids"]}
+                    self.order_book["asks"] = {float(price): float(qty) for price, qty, *_ in snapshot["asks"]}
                     self.order_book["timestamp"] = snapshot_lastUpdateId
                     local_update_id = snapshot_lastUpdateId
-                    logger.info(
-                        f"Initialized local order book with update ID: {local_update_id}"
-                    )
+                    logger.info(f"Initialized local order book with update ID: {local_update_id}")
 
                     # Apply buffered events.
                     for event in valid_events:
@@ -171,9 +146,7 @@ class ExchangePartition(StatefulSourcePartition):
                             continue
                         # If event's U is greater than local_update_id+1, then there is a gap.
                         if event["U"] > local_update_id + 1:
-                            logger.error(
-                                "Gap in events detected; restarting initialization..."
-                            )
+                            logger.error("Gap in events detected; restarting initialization...")
                             # Restart the entire process by clearing state.
                             buffered_events.clear()
                             first_event = None
@@ -181,9 +154,7 @@ class ExchangePartition(StatefulSourcePartition):
                         # Otherwise, apply the event.
                         self._handle_delta(event)
                         local_update_id = event["u"]
-                        logger.info(
-                            f"Applied buffered event; new update ID: {local_update_id}"
-                        )
+                        logger.info(f"Applied buffered event; new update ID: {local_update_id}")
 
                     # Mark snapshot initialization as complete.
                     self.snapshot_received = True
@@ -199,9 +170,7 @@ class ExchangePartition(StatefulSourcePartition):
                         if data["u"] < local_update_id:
                             continue
                         if data["U"] > local_update_id + 1:
-                            logger.error(
-                                "Missing events; order book out of sync. Restarting initialization..."
-                            )
+                            logger.error("Missing events; order book out of sync. Restarting initialization...")
                             self.snapshot_received = False
                             break  # Break out to restart the process.
                         self._handle_delta(data)
@@ -263,12 +232,8 @@ class ExchangePartition(StatefulSourcePartition):
             asks = data.get("a", [])
 
         # For crypto.com, bids/asks are lists of lists: [price, quantity, ...]
-        self.order_book["bids"] = {
-            float(price): float(quantity) for price, quantity, *rest in bids
-        }
-        self.order_book["asks"] = {
-            float(price): float(quantity) for price, quantity, *rest in asks
-        }
+        self.order_book["bids"] = {float(price): float(quantity) for price, quantity, *rest in bids}
+        self.order_book["asks"] = {float(price): float(quantity) for price, quantity, *rest in asks}
         # Save the timestamp (key name coming from the extract function)
         self.order_book["timestamp"] = data.get("timestamp")
         logger.info(f"Order book snapshot initialized for {self.product_id}")
@@ -285,12 +250,8 @@ class ExchangePartition(StatefulSourcePartition):
             # If the delta update contains full arrays rather than a 'changes' key,
             # you may want to update the order book similarly to a snapshot,
             # or apply differences. This example assumes full updates.
-            self.order_book["bids"] = {
-                float(price): float(quantity) for price, quantity, *rest in bids
-            }
-            self.order_book["asks"] = {
-                float(price): float(quantity) for price, quantity, *rest in asks
-            }
+            self.order_book["bids"] = {float(price): float(quantity) for price, quantity, *rest in bids}
+            self.order_book["asks"] = {float(price): float(quantity) for price, quantity, *rest in asks}
         else:
             # Fallback to legacy key names if needed
             for side in ["b", "a"]:
@@ -316,9 +277,7 @@ class ExchangePartition(StatefulSourcePartition):
             logger.debug(f"Fetched batch for {self.exchange}-{self.product_id}: {batch}")
             return batch
         except Exception as e:
-            logger.error(
-                f"Error fetching next batch for {self.exchange}-{self.product_id}: {e}"
-            )
+            logger.error(f"Error fetching next batch for {self.exchange}-{self.product_id}: {e}")
             return []
 
     def snapshot(self):
@@ -338,16 +297,10 @@ class MultiExchangeSource(FixedPartitionedSource):
         Returns partition keys based on exchange names and trading pairs.
         Logs a warning if no valid partitions are found.
         """
-        parts = [
-            f"{product}_{exchange}"
-            for exchange, products in self.exchanges.items()
-            for product in products
-        ]
+        parts = [f"{product}_{exchange}" for exchange, products in self.exchanges.items() for product in products]
 
         if not parts:
-            logger.error(
-                "No partitions were created! Check EXCHANGE_CONFIG or the provided exchange-product mapping."
-            )
+            logger.error("No partitions were created! Check EXCHANGE_CONFIG or the provided exchange-product mapping.")
 
         logger.info(f"List of partitions: {parts}")
         return parts
@@ -371,9 +324,7 @@ def normalize_timestamp(timestamp):
     if isinstance(timestamp, str):  # Handle ISO 8601 timestamps (e.g., Coinbase)
         dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         return dt.timestamp()
-    elif isinstance(timestamp, int) or isinstance(
-        timestamp, float
-    ):  # Milliseconds or seconds
+    elif isinstance(timestamp, int) or isinstance(timestamp, float):  # Milliseconds or seconds
         return timestamp / 1000 if timestamp > 10**10 else timestamp
     else:
         raise ValueError(f"Invalid timestamp format: {timestamp}")
@@ -386,15 +337,8 @@ def process_order_book(order_book_update):
     """
     exchange, product_id, order_book = order_book_update
     logger.debug(f"processing: {order_book}")
-    if (
-        not order_book
-        or "bids" not in order_book
-        or "asks" not in order_book
-        or "timestamp" not in order_book
-    ):
-        logger.warning(
-            f"Invalid order book update received from {exchange} for {product_id}: {order_book}"
-        )
+    if not order_book or "bids" not in order_book or "asks" not in order_book or "timestamp" not in order_book:
+        logger.warning(f"Invalid order book update received from {exchange} for {product_id}: {order_book}")
         return None
 
     # Normalize timestamp and use it in the formatted data.
@@ -403,14 +347,8 @@ def process_order_book(order_book_update):
     formatted_data = {
         "exchange": exchange,
         "symbol": product_id,
-        "bids": [
-            {"price": float(k), "quantity": float(v)}
-            for k, v in order_book["bids"].items()
-        ],
-        "asks": [
-            {"price": float(k), "quantity": float(v)}
-            for k, v in order_book["asks"].items()
-        ],
+        "bids": [{"price": float(k), "quantity": float(v)} for k, v in order_book["bids"].items()],
+        "asks": [{"price": float(k), "quantity": float(v)} for k, v in order_book["asks"].items()],
         "timestamp": normalized_timestamp,
     }
 
@@ -473,9 +411,7 @@ def store_order_book(order_book):
         order_book["timestamp"],
     )
 
-    logger.info(
-        f"Published order book update: {order_book['exchange']} {order_book['symbol']}"
-    )
+    logger.info(f"Published order book update: {order_book['exchange']} {order_book['symbol']}")
     return order_book
 
 
@@ -513,9 +449,7 @@ async def run_ingestion_flow():
         flow = build_flow()
 
         logger.info("Running cli_main in a separate thread.")
-        execution_task = asyncio.create_task(
-            asyncio.to_thread(cli_main, flow, workers_per_process=1)
-        )
+        execution_task = asyncio.create_task(asyncio.to_thread(cli_main, flow, workers_per_process=1))
 
         # Allow interruption to propagate
         try:

@@ -10,14 +10,10 @@ from src.arbirich.redis_manager import ArbiDataService
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(
-    host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
-)
+redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
 
 
-def debounce_opportunity(
-    redis_client, opportunity: TradeOpportunity, expiry_seconds=30
-) -> Optional[TradeOpportunity]:
+def debounce_opportunity(redis_client, opportunity: TradeOpportunity, expiry_seconds=30) -> Optional[TradeOpportunity]:
     try:
         logger.info(f"Opportunity: {opportunity}")
         key = f"last_opp:{opportunity.asset}:{opportunity.buy_exchange}:{opportunity.sell_exchange}"
@@ -30,16 +26,11 @@ def debounce_opportunity(
             last_buy_price = last_opp_entry.get("buy_price", 0)
             last_sell_price = last_opp_entry.get("sell_price", 0)
             if (
-                abs(opportunity.buy_price - last_buy_price) / (last_buy_price + 1e-8)
-                < 0.001
-                and abs(opportunity.sell_price - last_sell_price)
-                / (last_sell_price + 1e-8)
-                < 0.001
+                abs(opportunity.buy_price - last_buy_price) / (last_buy_price + 1e-8) < 0.001
+                and abs(opportunity.sell_price - last_sell_price) / (last_sell_price + 1e-8) < 0.001
                 and (now - last_time) < expiry_seconds
             ):
-                logger.debug(
-                    f"Skipping duplicate arbitrage opportunity for {opportunity.asset}"
-                )
+                logger.debug(f"Skipping duplicate arbitrage opportunity for {opportunity.asset}")
                 return None
 
         return opportunity

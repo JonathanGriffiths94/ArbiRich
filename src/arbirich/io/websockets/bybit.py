@@ -14,15 +14,17 @@ logger.setLevel(logging.INFO)
 
 class BybitOrderBookProcessor(BaseOrderBookProcessor):
     def __init__(
-        self, exchange: str, product: str, subscription_type: str, use_rest_snapshot: bool
+        self,
+        exchange: str,
+        product: str,
+        subscription_type: str,
+        use_rest_snapshot: bool,
     ):
         self.product = product
         self.cfg = EXCHANGE_CONFIGS.get(exchange)
         self.ws_url = self.cfg["ws"]["ws_url"]
         formatted_product = self.process_asset()
-        self.subscribe_message = json.dumps(
-            {"op": "subscribe", "args": [f"orderbook.200.{formatted_product}"]}
-        )
+        self.subscribe_message = json.dumps({"op": "subscribe", "args": [f"orderbook.200.{formatted_product}"]})
         self.last_snapshot = None  # to store snapshot from WS
         super().__init__(exchange, product, subscription_type, use_rest_snapshot)
 
@@ -52,32 +54,23 @@ class BybitOrderBookProcessor(BaseOrderBookProcessor):
             data = json.loads(message)
             if data.get("type") == "snapshot":
                 first_event = data
-                logger.info(
-                    f"Received snapshot message with timestamp: {data.get('timestamp_e6')}"
-                )
+                logger.info(f"Received snapshot message with timestamp: {data.get('timestamp_e6')}")
                 buffered_events.append(data)
                 self.last_snapshot = data
                 break
             elif data.get("type") == "delta":
                 if first_event is None:
                     first_event = data
-                    logger.info(
-                        f"First delta buffered event with timestamp: {data.get('timestamp_e6')}"
-                    )
+                    logger.info(f"First delta buffered event with timestamp: {data.get('timestamp_e6')}")
                 buffered_events.append(data)
-                if (
-                    asyncio.get_event_loop().time() - start > 1
-                    or len(buffered_events) >= 5
-                ):
+                if asyncio.get_event_loop().time() - start > 1 or len(buffered_events) >= 5:
                     break
         return buffered_events, first_event
 
     def fetch_snapshot(self):
         # If using snapshot mode, choose between the stored WS snapshot or fetching from REST.
         if self.last_snapshot:
-            logger.info(
-                f"Using WebSocket snapshot with timestamp {self.last_snapshot.get('timestamp_e6')}"
-            )
+            logger.info(f"Using WebSocket snapshot with timestamp {self.last_snapshot.get('timestamp_e6')}")
             return self.last_snapshot
         if self.snapshot_url:
             logger.info("Fetching snapshot from REST API")
@@ -172,9 +165,7 @@ class BybitOrderBookProcessor(BaseOrderBookProcessor):
                                 logger.error(f"Error converting entry {entry}: {e}")
                                 continue
                         else:
-                            logger.warning(
-                                f"Unexpected entry format (list too short): {entry}"
-                            )
+                            logger.warning(f"Unexpected entry format (list too short): {entry}")
                             continue
                     elif isinstance(entry, dict):
                         if "p" in entry and "q" in entry:
@@ -206,7 +197,8 @@ async def run_bybit_orderbook():
         logging.root.removeHandler(handler)
 
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     logger.info("Starting Bybit order book processor...")

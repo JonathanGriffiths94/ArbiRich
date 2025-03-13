@@ -13,9 +13,7 @@ from src.arbirich.models.orm_models import (
 )
 
 engine = create_engine(DATABASE_URL)
-SessionLocal = scoped_session(
-    sessionmaker(autocommit=False, autoflush=False, bind=engine)
-)
+SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 
 Base.metadata.create_all(bind=engine)
 
@@ -26,7 +24,11 @@ class DatabaseManager:
 
     # ----- CRUD Operations for Exchanges -----
     def create_exchange(
-        self, name: str, api_rate_limit: int = None, trade_fees=None, additional_info=None
+        self,
+        name: str,
+        api_rate_limit: int = None,
+        trade_fees=None,
+        additional_info=None,
     ):
         new_exchange = Exchange(
             name=name,
@@ -97,11 +99,7 @@ class DatabaseManager:
         return new_opportunity
 
     def get_trade_opportunity(self, opportunity_uuid):
-        return (
-            self.db.query(TradeOpportunity)
-            .filter(TradeOpportunity.id == opportunity_uuid)
-            .first()
-        )
+        return self.db.query(TradeOpportunity).filter(TradeOpportunity.id == opportunity_uuid).first()
 
     def update_trade_opportunity(self, opportunity_uuid, **kwargs):
         opportunity = self.get_trade_opportunity(opportunity_uuid)
@@ -151,11 +149,7 @@ class DatabaseManager:
         return new_execution
 
     def get_trade_execution(self, execution_uuid):
-        return (
-            self.db.query(TradeExecution)
-            .filter(TradeExecution.id == execution_uuid)
-            .first()
-        )
+        return self.db.query(TradeExecution).filter(TradeExecution.id == execution_uuid).first()
 
     def update_trade_execution(self, execution_uuid, **kwargs):
         execution = self.get_trade_execution(execution_uuid)
@@ -187,9 +181,7 @@ if __name__ == "__main__":
 
         # Create a trading pair
         pair = db_manager.create_trading_pair("BTC", "USDT")
-        print(
-            f"Created Trading Pair: {pair.id} - {pair.base_currency}/{pair.quote_currency}"
-        )
+        print(f"Created Trading Pair: {pair.id} - {pair.base_currency}/{pair.quote_currency}")
 
         # Create a trade opportunity (use your own values for prices, spread, etc.)
         from datetime import datetime

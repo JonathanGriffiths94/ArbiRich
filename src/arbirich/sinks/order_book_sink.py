@@ -6,11 +6,7 @@ from src.arbirich.redis_manager import ArbiDataService
 
 logger = logging.getLogger(__name__)
 
-redis_client = ArbiDataService(
-    host=REDIS_CONFIG["host"],
-    port=REDIS_CONFIG["port"],
-    db=REDIS_CONFIG["db"],
-)
+redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
 
 # Global cache for deduplication
 LAST_ORDER_BOOK = {}
@@ -40,7 +36,5 @@ def store_order_book(order_book: OrderBookUpdate):
     )
 
     redis_client.store_order_book(order_book)
-    logger.info(
-        f"Successfully pushed to cache: {order_book.symbol}:{order_book.exchange} - {order_book.timestamp}"
-    )
+    logger.info(f"Successfully pushed to cache: {order_book.symbol}:{order_book.exchange} - {order_book.timestamp}")
     return order_book

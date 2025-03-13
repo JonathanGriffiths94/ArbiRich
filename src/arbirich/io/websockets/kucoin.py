@@ -39,10 +39,7 @@ class KuCoinOrderBookProcessor(BaseOrderBookProcessor):
             message = await websocket.recv()
             data = json.loads(message)
             # For KuCoin, filter messages that are not orderbook updates.
-            if (
-                data.get("type") != "message"
-                or data.get("topic") != f"/market/level2:{self.product}"
-            ):
+            if data.get("type") != "message" or data.get("topic") != f"/market/level2:{self.product}":
                 continue
             # For delta updates, we expect a field (for example, "sequence" or similar).
             # Assume our delta update has "U" and "u" similar to Binance.

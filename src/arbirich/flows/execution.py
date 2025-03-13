@@ -1,121 +1,20 @@
 import asyncio
 import logging
-import time
 
 from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
-from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 from bytewax.run import cli_main
 
 from src.arbirich.config import REDIS_CONFIG
-from src.arbirich.models.dtos import TradeExecution, TradeOpportunity
 from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.sinks.execution_sink import execute_trade
+from src.arbirich.sources.opportunity_source import RedisOpportunitySource
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(
-    host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"]
-)
-
-
-class RedisOpportunityPartition(StatefulSourcePartition):
-    def __init__(self):
-        logger.debug("Initializing RedisOpportunityPartition.")
-        self.gen = redis_client.subscribe_to_trade_opportunities(
-            lambda opp: logger.debug(f"Received: {opp}")
-        )
-        self._running = True
-        self._last_activity = time.time()
-
-    def next_batch(self) -> list:
-        if time.time() - self._last_activity > 60:  # 1 minute timeout
-            logger.warning("Safety timeout reached, checking Redis connection")
-            self._last_activity = time.time()
-            if not redis_client.is_healthy():
-                logger.warning("Redis connection appears unhealthy")
-                return []
-
-        if not self._running:
-            logger.info("Partition marked as not running, stopping")
-            return []
-
-        try:
-            result = next(self.gen, None)
-            if result:
-                self._last_activity = time.time()
-                logger.debug(f"next_batch obtained message: {result}")
-                return [result]
-            return []
-        except StopIteration:
-            logger.info("Generator exhausted")
-            self._running = False
-            return []
-        except Exception as e:
-            logger.error(f"Error in next_batch: {e}")
-            return []
-
-    def snapshot(self) -> None:
-        # Return None for now (or implement snapshot logic if needed)
-        logger.debug("Snapshot requested for RedisOpportunityPartition (returning None).")
-        return None
-
-
-class RedisOpportunitySource(FixedPartitionedSource):
-    def list_parts(self):
-        parts = ["1"]
-        logger.info(f"List of partition keys: {parts}")
-        return parts
-
-    def build_part(self, step_id, for_key, _resume_state):
-        logger.info(f"Building partition for key: {for_key}")
-        return RedisOpportunityPartition()
-
-
-def execute_trade(opportunity_raw: dict) -> dict:
-    """
-    Convert raw trade opportunity data into a TradeOpportunity model,
-    simulate a trade execution, and return a TradeExecution model (as dict).
-    """
-    try:
-        opp = TradeOpportunity(**opportunity_raw)
-    except Exception as e:
-        logger.error(f"Error parsing trade opportunity: {e}")
-        return {}
-
-    # Simulate trade execution (for example, call an exchange API here).
-    execution_ts = time.time()
-
-    trade_exec = TradeExecution(
-        asset=opp.asset,
-        buy_exchange=opp.buy_exchange,
-        sell_exchange=opp.sell_exchange,
-        executed_buy_price=opp.buy_price,
-        executed_sell_price=opp.sell_price,
-        spread=opp.spread,
-        volume=opp.volume,
-        execution_timestamp=execution_ts,
-        opportunity_id=opp.id,
-    )
-
-    trade_msg = (
-        f"Executed trade for {trade_exec.asset}: "
-        f"Buy from {trade_exec.buy_exchange} at {trade_exec.executed_buy_price}, "
-        f"Sell on {trade_exec.sell_exchange} at {trade_exec.executed_sell_price}, "
-        f"Spread: {trade_exec.spread:.4f}, Volume: {trade_exec.volume}, "
-        f"Timestamp: {trade_exec.execution_timestamp}"
-    )
-    logger.critical(trade_msg)
-
-    try:
-        # Publish or store the trade execution in Redis (as an example).
-        redis_client.publish_trade_execution(trade_exec)
-        logger.debug("Trade execution stored successfully in Redis.")
-    except Exception as e:
-        logger.error(f"Error storing trade execution: {e}")
-
-    return trade_exec.model_dump()  # Return as a dict for downstream serialization.
+redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
 
 
 def build_flow():
@@ -145,9 +44,7 @@ async def run_execution_flow():
         flow = build_flow()
 
         logger.info("Running cli_main in a separate thread.")
-        execution_task = asyncio.create_task(
-            asyncio.to_thread(cli_main, flow, workers_per_process=1)
-        )
+        execution_task = asyncio.create_task(asyncio.to_thread(cli_main, flow, workers_per_process=1))
 
         # Allow interruption to propagate
         try:

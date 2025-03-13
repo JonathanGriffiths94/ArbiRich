@@ -24,8 +24,6 @@ def load_processor(exchange: str):
     try:
         processor_cls = getattr(module, processor_name)
     except AttributeError as e:
-        logger.error(
-            f"Module {module_name} does not have attribute {processor_name}: {e}"
-        )
+        logger.error(f"Module {module_name} does not have attribute {processor_name}: {e}")
         raise
     return processor_cls

@@ -24,7 +24,10 @@ class ExchangePartition(StatefulSourcePartition):
         self.subscription_type = subscription_type
         self.use_rest_snapshot = use_rest_snapshot
         self.processor_instance = self.processor_cls(
-            self.exchange, self.product_id, self.subscription_type, self.use_rest_snapshot
+            self.exchange,
+            self.product_id,
+            self.subscription_type,
+            self.use_rest_snapshot,
         )
         self._batcher = batch_async(
             self.processor_instance.run(),
@@ -40,9 +43,7 @@ class ExchangePartition(StatefulSourcePartition):
             wrapped_batch = [(self.exchange, self.product_id, update) for update in batch]
             return wrapped_batch
         except Exception as e:
-            logger.error(
-                f"Error fetching next batch for {self.exchange}-{self.product_id}: {e}"
-            )
+            logger.error(f"Error fetching next batch for {self.exchange}-{self.product_id}: {e}")
             return []
 
     def snapshot(self):
@@ -55,15 +56,9 @@ class MultiExchangeSource(FixedPartitionedSource):
     processor_loader: Callable[[str], type]
 
     def list_parts(self):
-        parts = [
-            f"{product}_{exchange}"
-            for exchange, products in self.exchanges.items()
-            for product in products
-        ]
+        parts = [f"{product}_{exchange}" for exchange, products in self.exchanges.items() for product in products]
         if not parts:
-            logger.error(
-                "No partitions were created! Check your exchange-product mapping."
-            )
+            logger.error("No partitions were created! Check your exchange-product mapping.")
         logger.info(f"List of partitions: {parts}")
         return parts
 
@@ -71,9 +66,7 @@ class MultiExchangeSource(FixedPartitionedSource):
         try:
             product_id, exchange = for_key.split("_", 1)
             logger.info(f"Building partition for key: {for_key}")
-            return ExchangePartition(
-                exchange, product_id, self.processor_loader(exchange)
-            )
+            return ExchangePartition(exchange, product_id, self.processor_loader(exchange))
         except Exception as e:
             logger.error(f"Invalid partition key: {for_key}, Error: {e}")
             return None
