@@ -11,10 +11,10 @@ logger.setLevel(logging.INFO)
 redis_client = RedisService()
 
 
-class RedisDatabasePartition(StatefulSourcePartition):
-    def __init__(self, channel):
-        logger.debug(f"Initializing RedisDatabasePartition for channel: {channel}.")
-        self.gen = redis_client.subscribe(channel, lambda msg: logger.debug(f"Received: {msg}"))
+class RedisExecutionPartition(StatefulSourcePartition):
+    def __init__(self):
+        logger.debug("Initializing RedisOpportunityPartition.")
+        self.gen = redis_client.subscribe_to_trade_opportunities(lambda opp: logger.debug(f"Received: {opp}"))
         self._running = True
         self._last_activity = time.time()
 
@@ -46,19 +46,17 @@ class RedisDatabasePartition(StatefulSourcePartition):
             return []
 
     def snapshot(self) -> None:
-        logger.debug("Snapshot requested for RedisDatabasePartition (returning None).")
+        # Return None for now (or implement snapshot logic if needed)
+        logger.debug("Snapshot requested for RedisOpportunityPartition (returning None).")
         return None
 
 
-class RedisDatabaseSource(FixedPartitionedSource):
-    def __init__(self, channels):
-        self.channels = channels
-
+class RedisExecutionSource(FixedPartitionedSource):
     def list_parts(self):
-        parts = self.channels
+        parts = ["1"]
         logger.info(f"List of partition keys: {parts}")
         return parts
 
     def build_part(self, step_id, for_key, _resume_state):
         logger.info(f"Building partition for key: {for_key}")
-        return RedisDatabasePartition(for_key)
+        return RedisExecutionPartition()

@@ -1,27 +1,36 @@
 import logging
 import time
+from dataclasses import dataclass
 
+import redis
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from src.arbirich.config import REDIS_CONFIG
-from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
+redis_client = RedisService()
 
 
 class RedisOpportunityPartition(StatefulSourcePartition):
-    def __init__(self):
+    """
+    Listens for price updates in a Redis Pub/Sub channel and streams them.
+    """
+
+    def __init__(self, channel: str):
         logger.debug("Initializing RedisOpportunityPartition.")
-        self.gen = redis_client.subscribe_to_trade_opportunities(lambda opp: logger.debug(f"Received: {opp}"))
+        self.gen = redis_client.subscribe_to_order_book_updates(channel)
         self._running = True
         self._last_activity = time.time()
+        self.channel = channel
 
-    def next_batch(self) -> list:
-        if time.time() - self._last_activity > 60:  # 1 minute timeout
-            logger.warning("Safety timeout reached, checking Redis connection")
+    def next_batch(self):
+        """
+        Reads messages from Redis Pub/Sub and yields them as batches.
+        Automatically reconnects if Redis disconnects.
+        """
+        if time.time() - self._last_activity > 60:
             self._last_activity = time.time()
             if not redis_client.is_healthy():
                 logger.warning("Redis connection appears unhealthy")
@@ -35,13 +44,19 @@ class RedisOpportunityPartition(StatefulSourcePartition):
             result = next(self.gen, None)
             if result:
                 self._last_activity = time.time()
-                logger.debug(f"next_batch obtained message: {result}")
                 return [result]
             return []
+
         except StopIteration:
-            logger.info("Generator exhausted")
-            self._running = False
+            logger.warning("Redis generator stopped, restarting subscription...")
+            self.gen = redis_client.subscribe_to_order_book_updates(self.channel)
             return []
+
+        except redis.exceptions.ConnectionError:
+            logger.error("Redis connection lost! Attempting to reconnect...")
+            self.gen = redis_client.subscribe_to_order_book_updates(self.channel)
+            return []
+
         except Exception as e:
             logger.error(f"Error in next_batch: {e}")
             return []
@@ -52,12 +67,28 @@ class RedisOpportunityPartition(StatefulSourcePartition):
         return None
 
 
+@dataclass
 class RedisOpportunitySource(FixedPartitionedSource):
+    """
+    Creates partitions for each exchange's price update channel.
+    """
+
+    exchange_channels: dict[str, str]  # Mapping: { "exchange": "redis_channel" }
+
     def list_parts(self):
-        parts = ["1"]
-        logger.info(f"List of partition keys: {parts}")
+        """Returns partition keys based on exchange names."""
+        parts = list(self.exchange_channels.keys())
+        logger.info(f"List of partitions (Redis channels): {parts}")
         return parts
 
     def build_part(self, step_id, for_key, _resume_state):
-        logger.info(f"Building partition for key: {for_key}")
-        return RedisOpportunityPartition()
+        """
+        Builds a Redis listener partition for each exchange.
+        """
+        try:
+            redis_channel = self.exchange_channels[for_key]
+            logger.info(f"Redis channel: {redis_channel}")
+        except KeyError:
+            raise ValueError(f"Invalid exchange key: {for_key}")
+        logger.info(f"Building Redis partition for exchange: {for_key}")
+        return RedisOpportunityPartition(redis_channel)

@@ -1,14 +1,13 @@
 import logging
 import time
 
-from src.arbirich.config import REDIS_CONFIG
-from src.arbirich.models.dtos import TradeExecution, TradeOpportunity
-from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
+redis_client = RedisService()
 
 
 def execute_trade(opportunity_raw: dict) -> dict:

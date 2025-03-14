@@ -7,19 +7,19 @@ from typing import Any, Callable, Dict, Generator, List, Optional
 import redis
 from redis.exceptions import ConnectionError, RedisError
 
-from src.arbirich.models.dtos import OrderBookUpdate, TradeExecution, TradeOpportunity
+from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 
 
-class ArbiDataService:
+class RedisService:
     """Handles real-time market data storage, retrieval, and event publishing using Redis"""
 
     def __init__(self, host=None, port=6379, db=0, retry_attempts=3, retry_delay=1):
         """Initialize Redis connection with retry logic"""
         self.host = host or os.getenv("REDIS_HOST", "localhost")
-        self.port = port
-        self.db = db
+        self.port = port or os.getenv("REDIS_PORT", 6379)
+        self.db = db or os.getenv("REDIS_DB", 0)
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
         self._connect()
@@ -165,24 +165,33 @@ class ArbiDataService:
                     time.sleep(5)  # Wait longer before retrying
 
     # === Trade Opportunity Methods ===
-    def publish_trade_opportunity(self, opportunity: TradeOpportunity, retries_left=None) -> dict:
+    def publish_trade_opportunity(self, opportunity: TradeOpportunity, strategy_name=None, retries_left=None) -> dict:
         """
         Store a trade opportunity in Redis with an expiration of 300 seconds and publish it.
-        Ensures it does not enter infinite recursion.
+
+        Parameters:
+            opportunity: The TradeOpportunity to publish
+            strategy_name: Optional strategy name to use for channel selection
+            retries_left: Number of retry attempts remaining
         """
         if retries_left is None:
             retries_left = self.retry_attempts  # Initialize retries
 
-        opportunity_id = opportunity.id or f"opp:{opportunity.timestamp}"
-        key = f"trade_opportunity:{opportunity_id}"
+        opportunity_id = opportunity.id or f"opp:{opportunity.opportunity_timestamp}"
+
+        # Add strategy name to key if provided
+        key_prefix = f"strategy:{strategy_name}:" if strategy_name else ""
+        key = f"trade_opportunity:{key_prefix}{opportunity_id}"
 
         for attempt in range(1, self.retry_attempts + 1):
             try:
                 self.redis_client.setex(key, 300, opportunity.model_dump_json())
 
-                self.redis_client.publish("trade_opportunities", opportunity.model_dump_json())
+                # Use strategy-specific channel if provided
+                channel = f"trade_opportunities:{strategy_name}" if strategy_name else "trade_opportunities"
+                self.redis_client.publish(channel, opportunity.model_dump_json())
 
-                logger.debug(f"Published trade opportunity: {opportunity}")
+                logger.debug(f"Published trade opportunity to {channel}: {opportunity}")
                 return opportunity
             except (redis.ConnectionError, redis.TimeoutError) as e:
                 logger.error(f"Redis error storing trade execution: {e}")
@@ -198,10 +207,17 @@ class ArbiDataService:
                 logger.error(f"Unexpected error in Redis: {e}", exc_info=True)
                 return None
 
-    def get_trade_opportunity(self, opportunity_id: str) -> Optional[Dict[str, Any]]:
-        """Get trade opportunity by ID with error handling"""
+    def get_trade_opportunity(self, opportunity_id: str, strategy_name=None) -> Optional[Dict[str, Any]]:
+        """
+        Get trade opportunity by ID with error handling
+
+        Parameters:
+            opportunity_id: The ID of the opportunity to retrieve
+            strategy_name: Optional strategy name to use for key prefix
+        """
         try:
-            key = f"trade_opportunity:{opportunity_id}"
+            key_prefix = f"strategy:{strategy_name}:" if strategy_name else ""
+            key = f"trade_opportunity:{key_prefix}{opportunity_id}"
             data = self.redis_client.get(key)
             return json.loads(data) if data else None
         except RedisError as e:
@@ -211,16 +227,27 @@ class ArbiDataService:
             logger.error(f"Malformed JSON for opportunity {opportunity_id}")
             return None
 
-    def get_recent_opportunities(self, count: int = 10) -> List[Dict[str, Any]]:
-        """Get most recent trade opportunities"""
+    def get_recent_opportunities(self, count: int = 10, strategy_name=None) -> List[Dict[str, Any]]:
+        """
+        Get most recent trade opportunities
+
+        Parameters:
+            count: Number of opportunities to retrieve
+            strategy_name: Optional strategy name to filter opportunities
+        """
         try:
+            # Use strategy-specific sorted set if provided
+            sorted_set = (
+                f"trade_opportunities_by_time:{strategy_name}" if strategy_name else "trade_opportunities_by_time"
+            )
+
             # Get latest opportunity IDs from sorted set
-            opp_ids = self.redis_client.zrevrange("trade_opportunities_by_time", 0, count - 1)
+            opp_ids = self.redis_client.zrevrange(sorted_set, 0, count - 1)
             opportunities = []
 
             # Fetch each opportunity
             for opp_id in opp_ids:
-                opp_data = self.get_trade_opportunity(opp_id)
+                opp_data = self.get_trade_opportunity(opp_id, strategy_name)
                 if opp_data:
                     opportunities.append(opp_data)
 
@@ -230,15 +257,24 @@ class ArbiDataService:
             return []
 
     def subscribe_to_trade_opportunities(
-        self, callback: Optional[Callable], channel: str = "trade_opportunities"
+        self, callback: Optional[Callable], channel: str = "trade_opportunities", strategy_name=None
     ) -> Generator[Dict[str, Any], None, None]:
         """
-        Subscribe to the "trade_opportunity" channel using non-blocking polling.
-        Yields messages as they arrive.
+        Subscribe to trade opportunities channel
+
+        Parameters:
+            callback: Optional callback function to call for each opportunity
+            channel: Base channel name to subscribe to
+            strategy_name: Optional strategy name to append to the channel
         """
+        # Use strategy-specific channel if provided
+        if strategy_name:
+            channel = f"{channel}:{strategy_name}"
+
         pubsub = self.redis_client.pubsub()
         pubsub.subscribe(channel)
-        logger.info("Subscribed to trade_opportunities channel.")
+        logger.info(f"Subscribed to {channel} channel.")
+
         try:
             while True:
                 try:
@@ -267,8 +303,8 @@ class ArbiDataService:
                     try:
                         self._connect()
                         pubsub = self.redis_client.pubsub()
-                        pubsub.subscribe("trade_opportunity")
-                        logger.info("Reconnected to Redis and resubscribed")
+                        pubsub.subscribe(channel)  # Use the current channel name
+                        logger.info(f"Reconnected to Redis and resubscribed to {channel}")
                     except Exception as reconnect_error:
                         logger.error(f"Failed to reconnect: {reconnect_error}")
         finally:
@@ -279,15 +315,24 @@ class ArbiDataService:
             except Exception as e:
                 logger.error(f"Error during subscription cleanup: {e}")
 
-    def publish_trade_execution(self, execution_data: TradeExecution, expiry_seconds: int = 3600) -> str:
+    def publish_trade_execution(
+        self, execution_data: TradeExecution, strategy_name=None, expiry_seconds: int = 3600
+    ) -> str:
         """
         Store trade execution in Redis with expiration and handle failures.
-        Prevents infinite recursion by using a retry loop instead of calling itself.
+
+        Parameters:
+            execution_data: The TradeExecution to publish
+            strategy_name: Optional strategy name for channel selection
+            expiry_seconds: Time in seconds before key expires
         """
         logger.info(f"Storing trade execution: {execution_data}")
         # Ensure execution ID
         execution_id = execution_data.id
-        key = f"trade_execution:{execution_id}"
+
+        # Add strategy name to key if provided
+        key_prefix = f"strategy:{strategy_name}:" if strategy_name else ""
+        key = f"trade_execution:{key_prefix}{execution_id}"
         logger.info(f"execution_id: {execution_id}")
 
         # Check if trade execution already exists (to prevent duplicates)
@@ -301,19 +346,24 @@ class ArbiDataService:
                 # Store trade execution with expiration
                 self.redis_client.set(key, execution_data.model_dump_json(), ex=expiry_seconds)
 
-                # Publish trade execution
-                self.redis_client.publish("trade_executions", execution_data.model_dump_json())
+                # Publish to strategy-specific channel if provided
+                channel = f"trade_executions:{strategy_name}" if strategy_name else "trade_executions"
+                self.redis_client.publish(channel, execution_data.model_dump_json())
 
-                # Add execution to sorted set
+                # Add execution to strategy-specific sorted set if provided
+                sorted_set = (
+                    f"trade_executions_by_time:{strategy_name}" if strategy_name else "trade_executions_by_time"
+                )
                 self.redis_client.zadd(
-                    "trade_executions_by_time",
+                    sorted_set,
                     {execution_id: execution_data.execution_timestamp},
                 )
 
                 # Link to trade opportunity if available
                 if execution_data.opportunity_id:
+                    opp_key_prefix = f"strategy:{strategy_name}:" if strategy_name else ""
                     self.redis_client.set(
-                        f"execution_for_opportunity:{execution_data.opportunity_id}",
+                        f"execution_for_opportunity:{opp_key_prefix}{execution_data.opportunity_id}",
                         execution_id,
                         ex=expiry_seconds,
                     )
@@ -336,10 +386,17 @@ class ArbiDataService:
 
         return None  # If it reaches here, execution failed
 
-    def get_trade_execution(self, execution_id: str) -> Optional[Dict[str, Any]]:
-        """Get trade execution by ID with error handling"""
+    def get_trade_execution(self, execution_id: str, strategy_name=None) -> Optional[Dict[str, Any]]:
+        """
+        Get trade execution by ID with error handling
+
+        Parameters:
+            execution_id: The ID of the execution to retrieve
+            strategy_name: Optional strategy name for key prefixing
+        """
         try:
-            key = f"trade_execution:{execution_id}"
+            key_prefix = f"strategy:{strategy_name}:" if strategy_name else ""
+            key = f"trade_execution:{key_prefix}{execution_id}"
             data = self.redis_client.get(key)
             return json.loads(data) if data else None
         except RedisError as e:
@@ -349,16 +406,25 @@ class ArbiDataService:
             logger.error(f"Malformed JSON for execution {execution_id}")
             return None
 
-    def get_recent_executions(self, count: int = 10) -> List[Dict[str, Any]]:
-        """Get most recent trade executions"""
+    def get_recent_executions(self, count: int = 10, strategy_name=None) -> List[Dict[str, Any]]:
+        """
+        Get most recent trade executions
+
+        Parameters:
+            count: Number of executions to retrieve
+            strategy_name: Optional strategy name to filter executions
+        """
         try:
+            # Use strategy-specific sorted set if provided
+            sorted_set = f"trade_executions_by_time:{strategy_name}" if strategy_name else "trade_executions_by_time"
+
             # Get latest execution IDs from sorted set
-            exec_ids = self.redis_client.zrevrange("trade_executions_by_time", 0, count - 1)
+            exec_ids = self.redis_client.zrevrange(sorted_set, 0, count - 1)
             executions = []
 
             # Fetch each execution
             for exec_id in exec_ids:
-                exec_data = self.get_trade_execution(exec_id)
+                exec_data = self.get_trade_execution(exec_id, strategy_name)
                 if exec_data:
                     executions.append(exec_data)
 
@@ -367,11 +433,25 @@ class ArbiDataService:
             logger.error(f"Redis error retrieving recent executions: {e}")
             return []
 
-    def subscribe_to_trade_executions(self, callback: Callable, channel: str = "trade_executions") -> None:
-        """Subscribe to trade executions with proper error handling"""
+    def subscribe_to_trade_executions(
+        self, callback: Callable, channel: str = "trade_executions", strategy_name=None
+    ) -> None:
+        """
+        Subscribe to trade executions with proper error handling
+
+        Parameters:
+            callback: Function to call for each execution
+            channel: Base channel name to subscribe to
+            strategy_name: Optional strategy name to append to channel
+        """
+        # Use strategy-specific channel if provided
+        if strategy_name:
+            channel = f"{channel}:{strategy_name}"
+
         pubsub = self.redis_client.pubsub()
         pubsub.subscribe(channel)
-        logger.info("Subscribed to trade_executions channel.")
+        logger.info(f"Subscribed to {channel} channel.")
+
         try:
             for message in pubsub.listen():
                 if message["type"] == "message":

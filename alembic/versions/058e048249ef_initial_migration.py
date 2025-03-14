@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 8193bb2d2789
-Revises:
-Create Date: 2025-03-12 22:46:30.770091
+Revision ID: 058e048249ef
+Revises: f370032e4725
+Create Date: 2025-03-14 21:18:21.909009
 
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "8193bb2d2789"
-down_revision: Union[str, None] = None
+revision: str = "058e048249ef"
+down_revision: Union[str, None] = "f370032e4725"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -28,28 +28,46 @@ def upgrade() -> None:
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("api_rate_limit", sa.Integer(), nullable=True),
         sa.Column("trade_fees", sa.Numeric(precision=18, scale=8), nullable=True),
+        sa.Column("rest_url", sa.String(), nullable=True),
+        sa.Column("ws_url", sa.String(), nullable=True),
+        sa.Column("delimiter", sa.String(), nullable=True),
+        sa.Column("withdrawal_fee", sa.JSON(), nullable=True),
+        sa.Column("api_response_time", sa.Integer(), nullable=True),
+        sa.Column("mapping", sa.JSON(), nullable=True),
         sa.Column("additional_info", sa.JSON(), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.TIMESTAMP(),
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-            nullable=True,
-        ),
+        sa.Column("created_at", sa.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name"),
     )
     op.create_table(
-        "trading_pairs",
+        "pairs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("base_currency", sa.String(), nullable=False),
         sa.Column("quote_currency", sa.String(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("base_currency", "quote_currency", name="uix_base_quote"),
+        sa.UniqueConstraint("base_currency", "quote_currency", name="uix_pair_base_quote"),
+    )
+    op.create_table(
+        "strategies",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("starting_capital", sa.Numeric(precision=18, scale=2), nullable=False),
+        sa.Column("min_spread", sa.Numeric(precision=18, scale=8), nullable=False),
+        sa.Column("additional_info", sa.JSON(), nullable=True),
+        sa.Column("total_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("total_loss", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("net_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("trades_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("start_timestamp", sa.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
+        sa.Column("last_updated", sa.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("name"),
     )
     op.create_table(
         "trade_opportunities",
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("trading_pair_id", sa.Integer(), nullable=True),
+        sa.Column("strategy_id", sa.Integer(), nullable=True),
+        sa.Column("pair_id", sa.Integer(), nullable=True),
         sa.Column("buy_exchange_id", sa.Integer(), nullable=True),
         sa.Column("sell_exchange_id", sa.Integer(), nullable=True),
         sa.Column("buy_price", sa.Numeric(precision=18, scale=8), nullable=False),
@@ -62,19 +80,24 @@ def upgrade() -> None:
             ["exchanges.id"],
         ),
         sa.ForeignKeyConstraint(
+            ["pair_id"],
+            ["pairs.id"],
+        ),
+        sa.ForeignKeyConstraint(
             ["sell_exchange_id"],
             ["exchanges.id"],
         ),
         sa.ForeignKeyConstraint(
-            ["trading_pair_id"],
-            ["trading_pairs.id"],
+            ["strategy_id"],
+            ["strategies.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_table(
         "trade_executions",
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("trading_pair_id", sa.Integer(), nullable=True),
+        sa.Column("strategy_id", sa.Integer(), nullable=True),
+        sa.Column("pair_id", sa.Integer(), nullable=True),
         sa.Column("buy_exchange_id", sa.Integer(), nullable=True),
         sa.Column("sell_exchange_id", sa.Integer(), nullable=True),
         sa.Column("executed_buy_price", sa.Numeric(precision=18, scale=8), nullable=False),
@@ -93,12 +116,16 @@ def upgrade() -> None:
             ["trade_opportunities.id"],
         ),
         sa.ForeignKeyConstraint(
+            ["pair_id"],
+            ["pairs.id"],
+        ),
+        sa.ForeignKeyConstraint(
             ["sell_exchange_id"],
             ["exchanges.id"],
         ),
         sa.ForeignKeyConstraint(
-            ["trading_pair_id"],
-            ["trading_pairs.id"],
+            ["strategy_id"],
+            ["strategies.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -110,6 +137,7 @@ def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_table("trade_executions")
     op.drop_table("trade_opportunities")
-    op.drop_table("trading_pairs")
+    op.drop_table("strategies")
+    op.drop_table("pairs")
     op.drop_table("exchanges")
     # ### end Alembic commands ###

@@ -3,8 +3,8 @@ from typing import Optional, Tuple
 
 from pydantic import ValidationError
 
-from src.arbirich.models.dtos import (
-    AssetPriceState,
+from src.arbirich.models.models import (
+    OrderBookState,
     OrderBookUpdate,
     TradeOpportunity,
 )
@@ -29,11 +29,11 @@ def key_by_asset(record: dict) -> Optional[Tuple[str, OrderBookUpdate]]:
 
 
 def update_asset_state(
-    state: Optional[AssetPriceState], new_data: OrderBookUpdate
-) -> Tuple[AssetPriceState, Optional[AssetPriceState]]:
+    state: Optional[OrderBookState], new_data: OrderBookUpdate
+) -> Tuple[OrderBookState, Optional[OrderBookState]]:
     logger.debug(f"New data: {new_data}")
     if state is None:
-        state = AssetPriceState()
+        state = OrderBookState()
     logger.debug(f"state: {state}")
     try:
         asset = new_data.symbol
@@ -66,7 +66,7 @@ def update_asset_state(
     return state, state
 
 
-def detect_arbitrage(asset: str, state: AssetPriceState, threshold: float) -> Optional[TradeOpportunity]:
+def detect_arbitrage(asset: str, state: OrderBookState, threshold: float) -> Optional[TradeOpportunity]:
     """
     Detect arbitrage opportunities for a given normalized asset (e.g. "BTC_USDT")
     using a nested state structure that stores exchange-specific order book data.
@@ -109,15 +109,15 @@ def detect_arbitrage(asset: str, state: AssetPriceState, threshold: float) -> Op
                     if spread > threshold:
                         # Choose a timestamp from one of the exchanges.
                         ts = ob1.timestamp if ob1.timestamp else ob2.timestamp
-                        opp = TradeOpportunity(
+                        opp = create_trade_opportunity(
                             asset=asset,
-                            buy_exchange=exch2,
-                            sell_exchange=exch1,
+                            buy_ex=exch2,
+                            sell_ex=exch1,
                             buy_price=top_ask.price,
                             sell_price=top_bid.price,
                             spread=spread,
                             volume=min(top_bid.quantity, top_ask.quantity),
-                            timestamp=ts,
+                            strategy_name="arbitrage",
                         )
                         logger.info(f"Arbitrage Opportunity found: {opp}")
                         return opp
@@ -132,18 +132,33 @@ def detect_arbitrage(asset: str, state: AssetPriceState, threshold: float) -> Op
                     logger.info(f"Spread for {exch2} (bid) vs {exch1} (ask): {spread_rev}")
                     if spread_rev > threshold:
                         ts = ob2.timestamp if ob2.timestamp else ob1.timestamp
-                        opp = TradeOpportunity(
+                        opp = create_trade_opportunity(
                             asset=asset,
-                            buy_exchange=exch1,
-                            sell_exchange=exch2,
+                            buy_ex=exch1,
+                            sell_ex=exch2,
                             buy_price=top_ask_rev.price,
                             sell_price=top_bid_rev.price,
                             spread=spread_rev,
                             volume=min(top_bid_rev.quantity, top_ask_rev.quantity),
-                            timestamp=ts,
+                            strategy_name="arbitrage",
                         )
                         logger.info(f"Arbitrage Opportunity found: {opp}")
                         return opp
 
     logger.info("No arbitrage opportunity detected.")
     return None
+
+
+def create_trade_opportunity(asset, buy_ex, sell_ex, buy_price, sell_price, volume, spread, strategy_name):
+    """Create a trade opportunity object"""
+    opportunity = TradeOpportunity(
+        strategy=strategy_name,  # Use name instead of ID
+        pair=asset,  # Use symbol instead of ID
+        buy_exchange=buy_ex,  # Use name instead of ID
+        sell_exchange=sell_ex,  # Use name instead of ID
+        buy_price=buy_price,
+        sell_price=sell_price,
+        spread=spread,
+        volume=volume,
+    )
+    return opportunity

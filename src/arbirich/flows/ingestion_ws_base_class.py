@@ -6,18 +6,17 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from src.arbirich.config import REDIS_CONFIG
+from arbirich.sources.ingestion_source import MultiExchangeSource
 from src.arbirich.io.websockets.load_websocket_processor import load_processor
 from src.arbirich.processing.ingestion_process import process_order_book
-from src.arbirich.redis_manager import ArbiDataService
-from src.arbirich.sinks.order_book_sink import store_order_book
-from src.arbirich.sources.websocket_source import MultiExchangeSource
+from src.arbirich.services.redis_service import RedisService
+from src.arbirich.sinks.ingestion_sink import store_order_book
 from src.arbirich.utils.helpers import build_exchanges_dict
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
+redis_client = RedisService()
 
 
 def build_flow():

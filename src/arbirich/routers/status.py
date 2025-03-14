@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 
-from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.services.redis_service import RedisService
 
 router = APIRouter()
-price_service = ArbiDataService()
+price_service = RedisService()
 
 
 @router.get("/")

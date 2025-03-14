@@ -1,52 +1,80 @@
-import json
 import logging
 import time
 from typing import Optional
 
-from src.arbirich.config import REDIS_CONFIG
-from src.arbirich.models.dtos import TradeOpportunity
-from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.models.models import TradeOpportunity
+from src.arbirich.services.redis_channel_manager import RedisChannelManager
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
-
-
-def debounce_opportunity(redis_client, opportunity: TradeOpportunity, expiry_seconds=30) -> Optional[TradeOpportunity]:
-    try:
-        logger.info(f"Opportunity: {opportunity}")
-        key = f"last_opp:{opportunity.asset}:{opportunity.buy_exchange}:{opportunity.sell_exchange}"
-        now = time.time()
-        logger.info(f"Key: {key}")
-        last_opp_data = redis_client.redis_client.get(key)
-        if last_opp_data:
-            last_opp_entry = json.loads(last_opp_data)
-            last_time = last_opp_entry.get("timestamp", 0)
-            last_buy_price = last_opp_entry.get("buy_price", 0)
-            last_sell_price = last_opp_entry.get("sell_price", 0)
-            if (
-                abs(opportunity.buy_price - last_buy_price) / (last_buy_price + 1e-8) < 0.001
-                and abs(opportunity.sell_price - last_sell_price) / (last_sell_price + 1e-8) < 0.001
-                and (now - last_time) < expiry_seconds
-            ):
-                logger.debug(f"Skipping duplicate arbitrage opportunity for {opportunity.asset}")
-                return None
-
-        return opportunity
-    except Exception as e:
-        logger.error(f"Error in debounce_opportunity: {e}", exc_info=True)
-        return None
+# Maintain a cache of recently seen opportunities to avoid duplicates
+opportunity_cache = {}
+OPPORTUNITY_CACHE_TTL = 60  # seconds
+redis_channel_manager = RedisChannelManager()
 
 
-def publish_trade_opportunity(opportunity: TradeOpportunity) -> TradeOpportunity:
+def debounce_opportunity(redis_client, opportunity: TradeOpportunity, strategy_name=None) -> Optional[TradeOpportunity]:
+    """
+    Debounce trade opportunities to avoid processing duplicates.
+
+    Parameters:
+        redis_client: Redis client for checking existing opportunities
+        opportunity: The opportunity to debounce
+        strategy_name: Optional strategy name for more specific caching
+    """
     if not opportunity:
         return None
-    try:
-        # Publish the opportunity (if your redis_client expects a dict, convert it)
-        redis_client.publish_trade_opportunity(opportunity)
-        logger.info(f"Published trade opportunity: {opportunity}")
-        return opportunity
-    except Exception as e:
-        logger.error(f"Error pushing opportunity: {e}")
-        return None
+
+    # Use the opportunity's strategy field if no strategy_name is provided
+    strategy = strategy_name or opportunity.strategy
+
+    # Include strategy in the cache key
+    cache_key = f"{strategy}:{opportunity.opportunity_key}"
+
+    current_time = time.time()
+
+    # Check if we've seen this opportunity recently
+    if cache_key in opportunity_cache:
+        last_seen, last_spread = opportunity_cache[cache_key]
+        if current_time - last_seen < OPPORTUNITY_CACHE_TTL:
+            # Only update and return if the new spread is better
+            if opportunity.spread > last_spread:
+                logger.info(f"Better spread for existing opportunity {cache_key}: {opportunity.spread} > {last_spread}")
+                opportunity_cache[cache_key] = (current_time, opportunity.spread)
+                return opportunity
+            else:
+                logger.debug(f"Duplicate opportunity with equal/worse spread, skipping: {cache_key}")
+                return None
+
+    # New opportunity, add to cache
+    opportunity_cache[cache_key] = (current_time, opportunity.spread)
+
+    # Clean up expired entries
+    for k in list(opportunity_cache.keys()):
+        timestamp, _ = opportunity_cache[k]
+        if current_time - timestamp > OPPORTUNITY_CACHE_TTL:
+            del opportunity_cache[k]
+
+    return opportunity
+
+
+def publish_trade_opportunity(opportunity: TradeOpportunity, strategy_name=None) -> str:
+    """
+    Publish a trade opportunity to appropriate channels using RedisChannelManager.
+
+    Parameters:
+        opportunity: The opportunity to publish
+        strategy_name: Optional strategy name (will override opportunity.strategy if provided)
+    """
+    if not opportunity:
+        return "No opportunity to publish"
+
+    # If strategy_name is provided, update the opportunity's strategy
+    if strategy_name and opportunity.strategy != strategy_name:
+        opportunity.strategy = strategy_name
+
+    # Use the channel manager to publish to the appropriate channel
+    if redis_channel_manager.publish_opportunity(opportunity):
+        return f"Published: {opportunity.id}"
+    else:
+        return f"Failed to publish: {opportunity.id}"

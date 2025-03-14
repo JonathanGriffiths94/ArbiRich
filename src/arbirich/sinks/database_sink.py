@@ -3,7 +3,8 @@ import logging
 
 from pydantic import ValidationError
 
-from src.arbirich.models.dtos import TradeExecution, TradeOpportunity
+from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -11,44 +12,51 @@ logger = logging.getLogger(__name__)
 def db_sink(state, item):
     try:
         data = json.loads(item)
+        logger.debug(f"Received data: {data}")
     except json.JSONDecodeError as e:
         logger.error(f"Error parsing JSON: {e}")
         return state
 
-    db_manager = state["db_manager"]
+    # Get database service from state or create a new one
+    db_service = state.get("db_service")
+    if not db_service:
+        logger.info("Creating new database service")
+        db_service = DatabaseService()
+        state["db_service"] = db_service
 
-    if "buy_price" in data:
-        try:
-            opportunity = TradeOpportunity(**data)
-            db_manager.create_trade_opportunity(
-                trading_pair_id=opportunity.asset,
-                buy_exchange_id=opportunity.buy_exchange,
-                sell_exchange_id=opportunity.sell_exchange,
-                buy_price=opportunity.buy_price,
-                sell_price=opportunity.sell_price,
-                spread=opportunity.spread,
-                volume=opportunity.volume,
-                opportunity_timestamp=opportunity.opportunity_timestamp,
-            )
-        except ValidationError as e:
-            logger.error(f"Validation error for trade opportunity: {e}")
-    elif "executed_buy_price" in data:
-        try:
-            execution = TradeExecution(**data)
-            db_manager.create_trade_execution(
-                trading_pair_id=execution.asset,
-                buy_exchange_id=execution.buy_exchange,
-                sell_exchange_id=execution.sell_exchange,
-                executed_buy_price=execution.executed_buy_price,
-                executed_sell_price=execution.executed_sell_price,
-                spread=execution.spread,
-                volume=execution.volume,
-                execution_timestamp=execution.execution_timestamp,
-                execution_id=execution.execution_id,
-                opportunity_id=execution.opportunity_id,
-            )
-        except ValidationError as e:
-            logger.error(f"Validation error for trade execution: {e}")
-    else:
-        logger.error(f"Invalid data: {data}")
+    try:
+        with db_service:
+            if "buy_price" in data and "strategy" in data and "pair" in data:
+                # Handle trade opportunity
+                opportunity = TradeOpportunity(**data)
+                logger.info(f"Processing trade opportunity: {opportunity.id}")
+
+                # Save to database
+                db_service.create_trade_opportunity(opportunity)
+                logger.info(f"Trade opportunity saved: {opportunity.id}")
+
+            elif "executed_buy_price" in data and "strategy" in data and "pair" in data:
+                # Handle trade execution
+                execution = TradeExecution(**data)
+                logger.info(f"Processing trade execution: {execution.id}")
+
+                # Save to database
+                db_service.create_trade_execution(execution)
+                logger.info(f"Trade execution saved: {execution.id}")
+
+                # Update strategy metrics if profit/loss information is available
+                profit = execution.executed_sell_price - execution.executed_buy_price
+                if profit != 0 and execution.strategy:
+                    db_service.update_strategy_stats(
+                        strategy_id=execution.strategy,
+                        profit=profit if profit > 0 else 0,
+                        loss=profit if profit < 0 else 0,
+                    )
+            else:
+                logger.error(f"Invalid data format: {data}")
+    except ValidationError as e:
+        logger.error(f"Validation error: {e}")
+    except Exception as e:
+        logger.exception(f"Error processing data: {e}")
+
     return state

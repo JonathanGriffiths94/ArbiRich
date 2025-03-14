@@ -45,6 +45,19 @@ The project requires :
    cp .env.example .env
    ```
 
+## Database Management
+
+The application uses SQLAlchemy to interact with the database:
+
+- `database_service.py` - Provides a DatabaseService class with methods for all database operations
+- `prefill_database.py` - Script to initialize the database with required reference data (exchanges, pairs, and strategies)
+
+To initialize the database:
+
+```bash
+python -m src.arbirich.prefill_database
+```
+
 ## Usage
 
 Run the app with:

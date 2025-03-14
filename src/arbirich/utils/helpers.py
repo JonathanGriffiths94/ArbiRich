@@ -1,6 +1,6 @@
 import logging
 
-from src.arbirich.config import ASSETS, EXCHANGE_CONFIGS, EXCHANGES
+from src.arbirich.config import EXCHANGE_CONFIGS, EXCHANGES, PAIRS
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,6 @@ def build_exchanges_dict() -> dict:
         if not config:
             continue
         delimiter = "-"
-        formatted_assets = [delimiter.join(asset) for asset in ASSETS]
+        formatted_assets = [delimiter.join(asset) for asset in PAIRS]
         exchanges_dict[exch] = formatted_assets
     return exchanges_dict

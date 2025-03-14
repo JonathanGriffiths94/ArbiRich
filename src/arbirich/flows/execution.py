@@ -6,15 +6,14 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from src.arbirich.config import REDIS_CONFIG
-from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.services.redis_service import RedisService
 from src.arbirich.sinks.execution_sink import execute_trade
-from src.arbirich.sources.opportunity_source import RedisOpportunitySource
+from src.arbirich.sources.execution_source import RedisExecutionSource
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
+redis_client = RedisService()
 
 
 def build_flow():
@@ -26,9 +25,9 @@ def build_flow():
     logger.info("Building execution flow...")
     flow = Dataflow("execution")
 
-    source = RedisOpportunitySource()
+    source = RedisExecutionSource()
     stream = op.input("redis_input", flow, source)
-    logger.debug("Input stream created from RedisOpportunitySource.")
+    logger.debug("Input stream created from RedisExecutionSource.")
 
     executed = op.map("execute_trade", stream, execute_trade)
     logger.debug("Applied execute_trade operator on stream.")

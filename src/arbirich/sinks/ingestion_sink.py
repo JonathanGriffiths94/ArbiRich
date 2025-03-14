@@ -1,12 +1,11 @@
 import logging
 
-from src.arbirich.config import REDIS_CONFIG
-from src.arbirich.models.dtos import OrderBookUpdate
-from src.arbirich.redis_manager import ArbiDataService
+from src.arbirich.models.models import OrderBookUpdate
+from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 
-redis_client = ArbiDataService(host=REDIS_CONFIG["host"], port=REDIS_CONFIG["port"], db=REDIS_CONFIG["db"])
+redis_client = RedisService()
 
 # Global cache for deduplication
 LAST_ORDER_BOOK = {}
