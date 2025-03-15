@@ -50,7 +50,7 @@ start-redis:
 stop-redis:
     @docker stop {{REDIS_CONTAINER}} || true
 
-# Run the application (dev)
+# Run the application (dev) with Redis check
 run-bot:
     RUST_BACKTRACE=1 {{ python }} -m main
 

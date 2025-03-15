@@ -6,15 +6,15 @@ import requests
 import websockets
 
 from src.arbirich.config import EXCHANGE_CONFIGS
+from src.arbirich.exchange_processors.processor_factory import register
 from src.arbirich.io.websockets.base import BaseOrderBookProcessor
-
-# from src.arbirich.models.dtos import CryptocomOrderBookSnapshot
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
+@register("bybit")
+class BybitOrderBookProcessor(BaseOrderBookProcessor):
     def __init__(
         self,
         exchange: str,
@@ -22,21 +22,12 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
         subscription_type: str,
         use_rest_snapshot: bool,
     ):
-        # Using snapshot mode in this example.
         self.product = product
         self.cfg = EXCHANGE_CONFIGS.get(exchange)
         self.ws_url = self.cfg["ws"]["ws_url"]
         formatted_product = self.process_asset()
-
-        self.subscribe_message = json.dumps(
-            {
-                "id": 1,
-                "method": "subscribe",
-                "params": {"channels": [f"book.{formatted_product}.10"]},
-                "book_subscription_type": "SNAPSHOT_AND_UPDATE",
-                "book_update_frequency": 10,
-            }
-        )
+        self.subscribe_message = json.dumps({"op": "subscribe", "args": [f"orderbook.200.{formatted_product}"]})
+        self.last_snapshot = None  # to store snapshot from WS
         super().__init__(exchange, product, subscription_type, use_rest_snapshot)
 
     async def connect(self):
@@ -50,7 +41,9 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
         while True:
             message = await websocket.recv()
             data = json.loads(message)
-            if "id" in data and data.get("method") == "subscribe":
+            # Bybit may send a confirmation message with an "op" field or "type" field.
+            if data.get("type") in ["snapshot", "delta"]:
+                # A snapshot or update implies subscription is active.
                 logger.info("Subscription confirmed")
                 break
 
@@ -61,141 +54,105 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
         while True:
             message = await websocket.recv()
             data = json.loads(message)
-            logger.debug(data.get("channel"))
-            # If the message type is snapshot, use it as the full snapshot.
-            if data["result"].get("channel") == "book":
-                first_event = data["result"]["data"][0]
-                logger.debug(f"First event: {first_event}")
-                logger.info(f"Received snapshot message with update ID: {first_event.get('u')}")
-                buffered_events.append(first_event)
-                # Optionally save this snapshot.
-                self.last_snapshot = first_event
+            if data.get("type") == "snapshot":
+                first_event = data
+                logger.info(f"Received snapshot message with timestamp: {data.get('timestamp_e6')}")
+                buffered_events.append(data)
+                self.last_snapshot = data
                 break
-            elif data["result"].get("channel") == "book.update":
+            elif data.get("type") == "delta":
                 if first_event is None:
-                    first_event = data["result"]["data"][0]
-                    logger.info(f"First delta buffered event U: {first_event.get('u')}")
-                buffered_events.append(data["data"])
+                    first_event = data
+                    logger.info(f"First delta buffered event with timestamp: {data.get('timestamp_e6')}")
+                buffered_events.append(data)
                 if asyncio.get_event_loop().time() - start > 1 or len(buffered_events) >= 5:
                     break
         return buffered_events, first_event
 
     def fetch_snapshot(self):
-        # In snapshot mode, we may choose to use the WebSocket snapshot already received.
+        # If using snapshot mode, choose between the stored WS snapshot or fetching from REST.
         if self.last_snapshot:
-            logger.info(f"Using WebSocket snapshot with timestamp {self.last_snapshot.get('t')}")
+            logger.info(f"Using WebSocket snapshot with timestamp {self.last_snapshot.get('timestamp_e6')}")
             return self.last_snapshot
-        logger.info("Fetching snapshot from REST API")
-        response = requests.get(self.snapshot_url)
-        response.raise_for_status()
-        snapshot = response.json()["result"]["data"][0]
-        return snapshot
-
-    # def fetch_snapshot(self):
-    #     if self.last_snapshot:
-    #         logger.info(f"Using WebSocket snapshot with timestamp {self.last_snapshot.get('t')}")
-    #         try:
-    #             snapshot = CryptocomOrderBookSnapshot(**self.last_snapshot)
-    #         except Exception as e:
-    #             logger.error(f"Snapshot validation error: {e}")
-    #             raise e
-    #         return snapshot
-    #     logger.info("Fetching snapshot from REST API")
-    #     response = requests.get(self.snapshot_url)
-    #     response.raise_for_status()
-    #     snapshot_data = response.json()["result"]["data"][0]
-    #     try:
-    #         snapshot = CryptocomOrderBookSnapshot(**snapshot_data)
-    #     except Exception as e:
-    #         logger.error(f"Snapshot validation error from REST: {e}")
-    #         raise e
-    #     return snapshot
-
-    # def get_snapshot_update_id(self, snapshot):
-    #     return snapshot.get("u")
-
-    # def get_first_update_id(self, event):
-    #     return event.get("pu", self.get_snapshot_update_id(event) - 1)
+        if self.snapshot_url:
+            logger.info("Fetching snapshot from REST API")
+            response = requests.get(self.snapshot_url)
+            response.raise_for_status()
+            snapshot = response.json()["result"]["data"][0]
+            return snapshot
+        logger.error("No snapshot available")
+        return None
 
     def get_snapshot_update_id(self, snapshot):
-        return snapshot.get("u")
+        # For Bybit, get the update ID from the nested "data" field.
+        return snapshot.get("data", {}).get("u")
 
     def get_first_update_id(self, snapshot):
-        return snapshot.get("pu", snapshot.get("u", 0) - 1)
+        # For diff updates, use the event timestamp.
+        return snapshot.get("data", {}).get("u")
 
     def get_final_update_id(self, snapshot):
-        return snapshot.get("u")
+        # If Bybit’s delta updates do not provide a range, you may simply return the same timestamp.
+        return snapshot.get("data", {}).get("u")
 
     def init_order_book(self, snapshot):
         bids = {}
         asks = {}
-        # Process bids
-        for price, qty, *_ in snapshot.get("bids", []):
+        data = snapshot.get("data", {})
+        bid_entries = data.get("b", [])
+        ask_entries = data.get("a", [])
+
+        # Process bids from bid_entries list
+        for entry in bid_entries:
             try:
-                price = float(price)
-                qty = float(qty)
+                price = float(entry[0])
+                qty = float(entry[1])
             except Exception as e:
-                logger.error(f"Error processing bid entry {price, qty}: {e}")
+                logger.error(f"Error processing bid entry {entry}: {e}")
                 continue
             if qty > 0:
                 bids[price] = qty
-        # Process asks
-        for price, qty, *_ in snapshot.get("asks", []):
+
+        # Process asks from ask_entries list
+        for entry in ask_entries:
             try:
-                price = float(price)
-                qty = float(qty)
+                price = float(entry[0])
+                qty = float(entry[1])
             except Exception as e:
-                logger.error(f"Error processing ask entry {price, qty}: {e}")
+                logger.error(f"Error processing ask entry {entry}: {e}")
                 continue
             if qty > 0:
                 asks[price] = qty
+
         logger.info(f"Initialized order book with {len(bids)} bids and {len(asks)} asks")
         return {"bids": bids, "asks": asks}
 
     def process_buffered_events(self, events, snapshot_update_id):
-        # For snapshot mode, we assume no additional buffered delta events are needed.
+        # In snapshot mode, we assume no extra delta events are applied.
         logger.info("No buffered events to process in snapshot mode")
         return
 
     async def live_updates(self, websocket):
+        logger.info("Starting to process live updates...")
         async for message in websocket:
             data = json.loads(message)
-            if "result" not in data or "data" not in data["result"]:
+            if data.get("type") != "delta":
                 continue
-            event = data["result"]["data"][0]
-            ## Check this!!!
-            event["pu"] = self.get_first_update_id(event)
-
-            logger.debug(f"Received update with t: {event.get('t')}, pu: {event.get('pu')}, u: {event.get('u')}")
+            # For delta messages, data is under "data" (a list of order changes).
+            # Normalize the event if needed.
+            event = data
+            # Optionally, add or compute fields if required.
             yield json.dumps(event)
 
-    # async def live_updates(self, websocket):
-    #     async for message in websocket:
-    #         data = json.loads(message)
-    #         if "result" not in data or "data" not in data["result"]:
-    #             continue
-    #         event_data = data["result"]["data"][0]
-    #         logger.info(f"Event_data: {event_data}")
-    #         try:
-    #             event = CryptocomOrderBookSnapshot(
-    #                 bids=event_data["bids"],  # [[price, quantity, lvl], [...] ]
-    #                 asks=event_data["asks"],
-    #                 u=event_data["u"],
-    #                 t=event_data["t"],
-    #                 pu=0,
-    #             )
-    #         except Exception as e:
-    #             logger.error(f"Event validation error: {e}")
-    #             continue
-    #         logger.debug(
-    #             f"Received update with t: {event.t}, pu: {event.pu}, u: {event.u}"
-    #         )
-    #         # Yield either the model or its JSON/dict representation as needed:
-    #         yield event.model_dump_json()  # or yield event.dict()
-
     def apply_event(self, event):
-        # Process both bids ("bids") and asks ("asks").
-        for side_key, book_side in [("bids", "bids"), ("asks", "asks")]:
+        # Set the timestamp from the top level of the event
+        self.order_book["timestamp"] = event.get("ts")
+        # If the event has a "data" key, use it as the source for order book entries.
+        if "data" in event:
+            event = event["data"]
+
+        # Now, for Bybit, order book entries are under "b" for bids and "a" for asks.
+        for side_key, book_side in [("b", "bids"), ("a", "asks")]:
             if side_key in event:
                 for entry in event.get(side_key, []):
                     logger.debug(f"Processing {side_key} entry: {entry}")
@@ -230,16 +187,14 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
                         self.order_book[book_side].pop(price, None)
                     else:
                         self.order_book[book_side][price] = qty
-        # Set the timestamp from the event.
-        self.order_book["timestamp"] = event.get("t", self.order_book.get("timestamp"))
 
     async def resubscribe(self, websocket):
-        logger.info("Re-subscribing to Crypto.com stream for a fresh snapshot...")
+        logger.info("Re-subscribing to Bybit stream for a fresh snapshot...")
         await websocket.send(self.subscribe_message)
         self.last_snapshot = None
 
 
-async def run_crypto_orderbook():
+async def run_bybit_orderbook():
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
@@ -248,10 +203,10 @@ async def run_crypto_orderbook():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    logger.info("Starting Crypto.com order book processor...")
-    processor = CryptocomOrderBookProcessor(
-        exchange="cryptocom",
-        product="BTC_USDT",
+    logger.info("Starting Bybit order book processor...")
+    processor = BybitOrderBookProcessor(
+        exchange="bybit",
+        product="BTCUSDT",
         subscription_type="snapshot",
         use_rest_snapshot=False,
     )
@@ -265,7 +220,7 @@ async def run_crypto_orderbook():
             top_asks = sorted(order_book["asks"].items())[:3]
 
             bid_ask_spread = (
-                max(order_book["bids"].keys()) - min(order_book["asks"].keys())
+                min(order_book["asks"].keys()) - max(order_book["bids"].keys())
                 if order_book["bids"] and order_book["asks"]
                 else None
             )
@@ -282,4 +237,4 @@ async def run_crypto_orderbook():
 
 
 if __name__ == "__main__":
-    asyncio.run(run_crypto_orderbook())
+    asyncio.run(run_bybit_orderbook())

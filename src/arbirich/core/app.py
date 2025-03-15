@@ -4,16 +4,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.arbirich.core.events import shutdown_event, startup_event
-from src.arbirich.routers import status
+from src.arbirich.routers.status import router
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting application services...")
-    await startup_event()
+    """Lifespan context manager for FastAPI"""
     try:
+        logger.info("Starting application services...")
+        await startup_event()
         yield
     finally:
         logger.info("Shutting down application services...")
@@ -21,7 +22,7 @@ async def lifespan(app: FastAPI):
 
 
 def make_app() -> FastAPI:
-    app = FastAPI(title="ArbiRich", lifespan=lifespan)
-
-    app.include_router(status.router, prefix="/status", tags=["System Status"])
+    """Create and configure the FastAPI application"""
+    app = FastAPI(lifespan=lifespan)
+    app.include_router(router)
     return app

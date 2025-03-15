@@ -1,11 +1,12 @@
 import logging
 
 from src.arbirich.models.models import OrderBookUpdate
-from src.arbirich.services.redis_service import RedisService
+from src.arbirich.sources.arbitrage_source import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
 
-redis_client = RedisService()
+# Use the shared Redis client instead of creating a new one
+redis_client = get_shared_redis_client()
 
 # Global cache for deduplication
 LAST_ORDER_BOOK = {}
@@ -29,11 +30,21 @@ def store_order_book(order_book: OrderBookUpdate):
 
     LAST_ORDER_BOOK[key] = order_book.hash
 
-    redis_client.publish_order_book(order_book)
-    logger.info(
-        f"Successfully published to 'order_book' channel: {order_book.symbol}:{order_book.exchange} - {order_book.timestamp}"
-    )
+    try:
+        redis_client.publish_order_book(order_book)
+        logger.debug(
+            f"Successfully published to 'order_book' channel: {order_book.symbol}:{order_book.exchange} - {order_book.timestamp}"
+        )
 
-    redis_client.store_order_book(order_book)
-    logger.info(f"Successfully pushed to cache: {order_book.symbol}:{order_book.exchange} - {order_book.timestamp}")
+        redis_client.store_order_book(order_book)
+        logger.debug(
+            f"Successfully pushed to cache: {order_book.symbol}:{order_book.exchange} - {order_book.timestamp}"
+        )
+    except Exception as e:
+        logger.error(f"Error storing/publishing order book: {e}")
+        # If Redis connection is unhealthy, try to reconnect
+        if not redis_client.is_healthy():
+            logger.warning("Redis connection unhealthy, attempting to reconnect...")
+            redis_client.reconnect_if_needed()
+
     return order_book

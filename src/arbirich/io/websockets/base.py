@@ -47,14 +47,14 @@ class BaseOrderBookProcessor(ABC):
                     # Buffer initial events and record the first event.
                     buffered_events, first_event = await self.buffer_events(websocket)
                     snapshot = self.fetch_snapshot() if self.use_rest_snapshot else first_event
-                    logger.info(f"Snapshot: {snapshot}")
+                    logger.debug(f"Snapshot: {snapshot}")
 
                     # Get snapshot id
                     snapshot_update_id = self.get_snapshot_update_id(snapshot)
-                    logger.info(f"Snapshot update ID: {snapshot_update_id}")
+                    logger.debug(f"Snapshot update ID: {snapshot_update_id}")
 
                     if snapshot_update_id == 1:
-                        logger.info(
+                        logger.debug(
                             "Received snapshot with update ID 1 (service restart). Overwriting local order book."
                         )
                         self.order_book = self.init_order_book(snapshot)
@@ -119,7 +119,7 @@ class BaseOrderBookProcessor(ABC):
                     # Initialize the local order book.
                     self.order_book = self.init_order_book(snapshot)
                     self.local_update_id = snapshot_update_id
-                    logger.info(f"Initialized local order book with update ID: {self.local_update_id}")
+                    logger.debug(f"Initialized local order book with update ID: {self.local_update_id}")
 
                     # Process live updates continuously.
                     async for message in self.live_updates(websocket):

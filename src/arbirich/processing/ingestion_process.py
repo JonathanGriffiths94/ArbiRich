@@ -11,6 +11,7 @@ def process_order_book(order_book_update: tuple) -> OrderBookUpdate:
     Process order book updates by ensuring we have the exchange, product,
     and order book data, and return an OrderBookUpdate instance.
     """
+    logger.debug(f"Processing order book update: {order_book_update}")
     if isinstance(order_book_update, tuple):
         if len(order_book_update) == 3:
             exchange, product_id, order_book = order_book_update

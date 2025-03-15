@@ -5,7 +5,7 @@ from src.arbirich.models.models import TradeExecution, TradeOpportunity
 from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 redis_client = RedisService()
 
@@ -25,7 +25,8 @@ def execute_trade(opportunity_raw: dict) -> dict:
     execution_ts = time.time()
 
     trade_exec = TradeExecution(
-        asset=opp.asset,
+        strategy=opp.strategy,
+        pair=opp.pair,
         buy_exchange=opp.buy_exchange,
         sell_exchange=opp.sell_exchange,
         executed_buy_price=opp.buy_price,
@@ -37,7 +38,7 @@ def execute_trade(opportunity_raw: dict) -> dict:
     )
 
     trade_msg = (
-        f"Executed trade for {trade_exec.asset}: "
+        f"Executed trade for {trade_exec.pair}: "
         f"Buy from {trade_exec.buy_exchange} at {trade_exec.executed_buy_price}, "
         f"Sell on {trade_exec.sell_exchange} at {trade_exec.executed_sell_price}, "
         f"Spread: {trade_exec.spread:.4f}, Volume: {trade_exec.volume}, "

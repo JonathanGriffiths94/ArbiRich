@@ -48,7 +48,7 @@ def db_sink(state, item):
                 profit = execution.executed_sell_price - execution.executed_buy_price
                 if profit != 0 and execution.strategy:
                     db_service.update_strategy_stats(
-                        strategy_id=execution.strategy,
+                        strategy_name=execution.strategy,  # Use strategy name instead of ID
                         profit=profit if profit > 0 else 0,
                         loss=profit if profit < 0 else 0,
                     )

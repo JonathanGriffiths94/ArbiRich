@@ -3,6 +3,7 @@ import asyncio
 import logging
 
 from bytewax import operators as op
+from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
@@ -12,22 +13,20 @@ from src.arbirich.processing.arbitrage_process import (
     update_asset_state,
 )
 from src.arbirich.services.redis_service import RedisService
-from src.arbirich.sinks.opportunity_sink import (
+from src.arbirich.sinks.arbitrage_sink import (
     debounce_opportunity,
     publish_trade_opportunity,
 )
-from src.arbirich.sources.opportunity_source import RedisOpportunitySource
-from src.arbirich.utils.bytewax_sinks import LoggingSink, NullSink
-from src.arbirich.utils.helpers import build_exchanges_dict
+from src.arbirich.sources.arbitrage_source import use_redis_opportunity_source
 from src.arbirich.utils.strategy_manager import StrategyManager
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 redis_client = RedisService()
 
 
-def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=False):
+def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=True):
     """
     Build the arbitrage flow for a specific strategy.
 
@@ -38,13 +37,18 @@ def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=False):
     logger.info(f"Building arbitrage flow for strategy: {strategy_name}...")
     flow = Dataflow(f"arbitrage-{strategy_name}")  # Include strategy name in flow name
 
-    exchanges = build_exchanges_dict()
-    exchange_channels = {exchange: "order_book" for exchange in exchanges.keys()}
+    # Get strategy-specific exchanges and channels
+    exchange_channels = StrategyManager.get_exchange_channels(strategy_name)
+    logger.info(f"Using exchanges for {strategy_name}: {list(exchange_channels.keys())}")
 
-    source = RedisOpportunitySource(exchange_channels)
-    stream = op.input("redis_input", flow, source)
+    # Get strategy-specific pairs
+    pairs = StrategyManager.get_pairs_for_strategy(strategy_name)
+    logger.info(f"Using trading pairs for {strategy_name}: {pairs}")
 
-    keyed_stream = op.map("key_by_asset", stream, key_by_asset)
+    # Add Redis opportunity source to the flow
+    input_stream = use_redis_opportunity_source(flow, "redis_input", exchange_channels, pairs)
+
+    keyed_stream = op.map("key_by_asset", input_stream, key_by_asset)
     asset_state_stream = op.stateful_map("asset_state", keyed_stream, update_asset_state)
 
     # Filter not ready states
@@ -100,21 +104,24 @@ def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=False):
 
     # Publish to Redis with strategy name in channel
     def publish_with_strategy(opportunity):
+        # Log the opportunity here instead of sending to stdout
+        if debug_mode:
+            logger.info(f"OPPORTUNITY: {opportunity}")
         return publish_trade_opportunity(opportunity, strategy_name=strategy_name)
 
     redis_sync = op.map("push_trade_opportunity", final_opp, publish_with_strategy)
 
-    # Choose sink based on debug mode
-    if debug_mode:
-        sink = LoggingSink(
-            name=f"arbitrage-{strategy_name}", log_level=logging.INFO, formatter=lambda x: f"Opportunity processed: {x}"
-        )
-        logger.info(f"Using LoggingSink for {strategy_name} (debug mode)")
-    else:
-        sink = NullSink()
-        logger.info(f"Using NullSink for {strategy_name} (silent mode)")
+    # Use a noop function to prevent anything from reaching output
+    def noop_formatter(item):
+        # We've already logged the item if debug_mode=True
+        # Just return a simple string to satisfy the sink's needs
+        return "processed"
 
-    op.output("flow_output", redis_sync, sink)
+    filtered_output = op.map("noop_format", redis_sync, noop_formatter)
+
+    # Use standard StdOutSink without any customization to avoid the unknown sink type error
+    op.output("flow_output", filtered_output, StdOutSink())
+
     logger.info(f"Arbitrage flow for {strategy_name} built successfully")
     return flow
 

@@ -1,16 +1,17 @@
 import logging
-from typing import Optional, Tuple
+import time
+import uuid
+from typing import Dict, Optional, Tuple
 
 from pydantic import ValidationError
 
 from src.arbirich.models.models import (
     OrderBookState,
     OrderBookUpdate,
-    TradeOpportunity,
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def key_by_asset(record: dict) -> Optional[Tuple[str, OrderBookUpdate]]:
@@ -66,99 +67,153 @@ def update_asset_state(
     return state, state
 
 
-def detect_arbitrage(asset: str, state: OrderBookState, threshold: float) -> Optional[TradeOpportunity]:
+def find_arbitrage_opportunities(state_and_input: Tuple[Dict, Tuple[str, str]]) -> Tuple[Dict, Optional[Dict]]:
     """
-    Detect arbitrage opportunities for a given normalized asset (e.g. "BTC_USDT")
-    using a nested state structure that stores exchange-specific order book data.
+    Find arbitrage opportunities across exchanges.
 
-    It compares each pair of exchanges:
-      - For one pair, it compares the highest bid on one exchange with the lowest ask on the other.
-      - It does the reverse as well.
+    Parameters:
+        state_and_input: A tuple containing:
+            - state: The current state dictionary with order books
+            - input: A tuple of (exchange, message) from the source
 
-    If the spread (relative difference) exceeds the threshold, a TradeOpportunity is returned.
+    Returns:
+        A tuple of:
+            - updated state
+            - opportunity dictionary or None
     """
-    logger.info(f"Detecting arbitrage for asset: {asset} with threshold: {threshold}")
+    state, message = state_and_input
 
-    # Retrieve the order book state for the asset from symbols.
-    asset_state = state.symbols.get(asset)
-    if asset_state is None:
-        logger.warning(f"No state available for asset: {asset}")
+    try:
+        # Extract state variables
+        state_dict = state.get("state", {})
+        strategy = state.get("strategy")
+        threshold = state.get("threshold", 0.001)
+
+        # Extract input data
+        exchange, order_book_data = message
+
+        # Add current timestamp for debugging
+        current_time = time.time()
+        logger.debug(f"Processing order book from {exchange} at {current_time}")
+
+        # If the order book data is already an OrderBookUpdate, use it directly
+        if isinstance(order_book_data, OrderBookUpdate):
+            order_book = order_book_data
+        else:
+            # Otherwise, assume it's a dictionary and convert it
+            try:
+                order_book = OrderBookUpdate(
+                    exchange=exchange,
+                    symbol=order_book_data.get("symbol"),
+                    bids=order_book_data.get("bids", []),
+                    asks=order_book_data.get("asks", []),
+                    timestamp=order_book_data.get("timestamp", current_time),
+                )
+            except Exception as e:
+                logger.error(f"Error creating OrderBookUpdate: {e}, data: {order_book_data}")
+                return state, None
+
+        # Don't process older order book updates (if timestamp is present)
+        if order_book.symbol in state_dict:
+            for ex, ob in state_dict[order_book.symbol].items():
+                if ex == exchange and hasattr(ob, "timestamp") and hasattr(order_book, "timestamp"):
+                    if ob.timestamp > order_book.timestamp:
+                        logger.debug(f"Skipping older order book update for {exchange}:{order_book.symbol}")
+                        return state, None
+
+        # Update state with new order book
+        if order_book.symbol not in state_dict:
+            state_dict[order_book.symbol] = {}
+
+        state_dict[order_book.symbol][exchange] = order_book
+
+        # Check if we have at least two exchanges for this symbol to compare
+        if order_book.symbol in state_dict and len(state_dict[order_book.symbol]) >= 2:
+            # Find best bid and ask across exchanges
+            best_bid = {"price": -1, "exchange": None}
+            best_ask = {"price": float("inf"), "exchange": None}
+
+            symbol_data = state_dict[order_book.symbol]
+
+            for ex, ob in symbol_data.items():
+                # Skip if order book doesn't have bids or asks
+                if not hasattr(ob, "bids") or not hasattr(ob, "asks") or not ob.bids or not ob.asks:
+                    continue
+
+                # Find the highest bid
+                highest_bid_price = max(ob.bids, key=lambda b: b.price, default=None)
+                if highest_bid_price and highest_bid_price.price > best_bid["price"]:
+                    best_bid["price"] = highest_bid_price.price
+                    best_bid["exchange"] = ex
+                    best_bid["quantity"] = highest_bid_price.quantity
+
+                # Find the lowest ask
+                lowest_ask_price = min(ob.asks, key=lambda a: a.price, default=None)
+                if lowest_ask_price and lowest_ask_price.price < best_ask["price"]:
+                    best_ask["price"] = lowest_ask_price.price
+                    best_ask["exchange"] = ex
+                    best_ask["quantity"] = lowest_ask_price.quantity
+
+            # Check if we found valid best bid and ask from different exchanges
+            if best_bid["exchange"] and best_ask["exchange"] and best_bid["exchange"] != best_ask["exchange"]:
+                # Calculate spread
+                spread = (best_bid["price"] - best_ask["price"]) / best_ask["price"]
+
+                # Check if spread exceeds threshold
+                if spread > threshold:
+                    # Calculate the volume as the minimum of the bid and ask quantities
+                    volume = min(best_bid.get("quantity", 0), best_ask.get("quantity", 0))
+
+                    # Create opportunity
+                    opportunity = {
+                        "id": str(uuid.uuid4()),
+                        "strategy": strategy,
+                        "pair": order_book.symbol,
+                        "buy_exchange": best_ask["exchange"],
+                        "sell_exchange": best_bid["exchange"],
+                        "buy_price": best_ask["price"],
+                        "sell_price": best_bid["price"],
+                        "spread": spread,
+                        "volume": volume,
+                        "opportunity_timestamp": current_time,
+                    }
+
+                    logger.info(f"Found opportunity: {opportunity}")
+
+                    return {"state": state_dict, "strategy": strategy, "threshold": threshold}, opportunity
+
+        # No opportunity found
+        return {"state": state_dict, "strategy": strategy, "threshold": threshold}, None
+
+    except Exception as e:
+        logger.error(f"Error processing arbitrage opportunity: {e}")
+        # Return original state and no opportunity
+        return state, None
+
+
+def format_opportunity(opportunity: Dict) -> Optional[Dict]:
+    """
+    Format the opportunity for output.
+
+    Parameters:
+        opportunity: The opportunity dictionary
+
+    Returns:
+        Formatted opportunity or None
+    """
+    if not opportunity:
         return None
 
-    exchanges = list(asset_state.keys())
-    if len(exchanges) < 2:
-        logger.info("Not enough exchanges to compare for arbitrage.")
+    try:
+        # Add formatted log message
+        logger.info(
+            f"Arbitrage opportunity: {opportunity['pair']}: "
+            f"Buy from {opportunity['buy_exchange']} at {opportunity['buy_price']}, "
+            f"Sell on {opportunity['sell_exchange']} at {opportunity['sell_price']}, "
+            f"Spread: {opportunity['spread']:.4%}, Volume: {opportunity['volume']}"
+        )
+
+        return opportunity
+    except Exception as e:
+        logger.error(f"Error formatting opportunity: {e}")
         return None
-
-    # Loop over all distinct exchange pairs.
-    for i in range(len(exchanges)):
-        for j in range(i + 1, len(exchanges)):
-            exch1 = exchanges[i]
-            exch2 = exchanges[j]
-            ob1 = asset_state[exch1]
-            ob2 = asset_state[exch2]
-
-            # First, check arbitrage from exch1 (selling) to exch2 (buying).
-            if ob1.bids and ob2.asks:
-                top_bid = max(ob1.bids, key=lambda o: o.price)
-                top_ask = min(ob2.asks, key=lambda o: o.price)
-                logger.info(f"Comparing {exch1} bid {top_bid} vs {exch2} ask {top_ask}")
-                if top_bid.price > top_ask.price:
-                    spread = (top_bid.price - top_ask.price) / top_ask.price
-                    logger.info(f"Spread for {exch1} (bid) vs {exch2} (ask): {spread}")
-                    if spread > threshold:
-                        # Choose a timestamp from one of the exchanges.
-                        ts = ob1.timestamp if ob1.timestamp else ob2.timestamp
-                        opp = create_trade_opportunity(
-                            asset=asset,
-                            buy_ex=exch2,
-                            sell_ex=exch1,
-                            buy_price=top_ask.price,
-                            sell_price=top_bid.price,
-                            spread=spread,
-                            volume=min(top_bid.quantity, top_ask.quantity),
-                            strategy_name="arbitrage",
-                        )
-                        logger.info(f"Arbitrage Opportunity found: {opp}")
-                        return opp
-
-            # Next, check arbitrage from exch2 (selling) to exch1 (buying).
-            if ob2.bids and ob1.asks:
-                top_bid_rev = max(ob2.bids, key=lambda o: o.price)
-                top_ask_rev = min(ob1.asks, key=lambda o: o.price)
-                logger.info(f"Comparing {exch2} bid {top_bid_rev} vs {exch1} ask {top_ask_rev}")
-                if top_bid_rev.price > top_ask_rev.price:
-                    spread_rev = (top_bid_rev.price - top_ask_rev.price) / top_ask_rev.price
-                    logger.info(f"Spread for {exch2} (bid) vs {exch1} (ask): {spread_rev}")
-                    if spread_rev > threshold:
-                        ts = ob2.timestamp if ob2.timestamp else ob1.timestamp
-                        opp = create_trade_opportunity(
-                            asset=asset,
-                            buy_ex=exch1,
-                            sell_ex=exch2,
-                            buy_price=top_ask_rev.price,
-                            sell_price=top_bid_rev.price,
-                            spread=spread_rev,
-                            volume=min(top_bid_rev.quantity, top_ask_rev.quantity),
-                            strategy_name="arbitrage",
-                        )
-                        logger.info(f"Arbitrage Opportunity found: {opp}")
-                        return opp
-
-    logger.info("No arbitrage opportunity detected.")
-    return None
-
-
-def create_trade_opportunity(asset, buy_ex, sell_ex, buy_price, sell_price, volume, spread, strategy_name):
-    """Create a trade opportunity object"""
-    opportunity = TradeOpportunity(
-        strategy=strategy_name,  # Use name instead of ID
-        pair=asset,  # Use symbol instead of ID
-        buy_exchange=buy_ex,  # Use name instead of ID
-        sell_exchange=sell_ex,  # Use name instead of ID
-        buy_price=buy_price,
-        sell_price=sell_price,
-        spread=spread,
-        volume=volume,
-    )
-    return opportunity

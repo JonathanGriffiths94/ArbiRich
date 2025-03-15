@@ -1,34 +1,47 @@
 import json
 import logging
-import os
+import threading
 import time
-from typing import Any, Callable, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional, Set
 
 import redis
 from redis.exceptions import ConnectionError, RedisError
 
+from src.arbirich.config import REDIS_CONFIG
 from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
+
+TRADE_OPPORTUNITIES_CHANNEL = "trade_opportunities"
 
 
 class RedisService:
     """Handles real-time market data storage, retrieval, and event publishing using Redis"""
 
-    def __init__(self, host=None, port=6379, db=0, retry_attempts=3, retry_delay=1):
+    # Class variable to track subscribed channels across all instances
+    _subscribed_channels: Set[str] = set()
+    _pubsub_lock = threading.Lock()
+    _shared_pubsub = None
+
+    def __init__(self, retry_attempts=3, retry_delay=1):
         """Initialize Redis connection with retry logic"""
-        self.host = host or os.getenv("REDIS_HOST", "localhost")
-        self.port = port or os.getenv("REDIS_PORT", 6379)
-        self.db = db or os.getenv("REDIS_DB", 0)
+        self.host = REDIS_CONFIG["host"]
+        self.port = REDIS_CONFIG["port"]
+        self.db = REDIS_CONFIG["db"]
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
+        self.pubsub = None
+        self.client = None
         self._connect()
 
     def _connect(self) -> None:
         """Establish connection to Redis with retries"""
         for attempt in range(self.retry_attempts):
             try:
-                self.redis_client = redis.Redis(
+                # Log the connection attempt with the actual host being used
+                logger.info(f"Attempting to connect to Redis at {self.host}:{self.port}")
+
+                self.client = redis.Redis(
                     host=self.host,
                     port=self.port,
                     db=self.db,
@@ -38,7 +51,7 @@ class RedisService:
                     health_check_interval=30,
                 )
                 # Test connection
-                self.redis_client.ping()
+                self.client.ping()
                 logger.info(f"Connected to Redis at {self.host}:{self.port}")
                 return
             except (ConnectionError, RedisError) as e:
@@ -66,7 +79,20 @@ class RedisService:
     def close(self) -> None:
         """Close Redis connection safely"""
         try:
-            self.redis_client.close()
+            with self._pubsub_lock:
+                if self._shared_pubsub:
+                    self._shared_pubsub.close()
+                    self._shared_pubsub = None
+                    self._subscribed_channels.clear()
+
+            if self.pubsub:
+                self.pubsub.close()
+                self.pubsub = None
+
+            if self.client:
+                self.client.close()
+                self.client = None
+
             logger.info("Redis connection closed")
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
@@ -84,7 +110,7 @@ class RedisService:
             key = f"order_book:{order_book.symbol}:{order_book.exchange}"
 
             # Create a pipeline for atomic execution of commands.
-            pipeline = self.redis_client.pipeline()
+            pipeline = self.client.pipeline()
             pipeline.delete(key)
             order_book_json = order_book.model_dump_json()
             pipeline.set(key, order_book_json)
@@ -95,7 +121,7 @@ class RedisService:
             results = pipeline.execute()
 
             # Check the results if needed (typically, an exception would be raised on error)
-            logger.info(f"Successfully stored order book update to Redis at key {key}")
+            logger.debug(f"Successfully stored order book update to Redis at key {key}")
 
         except Exception as e:
             logger.exception(f"Error storing order book update for key {key}: {e}")
@@ -107,7 +133,7 @@ class RedisService:
         Publish top order book data to a Redis Pub/Sub channel.
         """
         try:
-            self.redis_client.publish(channel, order_book.model_dump_json())
+            self.client.publish(channel, order_book.model_dump_json())
             logger.debug(f"Published order book update: {order_book.symbol} {order_book.exchange}")
         except Exception as e:
             logger.error(f"Error publishing order book data: {e}")
@@ -115,12 +141,58 @@ class RedisService:
     def get_order_book(self, exchange: str, symbol: str) -> Optional[OrderBookUpdate]:
         key = f"order_book:{symbol}:{exchange}"
         try:
-            data = self.redis_client.get(key)
+            data = self.client.get(key)
             if data:
                 return OrderBookUpdate.model_validate_json(data.decode("utf-8"))
         except Exception as e:
             logger.error(f"Error retrieving order book: {e}")
         return None
+
+    def get_message(self, channel: str) -> Optional[str]:
+        """
+        Get a message from a Redis Pub/Sub channel using shared PubSub client.
+        """
+        try:
+            # Subscribe to the channel if not already subscribed
+            self._ensure_subscribed(channel)
+
+            # Get message from the shared pubsub client with timeout
+            message = self._get_shared_pubsub().get_message(ignore_subscribe_messages=True, timeout=0.01)
+
+            if message and message.get("type") == "message":
+                # Only return messages from the requested channel
+                if message.get("channel") == channel.encode() or message.get("channel") == channel:
+                    return message.get("data")
+
+            return None
+        except Exception as e:
+            logger.error(f"Error getting message from channel {channel}: {e}")
+            return None
+
+    def _ensure_subscribed(self, channel: str) -> None:
+        """
+        Ensure we're subscribed to the specified channel using the shared PubSub client.
+        """
+        with self._pubsub_lock:
+            if channel not in self._subscribed_channels:
+                try:
+                    self._get_shared_pubsub().subscribe(channel)
+                    self._subscribed_channels.add(channel)
+                    logger.info(f"Subscribed to channel: {channel}")
+                except Exception as e:
+                    logger.error(f"Error subscribing to channel {channel}: {e}")
+
+    def _get_shared_pubsub(self):
+        """
+        Get or create the shared PubSub client.
+        """
+        with self._pubsub_lock:
+            if self._shared_pubsub is None:
+                if self.client is None:
+                    self._connect()
+                self._shared_pubsub = self.client.pubsub(ignore_subscribe_messages=True)
+                logger.info("Created shared PubSub client")
+            return self._shared_pubsub
 
     def subscribe_to_order_book_updates(
         self, channel: str = "trade_opportunities", callback: Optional[Callable] = None
@@ -129,7 +201,7 @@ class RedisService:
         Subscribe to a Redis Pub/Sub channel and yield messages indefinitely.
         Handles connection failures and restarts automatically.
         """
-        pubsub = self.redis_client.pubsub()
+        pubsub = self.client.pubsub()
         pubsub.subscribe(channel)
         logger.info(f"Subscribed to Redis channel: {channel}")
 
@@ -157,7 +229,7 @@ class RedisService:
                 logger.error(f"Redis connection error: {e}, reconnecting in 2s...")
                 time.sleep(2)  # Pause before reconnecting
                 try:
-                    pubsub = self.redis_client.pubsub()  # Reinitialize pubsub
+                    pubsub = self.client.pubsub()  # Reinitialize pubsub
                     pubsub.subscribe(channel)
                     logger.info(f"Reconnected to Redis and resubscribed to {channel}")
                 except Exception as reconnect_error:
@@ -185,11 +257,11 @@ class RedisService:
 
         for attempt in range(1, self.retry_attempts + 1):
             try:
-                self.redis_client.setex(key, 300, opportunity.model_dump_json())
+                self.client.setex(key, 300, opportunity.model_dump_json())
 
                 # Use strategy-specific channel if provided
                 channel = f"trade_opportunities:{strategy_name}" if strategy_name else "trade_opportunities"
-                self.redis_client.publish(channel, opportunity.model_dump_json())
+                self.client.publish(channel, opportunity.model_dump_json())
 
                 logger.debug(f"Published trade opportunity to {channel}: {opportunity}")
                 return opportunity
@@ -218,7 +290,7 @@ class RedisService:
         try:
             key_prefix = f"strategy:{strategy_name}:" if strategy_name else ""
             key = f"trade_opportunity:{key_prefix}{opportunity_id}"
-            data = self.redis_client.get(key)
+            data = self.client.get(key)
             return json.loads(data) if data else None
         except RedisError as e:
             logger.error(f"Redis error retrieving opportunity {opportunity_id}: {e}")
@@ -242,7 +314,7 @@ class RedisService:
             )
 
             # Get latest opportunity IDs from sorted set
-            opp_ids = self.redis_client.zrevrange(sorted_set, 0, count - 1)
+            opp_ids = self.client.zrevrange(sorted_set, 0, count - 1)
             opportunities = []
 
             # Fetch each opportunity
@@ -256,64 +328,59 @@ class RedisService:
             logger.error(f"Redis error retrieving recent opportunities: {e}")
             return []
 
-    def subscribe_to_trade_opportunities(
-        self, callback: Optional[Callable], channel: str = "trade_opportunities", strategy_name=None
-    ) -> Generator[Dict[str, Any], None, None]:
+    def subscribe_to_trade_opportunities(self, callback: Optional[Callable] = None) -> None:
         """
-        Subscribe to trade opportunities channel
+        Subscribe to trade opportunities channel using the shared PubSub client.
 
-        Parameters:
-            callback: Optional callback function to call for each opportunity
-            channel: Base channel name to subscribe to
-            strategy_name: Optional strategy name to append to the channel
+        Args:
+            callback: An optional callback function to execute for each message received.
         """
-        # Use strategy-specific channel if provided
-        if strategy_name:
-            channel = f"{channel}:{strategy_name}"
+        self._ensure_subscribed(TRADE_OPPORTUNITIES_CHANNEL)
 
-        pubsub = self.redis_client.pubsub()
-        pubsub.subscribe(channel)
-        logger.info(f"Subscribed to {channel} channel.")
+    def get_opportunity(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the next trade opportunity from the subscribed channel.
 
+        Returns:
+            The trade opportunity as a dictionary, or None if no message is available.
+        """
         try:
-            while True:
-                try:
-                    message = pubsub.get_message(timeout=1)
-                    if message and message["type"] == "message":
-                        try:
-                            data = json.loads(message["data"])
-                            if callback:
-                                callback(data)
+            # Ensure we're subscribed
+            self._ensure_subscribed(TRADE_OPPORTUNITIES_CHANNEL)
 
-                            logger.info(f"Data: {data}")
-                            yield data
-                        except json.JSONDecodeError as e:
-                            logger.error(f"Error decoding Redis message: {e}")
-                    # Sleep briefly to avoid busy-waiting.
-                    time.sleep(0.01)
-                except KeyboardInterrupt:
-                    logger.info("Keyboard interrupt detected in subscription")
-                    pubsub.unsubscribe()
-                    pubsub.close()
-                    raise StopIteration
-                except ConnectionError as e:
-                    logger.error(f"Redis connection error in subscription: {e}")
-                    time.sleep(1)  # Wait before trying again
-                    # Try to reconnect
-                    try:
-                        self._connect()
-                        pubsub = self.redis_client.pubsub()
-                        pubsub.subscribe(channel)  # Use the current channel name
-                        logger.info(f"Reconnected to Redis and resubscribed to {channel}")
-                    except Exception as reconnect_error:
-                        logger.error(f"Failed to reconnect: {reconnect_error}")
-        finally:
-            logger.info("Cleaning up Redis subscription")
+            # Get message from the shared pubsub client
+            message = self._get_shared_pubsub().get_message(ignore_subscribe_messages=True, timeout=0.01)
+
+            if not message:
+                return None
+
+            if message.get("type") != "message":
+                return None
+
+            # Verify it's from the trade_opportunities channel
+            channel = message.get("channel")
+            if isinstance(channel, bytes):
+                channel = channel.decode("utf-8")
+
+            if channel != TRADE_OPPORTUNITIES_CHANNEL:
+                return None
+
+            data = message.get("data")
+            if not data:
+                return None
+
+            # Try to decode and parse the message data
             try:
-                pubsub.unsubscribe()
-                pubsub.close()
-            except Exception as e:
-                logger.error(f"Error during subscription cleanup: {e}")
+                if isinstance(data, bytes):
+                    data = data.decode("utf-8")
+                return json.loads(data)
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                logger.error(f"Could not parse message data: {e}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error getting opportunity from Redis: {e}")
+            return None
 
     def publish_trade_execution(
         self, execution_data: TradeExecution, strategy_name=None, expiry_seconds: int = 3600
@@ -336,7 +403,7 @@ class RedisService:
         logger.info(f"execution_id: {execution_id}")
 
         # Check if trade execution already exists (to prevent duplicates)
-        if self.redis_client.exists(key):
+        if self.client.exists(key):
             logger.warning(f"Trade execution already exists. Skipping duplicate: {execution_id}")
             return execution_id  # Skip storing duplicate execution
 
@@ -344,17 +411,17 @@ class RedisService:
         for attempt in range(1, self.retry_attempts + 1):
             try:
                 # Store trade execution with expiration
-                self.redis_client.set(key, execution_data.model_dump_json(), ex=expiry_seconds)
+                self.client.set(key, execution_data.model_dump_json(), ex=expiry_seconds)
 
                 # Publish to strategy-specific channel if provided
                 channel = f"trade_executions:{strategy_name}" if strategy_name else "trade_executions"
-                self.redis_client.publish(channel, execution_data.model_dump_json())
+                self.client.publish(channel, execution_data.model_dump_json())
 
                 # Add execution to strategy-specific sorted set if provided
                 sorted_set = (
                     f"trade_executions_by_time:{strategy_name}" if strategy_name else "trade_executions_by_time"
                 )
-                self.redis_client.zadd(
+                self.client.zadd(
                     sorted_set,
                     {execution_id: execution_data.execution_timestamp},
                 )
@@ -362,7 +429,7 @@ class RedisService:
                 # Link to trade opportunity if available
                 if execution_data.opportunity_id:
                     opp_key_prefix = f"strategy:{strategy_name}:" if strategy_name else ""
-                    self.redis_client.set(
+                    self.client.set(
                         f"execution_for_opportunity:{opp_key_prefix}{execution_data.opportunity_id}",
                         execution_id,
                         ex=expiry_seconds,
@@ -397,7 +464,7 @@ class RedisService:
         try:
             key_prefix = f"strategy:{strategy_name}:" if strategy_name else ""
             key = f"trade_execution:{key_prefix}{execution_id}"
-            data = self.redis_client.get(key)
+            data = self.client.get(key)
             return json.loads(data) if data else None
         except RedisError as e:
             logger.error(f"Redis error retrieving execution {execution_id}: {e}")
@@ -419,7 +486,7 @@ class RedisService:
             sorted_set = f"trade_executions_by_time:{strategy_name}" if strategy_name else "trade_executions_by_time"
 
             # Get latest execution IDs from sorted set
-            exec_ids = self.redis_client.zrevrange(sorted_set, 0, count - 1)
+            exec_ids = self.client.zrevrange(sorted_set, 0, count - 1)
             executions = []
 
             # Fetch each execution
@@ -448,7 +515,7 @@ class RedisService:
         if strategy_name:
             channel = f"{channel}:{strategy_name}"
 
-        pubsub = self.redis_client.pubsub()
+        pubsub = self.client.pubsub()
         pubsub.subscribe(channel)
         logger.info(f"Subscribed to {channel} channel.")
 
@@ -479,7 +546,7 @@ class RedisService:
         """Record a performance metric with timestamp"""
         try:
             timestamp = int(time.time())
-            self.redis_client.zadd(f"metrics:{metric_name}", {timestamp: value})
+            self.client.zadd(f"metrics:{metric_name}", {timestamp: value})
             return True
         except RedisError as e:
             logger.error(f"Error recording metric {metric_name}: {e}")
@@ -489,7 +556,7 @@ class RedisService:
         """Get recent metrics for a given name"""
         try:
             # Get timestamp-value pairs
-            raw_metrics = self.redis_client.zrevrange(f"metrics:{metric_name}", 0, count - 1, withscores=True)
+            raw_metrics = self.client.zrevrange(f"metrics:{metric_name}", 0, count - 1, withscores=True)
 
             # Convert to list of dicts
             metrics = [{"timestamp": int(timestamp), "value": value} for value, timestamp in raw_metrics]
@@ -503,7 +570,7 @@ class RedisService:
     def is_healthy(self) -> bool:
         """Check if Redis connection is healthy"""
         try:
-            return bool(self.redis_client.ping())
+            return bool(self.client.ping())
         except Exception:
             return False
 
