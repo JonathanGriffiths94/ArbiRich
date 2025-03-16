@@ -1,4 +1,3 @@
-import argparse
 import asyncio
 import logging
 
@@ -7,17 +6,17 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from src.arbirich.processing.arbitrage_process import (
+from src.arbirich.flows.arbitrage.arbitrage_process import (
     detect_arbitrage,
     key_by_asset,
-    update_asset_state,
+    update_asset_state,  # Keep this import for backward compatibility
 )
-from src.arbirich.services.redis_service import RedisService
-from src.arbirich.sinks.arbitrage_sink import (
+from src.arbirich.flows.arbitrage.arbitrage_sink import (
     debounce_opportunity,
     publish_trade_opportunity,
 )
-from src.arbirich.sources.arbitrage_source import use_redis_opportunity_source
+from src.arbirich.flows.arbitrage.arbitrage_source import use_redis_opportunity_source
+from src.arbirich.services.redis_service import RedisService
 from src.arbirich.utils.strategy_manager import StrategyManager
 
 logger = logging.getLogger(__name__)
@@ -48,8 +47,28 @@ def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=True):
     # Add Redis opportunity source to the flow
     input_stream = use_redis_opportunity_source(flow, "redis_input", exchange_channels, pairs)
 
-    keyed_stream = op.map("key_by_asset", input_stream, key_by_asset)
-    asset_state_stream = op.stateful_map("asset_state", keyed_stream, update_asset_state)
+    # Wrap key_by_asset with error handling
+    def safe_key_by_asset(record):
+        try:
+            result = key_by_asset(record)
+            # Extra sanity check to ensure we always return a tuple with two elements
+            if result is None or not isinstance(result, tuple) or len(result) != 2:
+                logger.error(f"key_by_asset returned invalid result: {result}")
+                # Return a placeholder that won't cause errors
+                return "error", {"exchange": "error", "symbol": "error", "timestamp": time.time()}
+            return result
+        except Exception as e:
+            logger.error(f"Error in safe_key_by_asset: {e}", exc_info=True)
+            # Return a placeholder that won't cause errors
+            return "error", {"exchange": "error", "symbol": "error", "timestamp": time.time()}
+
+    # Group order books by trading pair
+    keyed_stream = op.map("key_by_asset", input_stream, safe_key_by_asset)
+
+    # Filter out error placeholders
+    valid_stream = op.filter("filter_errors", keyed_stream, lambda x: x[0] != "error")
+
+    asset_state_stream = op.stateful_map("asset_state", valid_stream, update_asset_state)
 
     # Filter not ready states
     ready_state = op.filter("ready", asset_state_stream, lambda kv: kv[1] is not None)
@@ -60,24 +79,8 @@ def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=True):
 
     # Create a detector function closure that includes the strategy name and threshold
     def arbitrage_detector(kv):
-        # The error shows detect_arbitrage() takes only 3 arguments but we're giving 4
-        # Let's check if the function actually supports the strategy_name parameter
-        try:
-            # First try with all 4 parameters (asset, state, threshold, strategy)
-            return detect_arbitrage(kv[0], kv[1], threshold, strategy_name)
-        except TypeError:
-            # If that fails, fall back to just 3 parameters
-            logger.warning(
-                f"detect_arbitrage() only accepts 3 arguments, "
-                f"strategy_name '{strategy_name}' will not be used directly"
-            )
-            result = detect_arbitrage(kv[0], kv[1], threshold)
-
-            # If we got a valid result, manually add the strategy name
-            if result:
-                result.strategy = strategy_name
-
-            return result
+        # Call detect_arbitrage with the asset, state, threshold, and strategy name
+        return detect_arbitrage(kv[0], kv[1], threshold, strategy_name)
 
     # Detect arbitrage on the state
     arb_stream = op.map(
@@ -163,13 +166,22 @@ async def run_arbitrage_flow(strategy_name="arbitrage", debug_mode=False):
 
 # For CLI usage
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run arbitrage flow")
-    parser.add_argument("strategy", nargs="?", default="arbitrage", help="Strategy name to run")
-    parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    import sys
 
-    args = parser.parse_args()
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 
-    logger.info(f"Running arbitrage flow for strategy {args.strategy} with debug={args.debug}")
+    # Get the strategy name from command line args
+    if len(sys.argv) > 1:
+        strategy_name = sys.argv[1]
+    else:
+        # Get the first strategy from config
+        from src.arbirich.config import STRATEGIES
 
-    flow = build_arbitrage_flow(args.strategy, args.debug)
-    asyncio.run(cli_main(flow, workers_per_process=1))
+        strategy_name = next(iter(STRATEGIES.keys()))
+
+    logger.info(f"Running arbitrage flow for strategy: {strategy_name}")
+    asyncio.run(run_arbitrage_flow(strategy_name, debug_mode=True))

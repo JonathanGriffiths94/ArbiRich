@@ -3,7 +3,7 @@ import json
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -99,16 +99,60 @@ class OrderBookUpdate(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     exchange: str
     symbol: str
-    bids: List[Order]
-    asks: List[Order]
+    bids: Dict[float, float] = Field(default_factory=dict)  # Changed from List[Order] to Dict[float, float]
+    asks: Dict[float, float] = Field(default_factory=dict)  # Changed from List[Order] to Dict[float, float]
     timestamp: float
+    sequence: Optional[int] = None  # Added sequence number for tracking updates
 
     @computed_field
     def hash(self) -> str:
-        bids_json = json.dumps([bid.model_dump() for bid in self.bids], sort_keys=True)
-        asks_json = json.dumps([ask.model_dump() for ask in self.asks], sort_keys=True)
+        # Updated to work with Dict format
+        bids_json = json.dumps(self.bids, sort_keys=True)
+        asks_json = json.dumps(self.asks, sort_keys=True)
         combined = bids_json + asks_json
         return hashlib.sha256(combined.encode("utf-8")).hexdigest()
+
+    # Add helper methods from the new model
+    def get_best_bid(self) -> Optional[Order]:
+        """Get the highest bid price and quantity"""
+        if not self.bids:
+            return None
+        best_price = max(self.bids.keys())
+        return Order(price=best_price, quantity=self.bids[best_price])
+
+    def get_best_ask(self) -> Optional[Order]:
+        """Get the lowest ask price and quantity"""
+        if not self.asks:
+            return None
+        best_price = min(self.asks.keys())
+        return Order(price=best_price, quantity=self.asks[best_price])
+
+    def get_mid_price(self) -> Optional[float]:
+        """Get the mid price between best bid and best ask"""
+        best_bid = self.get_best_bid()
+        best_ask = self.get_best_ask()
+
+        if best_bid and best_ask:
+            return (best_bid.price + best_ask.price) / 2
+        return None
+
+    def get_spread(self) -> Optional[float]:
+        """Get the bid-ask spread"""
+        best_bid = self.get_best_bid()
+        best_ask = self.get_best_ask()
+
+        if best_bid and best_ask:
+            return best_ask.price - best_bid.price
+        return None
+
+    def get_spread_percentage(self) -> Optional[float]:
+        """Get the bid-ask spread as a percentage of the mid price"""
+        spread = self.get_spread()
+        mid_price = self.get_mid_price()
+
+        if spread is not None and mid_price is not None:
+            return (spread / mid_price) * 100
+        return None
 
 
 class OrderBookState(BaseModel):

@@ -5,11 +5,11 @@ from bytewax import operators as op
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from arbirich.sources.ingestion_source import MultiExchangeSource
+from arbirich.flows.ingestion.ingestion_sink import store_order_book
+from src.arbirich.flows.ingestion.ingestion_process import process_order_book
+from src.arbirich.flows.ingestion.ingestion_source import MultiExchangeSource
 from src.arbirich.io.websockets.load_websocket_processor import load_processor
-from src.arbirich.processing.ingestion_process import process_order_book
 from src.arbirich.services.redis_service import RedisService
-from src.arbirich.sinks.ingestion_sink import store_order_book
 from src.arbirich.utils.bytewax_sinks import NullSink
 from src.arbirich.utils.helpers import build_exchanges_dict
 

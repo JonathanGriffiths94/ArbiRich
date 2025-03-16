@@ -6,9 +6,9 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
+from src.arbirich.flows.execution.execution_sink import execute_trade
+from src.arbirich.flows.execution.execution_source import RedisExecutionSource
 from src.arbirich.services.redis_service import RedisService
-from src.arbirich.sinks.execution_sink import execute_trade
-from src.arbirich.sources.execution_source import RedisExecutionSource
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

@@ -67,7 +67,7 @@ class FlowManager:
         """Start arbitrage flows for each strategy"""
         try:
             from src.arbirich.config import STRATEGIES
-            from src.arbirich.flows.arbitrage import run_arbitrage_flow
+            from src.arbirich.flows.arbitrage.arbitrage import run_arbitrage_flow
 
             strategy_names = list(STRATEGIES.keys())
             logger.info(f"FlowManager: Starting arbitrage flows for strategies: {strategy_names}")
@@ -91,15 +91,13 @@ class FlowManager:
         try:
             # Import here to avoid circular imports
             try:
-                from arbirich.flows.ingestion import run_ingestion_flow
+                # Import from the current structure
+                from src.arbirich.flows.ingestion.ingestion import run_ingestion_flow
 
-                logger.info("Using main ingestion flow")
+                logger.info("Using ingestion flow from current location")
             except Exception as e:
                 logger.error(f"Error importing ingestion flow: {e}")
                 logger.error(traceback.format_exc())
-                from src.arbirich.flows.ingestion_ws_base_class import run_ingestion_flow
-
-                logger.info("Using base ingestion flow")
 
             from src.arbirich.config import EXCHANGES, PAIRS
 
@@ -139,7 +137,7 @@ class FlowManager:
                         if name.startswith("arbitrage_"):
                             strategy_name = name.replace("arbitrage_", "")
                             logger.info(f"Restarting arbitrage flow for strategy: {strategy_name}")
-                            from src.arbirich.flows.arbitrage import run_arbitrage_flow
+                            from src.arbirich.flows.arbitrage.arbitrage import run_arbitrage_flow
 
                             self.tasks[name] = asyncio.create_task(
                                 run_arbitrage_flow(strategy_name, debug_mode=False), name=name

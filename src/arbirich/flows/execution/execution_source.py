@@ -4,8 +4,8 @@ from threading import Lock
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
+from src.arbirich.flows.arbitrage.arbitrage_source import get_shared_redis_client
 from src.arbirich.services.redis_service import RedisService
-from src.arbirich.sources.arbitrage_source import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)

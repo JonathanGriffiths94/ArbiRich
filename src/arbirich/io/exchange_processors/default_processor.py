@@ -4,7 +4,7 @@ import logging
 import random
 import time
 
-from src.arbirich.exchange_processors.processor_factory import register
+from src.arbirich.io.exchange_processors.registry import register
 from src.arbirich.io.websockets.base import BaseOrderBookProcessor
 
 logger = logging.getLogger(__name__)

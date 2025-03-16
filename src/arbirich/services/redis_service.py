@@ -128,15 +128,52 @@ class RedisService:
             # Optionally, re-raise or handle the error as appropriate.
             raise
 
-    def publish_order_book(self, order_book: OrderBookUpdate, channel: str = "order_book"):
+    def publish_order_book(self, exchange: str, symbol: str, order_book):
         """
-        Publish top order book data to a Redis Pub/Sub channel.
+        Publish an order book update to Redis.
+
+        Parameters:
+            exchange: The exchange name
+            symbol: The trading pair symbol
+            order_book: The order book data to publish (can be dict or OrderBookUpdate model)
         """
         try:
-            self.client.publish(channel, order_book.model_dump_json())
-            logger.debug(f"Published order book update: {order_book.symbol} {order_book.exchange}")
+            # Create channel name
+            channel = "order_book"
+            logger.debug(f"Publishing to channel: {channel}")
+
+            # Convert Pydantic model to dict if needed
+            if hasattr(order_book, "model_dump"):
+                order_data = order_book.model_dump()
+            elif hasattr(order_book, "dict"):
+                order_data = order_book.dict()  # For older Pydantic versions
+            else:
+                # Assume it's already a dict
+                order_data = order_book
+
+            # Add exchange and symbol if not present in the order book
+            if "exchange" not in order_data:
+                order_data["exchange"] = exchange
+            if "symbol" not in order_data:
+                order_data["symbol"] = symbol
+
+            # Add timestamp if missing
+            if "timestamp" not in order_data:
+                order_data["timestamp"] = time.time()
+
+            # Convert to JSON and publish
+            message_json = json.dumps(order_data)
+            result = self.client.publish(channel, message_json)
+
+            if result > 0:
+                logger.debug(f"Published order book for {exchange}:{symbol} to {result} subscribers")
+            else:
+                logger.debug(f"Published order book for {exchange}:{symbol} but no subscribers")
+
+            return result
         except Exception as e:
-            logger.error(f"Error publishing order book data: {e}")
+            logger.error(f"Error publishing order book to Redis: {e}", exc_info=True)
+            return 0
 
     def get_order_book(self, exchange: str, symbol: str) -> Optional[OrderBookUpdate]:
         key = f"order_book:{symbol}:{exchange}"

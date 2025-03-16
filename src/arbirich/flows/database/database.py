@@ -4,9 +4,9 @@ import logging
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
+from src.arbirich.flows.database.database_sink import db_sink
+from src.arbirich.flows.database.database_source import RedisDatabaseSource
 from src.arbirich.services.database_service import DatabaseService
-from src.arbirich.sinks.database_sink import db_sink
-from src.arbirich.sources.database_source import RedisDatabaseSource
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
