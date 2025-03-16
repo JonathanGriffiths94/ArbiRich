@@ -44,20 +44,20 @@ class BasicArbitrageStrategy(ArbitrageStrategy):
             if not order_book.bids or not order_book.asks:
                 continue
 
-            # Find highest bid
+            # Find highest bid using the get_best_bid helper method
             try:
-                highest_bid = max(order_book.bids, key=lambda x: float(x.price))
-                if highest_bid.price > best_bid["price"]:
+                highest_bid = order_book.get_best_bid()
+                if highest_bid and highest_bid.price > best_bid["price"]:
                     best_bid["price"] = highest_bid.price
                     best_bid["exchange"] = exchange
                     best_bid["quantity"] = highest_bid.quantity
             except Exception as e:
                 logger.error(f"Error processing bids for {exchange}: {e}")
 
-            # Find lowest ask
+            # Find lowest ask using the get_best_ask helper method
             try:
-                lowest_ask = min(order_book.asks, key=lambda x: float(x.price))
-                if lowest_ask.price < best_ask["price"]:
+                lowest_ask = order_book.get_best_ask()
+                if lowest_ask and lowest_ask.price < best_ask["price"]:
                     best_ask["price"] = lowest_ask.price
                     best_ask["exchange"] = exchange
                     best_ask["quantity"] = lowest_ask.quantity

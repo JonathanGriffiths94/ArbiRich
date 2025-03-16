@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink

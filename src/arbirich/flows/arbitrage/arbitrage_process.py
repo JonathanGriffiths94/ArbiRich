@@ -43,15 +43,29 @@ def detect_arbitrage(
         return None
 
 
-def key_by_asset(record: dict) -> Optional[Tuple[str, OrderBookUpdate]]:
+def key_by_asset(record: Tuple) -> Optional[Tuple[str, OrderBookUpdate]]:
     try:
-        asset = record["symbol"]
-        update_order = OrderBookUpdate(**record)
+        exchange, data = record
+
+        # Handle if data is a dictionary
+        if isinstance(data, dict):
+            asset = data["symbol"]
+            # Make sure exchange is included in the data
+            data_with_exchange = {**data, "exchange": exchange}
+            update_order = OrderBookUpdate(**data_with_exchange)
+        # Handle if data is already an OrderBookUpdate
+        elif hasattr(data, "symbol"):
+            asset = data.symbol
+            update_order = data
+        else:
+            logger.error(f"Unsupported data type in key_by_asset: {type(data)}")
+            return None
+
         logger.debug(f"Asset: {asset}")
         logger.debug(f"Update order: {update_order}")
         return asset, update_order
-    except KeyError as e:
-        logger.error(f"Missing key in key_by_asset: {e}, record: {record}")
+    except (IndexError, KeyError) as e:
+        logger.error(f"Error accessing data in key_by_asset: {e}, record: {record}")
         return None
     except ValidationError as e:
         logger.error(f"Validation error in key_by_asset: {e.json()}, record: {record}")
@@ -79,12 +93,16 @@ def update_asset_state(
     # Initialize the sub-state for this exchange if it doesn't exist.
     if exchange not in state.symbols[asset]:
         state.symbols[asset][exchange] = OrderBookUpdate(
-            exchange=exchange, symbol=asset, bids=[], asks=[], timestamp=0.0
+            exchange=exchange,
+            symbol=asset,
+            bids={},  # Changed from [] to {}
+            asks={},  # Changed from [] to {}
+            timestamp=0.0,
         )
     logger.debug(f"state: {state}")
     try:
         # Update the exchange-specific order book for the asset.
-        state.symbols[asset][exchange].bids = new_data.id
+        # Removed the incorrect id assignment
         state.symbols[asset][exchange].bids = new_data.bids
         state.symbols[asset][exchange].asks = new_data.asks
         state.symbols[asset][exchange].timestamp = new_data.timestamp
