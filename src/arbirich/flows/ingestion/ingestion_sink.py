@@ -4,7 +4,7 @@ from typing import Dict, Optional
 from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # Set to DEBUG for more detailed logs
+logger.setLevel(logging.INFO)  # Set to DEBUG for more detailed logs
 
 # Create a singleton instance of RedisService to be shared by all functions
 _redis_service = RedisService()

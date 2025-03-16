@@ -11,7 +11,7 @@ from src.arbirich.models.models import OrderBookUpdate
 from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # Create a single shared Redis client for all partitions
 _shared_redis_client = None

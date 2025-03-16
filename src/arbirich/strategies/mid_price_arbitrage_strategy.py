@@ -26,9 +26,21 @@ class MidPriceArbitrageStrategy(ArbitrageStrategy):
             return None
 
         try:
-            # Get top N bids and asks
-            top_bids = sorted(order_book.bids, key=lambda x: -float(x.price))[: self.min_depth]
-            top_asks = sorted(order_book.asks, key=lambda x: float(x.price))[: self.min_depth]
+            # For dictionary structure, convert to list of Order objects
+            top_bids = []
+            top_asks = []
+
+            # Get top N bids (highest prices)
+            sorted_bid_prices = sorted(order_book.bids.keys(), reverse=True)[: self.min_depth]
+            for price in sorted_bid_prices:
+                quantity = order_book.bids[price]
+                top_bids.append(type("Order", (), {"price": price, "quantity": quantity}))
+
+            # Get top N asks (lowest prices)
+            sorted_ask_prices = sorted(order_book.asks.keys())[: self.min_depth]
+            for price in sorted_ask_prices:
+                quantity = order_book.asks[price]
+                top_asks.append(type("Order", (), {"price": price, "quantity": quantity}))
 
             if not top_bids or not top_asks:
                 return None
@@ -97,9 +109,22 @@ class MidPriceArbitrageStrategy(ArbitrageStrategy):
             high_exchange = highest_exchange[0]
 
             # Get approximate quantity from order books
-            low_quantity = max(float(ask.quantity) for ask in state.symbols[asset][low_exchange].asks[:3])
-            high_quantity = max(float(bid.quantity) for bid in state.symbols[asset][high_exchange].bids[:3])
-            volume = min(low_quantity, high_quantity)
+            # Modified to work with dictionary structure
+            try:
+                # Get top 3 asks from low exchange (lowest prices first)
+                low_ask_prices = sorted(state.symbols[asset][low_exchange].asks.keys())[:3]
+                low_quantities = [state.symbols[asset][low_exchange].asks[price] for price in low_ask_prices]
+                low_quantity = max(float(qty) for qty in low_quantities) if low_quantities else 0
+
+                # Get top 3 bids from high exchange (highest prices first)
+                high_bid_prices = sorted(state.symbols[asset][high_exchange].bids.keys(), reverse=True)[:3]
+                high_quantities = [state.symbols[asset][high_exchange].bids[price] for price in high_bid_prices]
+                high_quantity = max(float(qty) for qty in high_quantities) if high_quantities else 0
+
+                volume = min(low_quantity, high_quantity)
+            except Exception as e:
+                logger.error(f"Error calculating volume: {e}")
+                volume = 0
 
             logger.info(
                 f"Found mid-price arbitrage for {asset}: "

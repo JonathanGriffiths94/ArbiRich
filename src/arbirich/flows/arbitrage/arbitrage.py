@@ -21,7 +21,7 @@ from src.arbirich.services.redis_service import RedisService
 from src.arbirich.utils.strategy_manager import StrategyManager
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 redis_client = RedisService()
 

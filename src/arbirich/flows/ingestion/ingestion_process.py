@@ -5,7 +5,7 @@ from typing import Dict, Optional, Tuple, Union
 from src.arbirich.models.models import OrderBookUpdate
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 def process_order_book(data: Union[Dict, Tuple]) -> Optional[OrderBookUpdate]:

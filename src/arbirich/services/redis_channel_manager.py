@@ -37,7 +37,7 @@ class RedisChannelManager:
         """
         channel = self.get_opportunity_channel(opportunity.strategy)
         try:
-            self.redis.redis_client.publish(channel, opportunity.model_dump_json())
+            self.redis.client.publish(channel, opportunity.model_dump_json())
             logger.debug(f"Published opportunity {opportunity.id} to channel {channel}")
             return True
         except Exception as e:
@@ -51,7 +51,7 @@ class RedisChannelManager:
         """
         channel = self.get_execution_channel(execution.strategy)
         try:
-            self.redis.redis_client.publish(channel, execution.model_dump_json())
+            self.redis.client.publish(channel, execution.model_dump_json())
             logger.debug(f"Published execution {execution.id} to channel {channel}")
             return True
         except Exception as e:
@@ -83,7 +83,7 @@ class RedisChannelManager:
             try:
                 import json
 
-                self.redis.redis_client.publish(channel, json.dumps(message))
+                self.redis.client.publish(channel, json.dumps(message))
                 logger.debug(f"Published message to {channel}")
                 results.append(True)
             except Exception as e:

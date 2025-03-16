@@ -2,8 +2,6 @@ import logging
 import time
 from typing import Dict, Optional, Tuple
 
-from pydantic import ValidationError
-
 from src.arbirich.models.models import (
     OrderBookState,
     OrderBookUpdate,
@@ -11,7 +9,7 @@ from src.arbirich.models.models import (
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
 def detect_arbitrage(
@@ -43,32 +41,24 @@ def detect_arbitrage(
         return None
 
 
-def key_by_asset(record: Tuple) -> Optional[Tuple[str, OrderBookUpdate]]:
+def key_by_asset(record) -> Optional[Tuple[str, OrderBookUpdate]]:
     try:
+        # Assuming record is always a tuple
         exchange, data = record
 
-        # Handle if data is a dictionary
-        if isinstance(data, dict):
-            asset = data["symbol"]
-            # Make sure exchange is included in the data
-            data_with_exchange = {**data, "exchange": exchange}
-            update_order = OrderBookUpdate(**data_with_exchange)
-        # Handle if data is already an OrderBookUpdate
-        elif hasattr(data, "symbol"):
+        # Handle only if data is already an OrderBookUpdate
+        if isinstance(data, OrderBookUpdate):
             asset = data.symbol
             update_order = data
+
+            logger.debug(f"Asset: {asset}")
+            logger.debug(f"Update order: {update_order}")
+            return asset, update_order
         else:
             logger.error(f"Unsupported data type in key_by_asset: {type(data)}")
             return None
-
-        logger.debug(f"Asset: {asset}")
-        logger.debug(f"Update order: {update_order}")
-        return asset, update_order
-    except (IndexError, KeyError) as e:
-        logger.error(f"Error accessing data in key_by_asset: {e}, record: {record}")
-        return None
-    except ValidationError as e:
-        logger.error(f"Validation error in key_by_asset: {e.json()}, record: {record}")
+    except Exception as e:
+        logger.error(f"Error in key_by_asset: {e}, record: {record}")
         return None
 
 
@@ -93,16 +83,12 @@ def update_asset_state(
     # Initialize the sub-state for this exchange if it doesn't exist.
     if exchange not in state.symbols[asset]:
         state.symbols[asset][exchange] = OrderBookUpdate(
-            exchange=exchange,
-            symbol=asset,
-            bids={},  # Changed from [] to {}
-            asks={},  # Changed from [] to {}
-            timestamp=0.0,
+            exchange=exchange, symbol=asset, bids={}, asks={}, timestamp=0.0
         )
     logger.debug(f"state: {state}")
     try:
         # Update the exchange-specific order book for the asset.
-        # Removed the incorrect id assignment
+        # Remove the incorrect ID assignment
         state.symbols[asset][exchange].bids = new_data.bids
         state.symbols[asset][exchange].asks = new_data.asks
         state.symbols[asset][exchange].timestamp = new_data.timestamp
@@ -116,7 +102,7 @@ def update_asset_state(
 
 def find_arbitrage_opportunities(
     state_and_input: Tuple[Dict, Tuple[str, str]],
-) -> Tuple[Dict, Optional[TradeOpportunity]]:
+) -> Tuple[Dict, Optional[OrderBookState]]:
     """
     Backward compatibility wrapper around detect_arbitrage.
 
@@ -167,8 +153,8 @@ def find_arbitrage_opportunities(
             order_book = OrderBookUpdate(
                 exchange=exchange,
                 symbol=symbol,
-                bids=order_book_data.get("bids", []),
-                asks=order_book_data.get("asks", []),
+                bids=order_book_data.get("bids", {}),  # Changed from [] to {}
+                asks=order_book_data.get("asks", {}),  # Changed from [] to {}
                 timestamp=order_book_data.get("timestamp", time.time()),
             )
     except Exception as e:
