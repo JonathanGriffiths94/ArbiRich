@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 
 from arbirich.io.exchange_configs import EXCHANGE_CONFIGS
+from src.arbirich.execution_strategies.execution_strategy_configs import EXECUTION_STRATEGIES
 from src.arbirich.strategies.strategy_configs import get_active_strategies, get_unique_exchanges, get_unique_pairs
 
 load_dotenv()
@@ -47,3 +48,8 @@ DEBUG = os.getenv("DEBUG", "false").lower() in ("true", "1", "t", "yes")
 
 # Log level configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+
+def get_execution_strategy_config(strategy_name):
+    """Get configuration for a specific execution strategy"""
+    return EXECUTION_STRATEGIES.get(strategy_name, EXECUTION_STRATEGIES.get("basic_market", {}))

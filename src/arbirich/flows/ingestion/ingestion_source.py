@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class WebsocketPartition(StatefulSourcePartition):

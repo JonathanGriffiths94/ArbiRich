@@ -5,7 +5,7 @@ from typing import Dict, Optional, Tuple, Union
 from src.arbirich.models.models import OrderBookUpdate
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.INFO)  # Reset to INFO level
 
 
 def process_order_book(data: Union[Dict, Tuple]) -> Optional[OrderBookUpdate]:
@@ -44,9 +44,7 @@ def process_order_book(data: Union[Dict, Tuple]) -> Optional[OrderBookUpdate]:
 
             sequence = order_book_dict.get("sequence")
 
-            # Get bids and asks from the dictionary part
-            # Since we're receiving real dictionary data from Bybit and Crypto.com,
-            # we can simplify by using it directly
+            # Get bids and asks
             bids_dict = order_book_dict.get("bids", {})
             asks_dict = order_book_dict.get("asks", {})
 

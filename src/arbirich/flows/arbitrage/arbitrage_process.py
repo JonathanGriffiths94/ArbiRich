@@ -9,7 +9,7 @@ from src.arbirich.models.models import (
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 
 def detect_arbitrage(
@@ -27,7 +27,7 @@ def detect_arbitrage(
     Returns:
         TradeOpportunity object if an opportunity is found, None otherwise
     """
-    from src.arbirich.strategies.strategy_factory import get_strategy
+    from arbirich.factories.strategy_factory import get_strategy
 
     try:
         # Get the appropriate strategy

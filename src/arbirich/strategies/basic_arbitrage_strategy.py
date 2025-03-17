@@ -14,6 +14,12 @@ class BasicArbitrageStrategy(ArbitrageStrategy):
     Basic arbitrage strategy that looks for simple price differences between exchanges.
     """
 
+    STRATEGY_TYPE = "basic"
+
+    def __init__(self, name: str, config: dict):
+        super().__init__(name, config)
+        # Initialize strategy-specific resources
+
     def detect_arbitrage(self, asset: str, state: OrderBookState) -> Optional[TradeOpportunity]:
         """
         Detect basic arbitrage opportunities by comparing best bid/ask across exchanges.

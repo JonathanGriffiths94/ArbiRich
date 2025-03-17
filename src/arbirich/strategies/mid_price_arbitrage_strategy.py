@@ -15,6 +15,8 @@ class MidPriceArbitrageStrategy(ArbitrageStrategy):
     This can be effective for more liquid markets where the spread is tight.
     """
 
+    STRATEGY_TYPE = "mid_price"
+
     def __init__(self, name: str, config: dict):
         super().__init__(name, config)
         # Additional parameters specific to mid-price strategy

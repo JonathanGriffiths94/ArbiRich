@@ -1,67 +1,67 @@
+import json
 import logging
+import time
 from typing import Dict, Optional
 
+from src.arbirich.models.models import OrderBookUpdate
 from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Set to DEBUG for more detailed logs
+logger.setLevel(logging.DEBUG)
 
 # Create a singleton instance of RedisService to be shared by all functions
 _redis_service = RedisService()
 
 
-def publish_order_book(exchange: str, symbol: str, order_book):
+def publish_order_book(order_book: OrderBookUpdate) -> bool:
     """
     Publish an order book to Redis.
 
     Parameters:
-        exchange: The exchange name
-        symbol: The trading pair symbol
-        order_book: The order book data to publish (dict or Pydantic model)
+        order_book: The OrderBookUpdate object to publish
 
     Returns:
         True if publishing was successful, False otherwise
     """
     try:
+        exchange = order_book.exchange
+        symbol = order_book.symbol
         logger.debug(f"Publishing order book for {exchange}:{symbol}")
 
-        # Convert to proper format if needed
+        # Convert to dict for consistent serialization
         if hasattr(order_book, "model_dump"):
-            data_to_publish = order_book.model_dump()
+            data_dict = order_book.model_dump()
         elif hasattr(order_book, "dict"):
-            data_to_publish = order_book.dict()
+            data_dict = order_book.dict()
         else:
-            data_to_publish = order_book
+            data_dict = {
+                "exchange": exchange,
+                "symbol": symbol,
+                "bids": order_book.bids if hasattr(order_book, "bids") else {},
+                "asks": order_book.asks if hasattr(order_book, "asks") else {},
+                "timestamp": order_book.timestamp if hasattr(order_book, "timestamp") else time.time(),
+            }
 
-        # Ensure we have the basic fields
-        if isinstance(data_to_publish, dict):
-            if "exchange" not in data_to_publish:
-                data_to_publish["exchange"] = exchange
-            if "symbol" not in data_to_publish:
-                data_to_publish["symbol"] = symbol
+        # Convert to JSON for publishing
+        json_data = json.dumps(data_dict)
 
-            # Ensure bids and asks are in the correct format
-            if "bids" in data_to_publish and not isinstance(data_to_publish["bids"], dict):
-                logger.warning(f"Bids is not a dictionary: {type(data_to_publish['bids'])}")
-                data_to_publish["bids"] = {}
+        # Publish to all relevant channels
+        channels = [
+            f"order_book:{exchange}:{symbol}",  # Old format
+            f"order_book.{symbol}.{exchange}",  # New format
+            "order_book",  # Generic channel
+        ]
 
-            if "asks" in data_to_publish and not isinstance(data_to_publish["asks"], dict):
-                logger.warning(f"Asks is not a dictionary: {type(data_to_publish['asks'])}")
-                data_to_publish["asks"] = {}
+        results = []
+        for channel in channels:
+            try:
+                result = _redis_service.client.publish(channel, json_data)
+                results.append(result)
+                logger.debug(f"Published to {channel}: {result} subscribers")
+            except Exception as e:
+                logger.error(f"Error publishing to {channel}: {e}")
 
-            # Now publish
-            logger.debug(f"Publishing data to Redis: {exchange}:{symbol}")
-            result = _redis_service.publish_order_book(exchange, symbol, data_to_publish)
-
-            if result > 0:
-                logger.info(f"Successfully published order book for {exchange}:{symbol} to {result} subscribers")
-                return True
-            else:
-                logger.warning(f"Order book published but no subscribers for {exchange}:{symbol}")
-                return True  # Still consider it a success even without subscribers
-        else:
-            logger.error(f"Data to publish is not a dictionary: {type(data_to_publish)}")
-            return False
+        return any(result > 0 for result in results)
     except Exception as e:
         logger.error(f"Error publishing order book: {e}", exc_info=True)
         return False
@@ -85,27 +85,13 @@ class RedisOrderBookSink:
             return None
 
         try:
-            # Extract exchange and symbol from the item
-            if hasattr(item, "exchange") and hasattr(item, "symbol"):
-                # Item is a Pydantic model
-                exchange = item.exchange
-                symbol = item.symbol
-                order_book = item
-            else:
-                # Item is a dict
-                exchange = item.get("exchange")
-                symbol = item.get("symbol")
-                order_book = item
-
-            if not exchange or not symbol:
-                logger.error("Missing required fields exchange or symbol in item")
-                return None
+            exchange = item.exchange
+            symbol = item.symbol
+            order_book = item
 
             # Debug the input to see what's being passed
             logger.debug(f"Publishing order book for {exchange}:{symbol}")
-
-            # Call the publish_order_book function with all required parameters
-            result = publish_order_book(exchange, symbol, order_book)
+            result = publish_order_book(order_book)
 
             if result:
                 logger.debug(f"Successfully published order book for {exchange}:{symbol}")

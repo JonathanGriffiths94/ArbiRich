@@ -3,9 +3,10 @@ import json
 import logging
 import random
 import time
+from typing import Any, Dict, Generator
 
-from src.arbirich.io.exchange_processors.registry import register
-from src.arbirich.io.websockets.base import BaseOrderBookProcessor
+from src.arbirich.factories.processor_factory import register
+from src.arbirich.io.exchange_processors.base_processor import BaseOrderBookProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -142,3 +143,27 @@ class DefaultOrderBookProcessor(BaseOrderBookProcessor):
         """Resubscribe to the feed."""
         logger.info(f"Resubscribing for {self.product}")
         await self.subscribe(websocket)
+
+    async def run(self) -> Generator[Dict[str, Any], None, None]:
+        """
+        Run the processor to get order book updates.
+
+        Yields:
+            Dict with dummy order book data
+        """
+        logger.warning(f"Using dummy data for {self.exchange}:{self.product}")
+
+        while True:
+            # Generate dummy order book
+            order_book = {
+                "exchange": self.exchange,
+                "symbol": self.product,
+                "timestamp": time.time(),
+                "bids": {},  # Empty bids dictionary
+                "asks": {},  # Empty asks dictionary
+            }
+
+            yield order_book
+
+            # Wait before next update
+            await asyncio.sleep(5)

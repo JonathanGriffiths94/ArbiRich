@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List
 
 from bytewax import operators as op
@@ -7,183 +9,142 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from src.arbirich.flows.ingestion.ingestion_process import process_order_book
-from src.arbirich.flows.ingestion.ingestion_sink import publish_order_book
-from src.arbirich.flows.ingestion.ingestion_source import MultiExchangeSource
-from src.arbirich.io.exchange_processors.registry import register_all_processors
 from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)  # Reset to INFO level
 
-# Create shared Redis client
-_redis_client = None
-
-
-def get_redis_client():
-    global _redis_client
-    if _redis_client is None:
-        _redis_client = RedisService()
-    return _redis_client
+redis_client = RedisService()
 
 
-# Register all processors at module load time
-registered_processors = register_all_processors()
-logger.info(f"Registered processors: {list(registered_processors.keys())}")
-
-
-def get_processor_class(exchange):
+def build_ingestion_flow(exchange_pairs: Dict[str, List[str]]):
     """
-    Get the appropriate processor class for an exchange.
-    Import is done here to avoid circular imports.
-    """
-    try:
-        from src.arbirich.io.exchange_processors.processor_factory import get_processor_for_exchange
-
-        processor = get_processor_for_exchange(exchange)
-        logger.info(f"Got processor for {exchange}: {processor.__name__}")
-        return processor
-    except Exception as e:
-        logger.error(f"Error getting processor for {exchange}: {e}")
-        # Even in case of error, return a default processor
-        from src.arbirich.io.exchange_processors.default_processor import DefaultOrderBookProcessor
-
-        return DefaultOrderBookProcessor
-
-
-def build_ingestion_flow(exchanges_and_pairs: Dict[str, List[str]]):
-    """
-    Build the ingestion flow for processing order book data from multiple exchanges.
+    Build the ingestion flow for market data.
 
     Parameters:
-        exchanges_and_pairs: Dict mapping exchange names to lists of asset pairs
+        exchange_pairs: Dictionary mapping exchange names to lists of pairs to monitor
     """
-    logger.info(f"Building ingestion flow with exchanges: {exchanges_and_pairs}")
+    logger.info(f"Building ingestion flow for {len(exchange_pairs)} exchanges")
     flow = Dataflow("ingestion")
 
-    # Create the multi-exchange source
-    source = MultiExchangeSource(exchanges_and_pairs, get_processor_class)
+    # Import here to avoid circular imports
+    from src.arbirich.factories.processor_factory import get_processor_for_exchange
+    from src.arbirich.flows.ingestion.ingestion_process import process_order_book
+    from src.arbirich.flows.ingestion.ingestion_sink import RedisOrderBookSink
+    from src.arbirich.flows.ingestion.ingestion_source import MultiExchangeSource
 
-    # Create the input stream
-    input_stream = op.input("exchange_input", flow, source)
+    # Create source that fetches market data from exchanges
+    source = MultiExchangeSource(
+        exchanges_and_pairs=exchange_pairs,
+        processor_factory=get_processor_for_exchange,
+    )
+    stream = op.input("exchange_input", flow, source)
 
-    # Process order book updates with error handling
-    def safe_process_order_book(data):
-        try:
-            result = process_order_book(data)
-            logger.debug(f"Processed order book: {result}")
-            return result
-        except Exception as e:
-            logger.error(f"Error in process_order_book: {e}", exc_info=True)
-            # Log the input data to help diagnose the issue
-            logger.error(f"Input data: {data}")
-            return None
+    # Basic pipeline without complex transformations: input -> process -> filter -> output
+    processed = op.map("process_market_data", stream, process_order_book)
+    valid_data = op.filter("filter_valid", processed, lambda x: x is not None)
 
-    processed_stream = op.map("process_order_book", input_stream, safe_process_order_book)
-
-    # Store and publish order book updates with error handling and null check
-    def safe_publish_order_book(order_book):
-        try:
-            # Skip None values
-            if order_book is None:
-                return None
-
-            # For debug: check type and log it
-            logger.debug(f"Publishing type: {type(order_book)}")
-
-            # Handle both tuples and objects
-            if isinstance(order_book, tuple):
-                # If it's a tuple, get the first element (assuming it's the actual order book)
-                if len(order_book) > 0:
-                    actual_order_book = order_book[0]
-                    logger.debug(f"Converting tuple to order book: {actual_order_book}")
-                    return publish_order_book(actual_order_book.exchange, actual_order_book.symbol, actual_order_book)
-                else:
-                    logger.warning("Received empty tuple as order book")
-                    return None
-            else:
-                # Regular order book object
-                logger.debug(f"Publishing order book: exchange={order_book.exchange}, symbol={order_book.symbol}")
-                return publish_order_book(order_book.exchange, order_book.symbol, order_book)
-        except Exception as e:
-            logger.error(f"Error in publish_order_book: {e}", exc_info=True)
-            logger.error(f"order_book type: {type(order_book)}, value: {order_book}")
-            return None
-
-    stored_stream = op.map("store_order_book", processed_stream, safe_publish_order_book)
-
-    # Filter out None results AFTER publishing
-    result_stream = op.filter("filter_result", stored_stream, lambda x: x is not None)
-
-    # Add a simple formatter for stdout (optional)
-    def format_for_output(result):
-        return f"Published: {result}"
-
-    formatted_stream = op.map("format_output", result_stream, format_for_output)
+    # Use Redis sink to publish to Redis
+    redis_sink = RedisOrderBookSink()
+    op.output("redis_output", valid_data, redis_sink)
 
     # Output to stdout for debugging
-    op.output("stdout", formatted_stream, StdOutSink())
+    op.output("stdout", valid_data, StdOutSink())
 
-    logger.info("Ingestion flow built successfully")
     return flow
 
 
-async def run_ingestion_flow(exchanges_and_pairs: Dict[str, List[str]]):
+async def run_ingestion_flow(exchange_pairs: Dict[str, List[str]]):
     """
-    Run the ingestion flow asynchronously.
+    Run the ingestion flow for fetching market data.
 
     Parameters:
-        exchanges_and_pairs: Dict mapping exchange names to lists of asset pairs
+        exchange_pairs: Dictionary mapping exchange names to lists of pairs to monitor
     """
-    logger.info("Starting ingestion pipeline...")
-    logger.info(f"Exchanges and assets: {exchanges_and_pairs}")
+    executor = None
+    stop_event = threading.Event()
 
     try:
-        # Build and run the ingestion flow
-        logger.info(f"Building ingestion flow with exchanges: {exchanges_and_pairs}")
+        logger.info(f"Starting ingestion pipeline for {len(exchange_pairs)} exchanges")
+        flow = build_ingestion_flow(exchange_pairs)
 
-        flow = build_ingestion_flow(exchanges_and_pairs)
+        # Create executor for running bytewax
+        executor = ThreadPoolExecutor(max_workers=1)
 
-        logger.info("Ingestion flow built successfully")
-        logger.info("Running cli_main in a separate thread.")
+        # Setup a thread to monitor for cancellation - with minimal command-line args
+        def run_bytewax():
+            try:
+                # Configure command line args - but WITHOUT signal handling flags
+                import sys
 
-        execution_task = asyncio.create_task(
-            asyncio.to_thread(cli_main, flow, workers_per_process=1), name="ingestion-flow"
-        )
+                original_argv = sys.argv
+                sys.argv = [original_argv[0], "--workers", "1", "--no-recovery"]  # Added --no-recovery to avoid signals
 
-        # Allow interruption to propagate
-        try:
-            await execution_task
-        except asyncio.CancelledError:
-            logger.info("Ingestion task cancelled")
-            raise
-        logger.info("Ingestion flow has finished running.")
+                try:
+                    # We still have to use cli_main, but with minimal options
+                    cli_main(flow)
+                except Exception as e:
+                    if "signal only works" in str(e):
+                        logger.warning("Ignoring signal handling error in thread")
+                    else:
+                        logger.error(f"Error running bytewax: {e}")
+                finally:
+                    # Restore original argv
+                    sys.argv = original_argv
+            except Exception as e:
+                logger.error(f"Error in bytewax thread: {e}")
+            finally:
+                logger.info("Bytewax ingestion thread completed")
+
+        # Start bytewax in separate thread
+        future = executor.submit(run_bytewax)
+
+        # Monitor for cancellation
+        while not future.done() and not stop_event.is_set():
+            await asyncio.sleep(0.1)
+
+            # Check if we should stop based on task cancellation
+            if asyncio.current_task().cancelled():
+                logger.info("Task cancellation detected, stopping ingestion flow...")
+                stop_event.set()
+                break
+
+        if stop_event.is_set() and not future.done():
+            logger.info("Cancellation detected, attempting to interrupt bytewax...")
+            # We can't directly interrupt bytewax, but we can shut down the executor
+            executor.shutdown(wait=False)
+
+        # We won't wait for the future since it might be uninterruptible
+        # Just log that we're moving on
+        if not future.done():
+            logger.info("Bytewax still running, proceeding with cleanup anyway")
+
     except asyncio.CancelledError:
-        logger.info("Ingestion flow cancelled")
+        logger.info("Ingestion task cancelled")
+        stop_event.set()  # Set the stop event to signal the thread to stop
+        if executor:
+            executor.shutdown(wait=False)
         raise
     except Exception as e:
-        logger.error(f"Error in ingestion flow: {e}", exc_info=True)
+        logger.error(f"Error in ingestion flow: {e}")
     finally:
-        logger.info("Ingestion flow shutdown")
-        # Note: Don't close Redis client here as it might be shared among multiple flows
+        # Clean up resources
+        if executor and not executor._shutdown:
+            executor.shutdown(wait=False)
+        redis_client.close()
+        logger.info("Ingestion flow shutdown completed")
 
 
-# For CLI usage
+# Export the flow for CLI usage
 if __name__ == "__main__":
-    from src.arbirich.config import EXCHANGES, PAIRS
+    import json
+    import sys
 
-    # Set up logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    # Example exchange_pairs
+    default_exchange_pairs = {"bybit": ["BTC-USDT", "ETH-USDT"], "cryptocom": ["BTC-USDT", "ETH-USDT"]}
 
-    # Create exchange_pairs mapping
-    exchange_pairs = {}
-    for exchange in EXCHANGES:
-        exchange_pairs[exchange] = []
-        for base, quote in PAIRS:
-            exchange_pairs[exchange].append(f"{base}-{quote}")
+    # Allow specifying exchange_pairs via command line
+    exchange_pairs_json = sys.argv[1] if len(sys.argv) > 1 else json.dumps(default_exchange_pairs)
+    exchange_pairs = json.loads(exchange_pairs_json)
 
-    # Run ingestion flow
     asyncio.run(run_ingestion_flow(exchange_pairs))

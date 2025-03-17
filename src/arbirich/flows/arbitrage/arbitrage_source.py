@@ -11,7 +11,7 @@ from src.arbirich.models.models import OrderBookUpdate
 from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 # Create a single shared Redis client for all partitions
 _shared_redis_client = None
@@ -34,10 +34,68 @@ class RedisExchangePartition(StatefulSourcePartition):
         self.last_activity = time.time()
         self.error_backoff = 1  # Initial backoff in seconds
         self.max_backoff = 30  # Maximum backoff in seconds
-        # Subscribe to the Redis pubsub channel explicitly
+
+        # Subscribe to Redis channels
         self.pubsub = self.redis_client.client.pubsub()
-        self.pubsub.subscribe(self.channel)
-        logger.info(f"Initialized RedisExchangePartition for {exchange} and subscribed to channel {channel}")
+
+        # IMPORTANT FIX: Ensure channel is a string, not a list or nested list
+        channels_to_subscribe = []
+
+        # Add the standard channel as a string
+        if isinstance(self.channel, list) or isinstance(self.channel, tuple):
+            # If channel is a list/tuple, extract the first string item
+            if len(self.channel) > 0:
+                if isinstance(self.channel[0], list) or isinstance(self.channel[0], tuple):
+                    # Handle nested list/tuple - extract first string from inner list
+                    if len(self.channel[0]) > 0 and isinstance(self.channel[0][0], str):
+                        channels_to_subscribe.append(self.channel[0][0])
+                elif isinstance(self.channel[0], str):
+                    # Handle simple list/tuple with string as first element
+                    channels_to_subscribe.append(self.channel[0])
+                else:
+                    # Fallback to default channel
+                    channels_to_subscribe.append("order_book")
+            else:
+                # Empty list/tuple, use default
+                channels_to_subscribe.append("order_book")
+        elif isinstance(self.channel, str):
+            # If channel is already a string, use it directly
+            channels_to_subscribe.append(self.channel)
+        else:
+            # Unknown type, use default
+            channels_to_subscribe.append("order_book")
+
+        # Add pair-specific channels - new format
+        if self.pairs:
+            for pair in self.pairs:
+                # New format channels: order_book.{pair}.{exchange}
+                new_format_channel = f"order_book.{pair}.{exchange}"
+                channels_to_subscribe.append(new_format_channel)
+
+        # EXTRA DEBUG: Log the exact structure of channels_to_subscribe
+        logger.info(f"Channel types - main: {type(self.channel)}")
+        for i, ch in enumerate(channels_to_subscribe):
+            logger.info(f"Channel {i} type: {type(ch)}, value: {ch}")
+
+        # Now subscribe to all channels
+        try:
+            logger.info(f"Subscribing to channels: {channels_to_subscribe}")
+            # Validate each channel is a string before subscribing
+            valid_channels = [ch for ch in channels_to_subscribe if isinstance(ch, str)]
+            if not valid_channels:
+                # Fallback to default if no valid channels
+                valid_channels = ["order_book"]
+
+            self.pubsub.subscribe(*valid_channels)  # Unpack the list as individual arguments
+            logger.info(f"Successfully subscribed to {len(valid_channels)} channels: {valid_channels}")
+        except Exception as e:
+            logger.error(f"Error subscribing to channels: {e}")
+            # Fall back to minimum subscription
+            try:
+                self.pubsub.subscribe("order_book")
+                logger.info("Fallback: Subscribed to only 'order_book' channel")
+            except Exception as e2:
+                logger.error(f"Even fallback subscription failed: {e2}")
 
     def next_batch(self) -> List[Tuple[str, Union[Dict, OrderBookUpdate]]]:
         """

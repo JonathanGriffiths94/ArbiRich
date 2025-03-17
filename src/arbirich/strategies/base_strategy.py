@@ -13,6 +13,9 @@ class ArbitrageStrategy(abc.ABC):
     Each strategy implements its own arbitrage detection logic.
     """
 
+    # Strategy type identifier for the factory
+    STRATEGY_TYPE = None
+
     def __init__(self, name: str, config: dict):
         """
         Initialize the strategy.
@@ -26,6 +29,9 @@ class ArbitrageStrategy(abc.ABC):
         self.threshold = config.get("threshold", 0.001)  # Default 0.1%
         self.pairs = config.get("pairs", [])
         self.exchanges = config.get("exchanges", [])
+
+        if self.__class__.STRATEGY_TYPE is None:
+            raise NotImplementedError(f"Strategy class {self.__class__.__name__} must define STRATEGY_TYPE")
 
         logger.info(f"Initialized strategy '{name}' with threshold {self.threshold:.4%}")
 

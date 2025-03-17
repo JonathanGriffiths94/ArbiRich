@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
+from typing import Any, Dict, Generator, Optional
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -14,23 +15,43 @@ class OrderBookGapException(Exception):
 
 
 class BaseOrderBookProcessor(ABC):
+    """Base class for all exchange order book processors."""
+
     def __init__(
-        self,
-        exchange: str,
-        product: str,
-        subscription_type: str,
-        use_rest_snapshot: bool,
+        self, exchange: str, product: str, subscription_type: str = "snapshot", use_rest_snapshot: bool = False
     ):
+        """
+        Initialize the order book processor.
+
+        Parameters:
+            exchange: The exchange name
+            product: The product/symbol to get order books for
+            subscription_type: Type of subscription (snapshot or delta)
+            use_rest_snapshot: Whether to use REST API for initial snapshot
+        """
         self.exchange = exchange
         self.product = product
-        self.subscription_type = subscription_type  # "snapshot" or "delta"
+        self.subscription_type = subscription_type
         self.use_rest_snapshot = use_rest_snapshot
         self.order_book = {"bids": {}, "asks": {}}
         self.local_update_id = None
+        logger.info(f"Initialized {self.__class__.__name__} for {exchange}:{product}")
 
-    async def run(self):
+    async def get_initial_snapshot(self) -> Optional[Dict[str, Any]]:
         """
-        Overall algorithm:
+        Get initial order book snapshot from REST API.
+
+        Returns:
+            Dict with order book data or None if not available
+        """
+        logger.warning(f"get_initial_snapshot not implemented for {self.exchange}")
+        return None
+
+    async def run(self) -> Generator[Dict[str, Any], None, None]:
+        """
+        Standard implementation of run() that most processors can use.
+
+        It follows this algorithm:
          1. Connect to WebSocket and subscribe.
          2. Buffer initial events.
          3. Fetch a full snapshot (via REST or WebSocket).
@@ -38,6 +59,9 @@ class BaseOrderBookProcessor(ABC):
          5. Process buffered events.
          6. Process live delta updates continuously.
          7. If sequence gaps occur, re-subscribe.
+
+        Yields:
+            Dict with order book data
         """
         while True:
             try:

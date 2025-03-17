@@ -23,6 +23,9 @@ class RedisService:
     _pubsub_lock = threading.Lock()
     _shared_pubsub = None
 
+    # Class variable to store all instances for proper cleanup
+    _instances = []
+
     def __init__(self, retry_attempts=3, retry_delay=1):
         """Initialize Redis connection with retry logic"""
         self.host = REDIS_CONFIG["host"]
@@ -33,6 +36,9 @@ class RedisService:
         self.pubsub = None
         self.client = None
         self._connect()
+
+        # Add self to instances list for cleanup
+        RedisService._instances.append(self)
 
     def _connect(self) -> None:
         """Establish connection to Redis with retries"""
@@ -97,6 +103,20 @@ class RedisService:
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
 
+        # Remove self from instances list
+        if self in RedisService._instances:
+            RedisService._instances.remove(self)
+
+    @classmethod
+    def close_all_connections(cls):
+        """Close all Redis connections created by this service."""
+        logger.info(f"Closing all Redis connections ({len(cls._instances)} instances)")
+        for instance in list(cls._instances):
+            instance.close()
+
+        # Clear the instances list to be safe
+        cls._instances = []
+
     def store_order_book(self, order_book: OrderBookUpdate) -> None:
         """
         Stores the order book update in Redis using a key formatted as:
@@ -128,51 +148,40 @@ class RedisService:
             # Optionally, re-raise or handle the error as appropriate.
             raise
 
-    def publish_order_book(self, exchange: str, symbol: str, order_book):
+    def publish_order_book_update(self, order_book: OrderBookUpdate) -> int:
         """
-        Publish an order book update to Redis.
+        Publish an order book update to Redis channels using both the old and new channel formats.
 
         Parameters:
-            exchange: The exchange name
-            symbol: The trading pair symbol
-            order_book: The order book data to publish (can be dict or OrderBookUpdate model)
+            order_book: The OrderBookUpdate to publish
+
+        Returns:
+            The total number of subscribers that received the message
         """
         try:
-            # Create channel name
-            channel = "order_book"
-            logger.debug(f"Publishing to channel: {channel}")
+            # Ensure we have the required fields
+            if not order_book.exchange or not order_book.symbol:
+                logger.error("Order book missing required exchange or symbol fields")
+                return 0
 
-            # Convert Pydantic model to dict if needed
-            if hasattr(order_book, "model_dump"):
-                order_data = order_book.model_dump()
-            elif hasattr(order_book, "dict"):
-                order_data = order_book.dict()  # For older Pydantic versions
-            else:
-                # Assume it's already a dict
-                order_data = order_book
-
-            # Add exchange and symbol if not present in the order book
-            if "exchange" not in order_data:
-                order_data["exchange"] = exchange
-            if "symbol" not in order_data:
-                order_data["symbol"] = symbol
-
-            # Add timestamp if missing
-            if "timestamp" not in order_data:
-                order_data["timestamp"] = time.time()
-
-            # Convert to JSON and publish
-            message_json = json.dumps(order_data)
-            result = self.client.publish(channel, message_json)
+            new_channel = f"order_book.{order_book.symbol}.{order_book.exchange}"
+            message = order_book.model_dump_json()
+            result = self.client.publish(new_channel, message)
 
             if result > 0:
-                logger.debug(f"Published order book for {exchange}:{symbol} to {result} subscribers")
+                logger.debug(
+                    f"Published order book to {result} subscribers for {order_book.exchange}:{order_book.symbol}"
+                )
             else:
-                logger.debug(f"Published order book for {exchange}:{symbol} but no subscribers")
+                logger.debug(f"Published order book but no subscribers for {order_book.exchange}:{order_book.symbol}")
+
+            # Also store the order book in Redis for later retrieval
+            key = f"order_book:{order_book.symbol}:{order_book.exchange}"
+            self.client.set(key, message, ex=60)  # Expire after 60 seconds
 
             return result
         except Exception as e:
-            logger.error(f"Error publishing order book to Redis: {e}", exc_info=True)
+            logger.error(f"Error publishing order book update: {e}", exc_info=True)
             return 0
 
     def get_order_book(self, exchange: str, symbol: str) -> Optional[OrderBookUpdate]:
@@ -232,7 +241,7 @@ class RedisService:
             return self._shared_pubsub
 
     def subscribe_to_order_book_updates(
-        self, channel: str = "trade_opportunities", callback: Optional[Callable] = None
+        self, channel: str = "order_book", callback: Optional[Callable] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Subscribe to a Redis Pub/Sub channel and yield messages indefinitely.

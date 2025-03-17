@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.arbirich.config import STRATEGIES
 from src.arbirich.strategies.strategy_configs import (
-    get_all_strategy_names,
     get_strategy_config,
 )
 
@@ -38,17 +37,17 @@ class StrategyManager:
     @staticmethod
     def get_all_strategy_names() -> List[str]:
         """Get a list of all configured strategy names"""
-        return get_all_strategy_names()
+        return list(STRATEGIES.keys())
 
     @staticmethod
     def get_threshold(strategy_name: str) -> float:
         """Get the threshold value for a specific strategy"""
-        config = StrategyManager.get_strategy_config(strategy_name)
-        if config:
-            return config.get("threshold", 0.001)
+        if strategy_name not in STRATEGIES:
+            logger.warning(f"Strategy {strategy_name} not found, using default threshold")
+            return 0.005  # Default 0.5% threshold
 
-        logger.warning(f"Strategy {strategy_name} not found in configuration. Using default threshold.")
-        return 0.001  # 0.1% default threshold
+        strategy_config = STRATEGIES[strategy_name]
+        return strategy_config.get("min_spread", 0.005)
 
     @staticmethod
     def get_exchanges_for_strategy(strategy_name: str) -> List[str]:
@@ -65,23 +64,36 @@ class StrategyManager:
     @staticmethod
     def get_pairs_for_strategy(strategy_name: str) -> List[Tuple[str, str]]:
         """Get the list of trading pairs used by a specific strategy"""
-        config = StrategyManager.get_strategy_config(strategy_name)
-        if config and "pairs" in config:
-            return config["pairs"]
+        if strategy_name not in STRATEGIES:
+            logger.warning(f"Strategy {strategy_name} not found, using default")
+            return [("BTC", "USDT")]
 
-        logger.warning(f"No pairs found for strategy '{strategy_name}', using default pairs")
-        return [("BTC", "USDT")]  # Default pair if not specified
+        strategy_config = STRATEGIES[strategy_name]
+        return strategy_config.get("pairs", [("BTC", "USDT")])
 
     @staticmethod
-    def get_exchange_channels(strategy_name: str) -> Dict[str, str]:
+    def get_exchange_channels(strategy_name: str) -> Dict[str, List[str]]:
         """
-        Get a dictionary of exchange to channel mappings for a strategy.
-        This is useful for configuring what data sources each strategy subscribes to.
+        Get the exchange channels for a specific strategy.
+
+        Parameters:
+            strategy_name: The name of the strategy
+
+        Returns:
+            Dictionary mapping exchanges to channels
         """
-        exchanges = StrategyManager.get_exchanges_for_strategy(strategy_name)
-        # Create a mapping of exchange -> channel name
-        # Currently all exchanges use the same 'order_book' channel
-        return {exchange: "order_book" for exchange in exchanges}
+        if strategy_name not in STRATEGIES:
+            logger.warning(f"Strategy {strategy_name} not found, using default")
+            return {"bybit": ["order_book"], "cryptocom": ["order_book"]}
+
+        strategy_config = STRATEGIES[strategy_name]
+        exchanges = strategy_config.get("exchanges", [])
+
+        channels = {}
+        for exchange in exchanges:
+            channels[exchange] = ["order_book"]  # Default to order_book channel
+
+        return channels
 
     @staticmethod
     def enable_debug_for_strategy(strategy_name: str) -> bool:
@@ -127,3 +139,20 @@ class StrategyManager:
         if config:
             return config.get("type", "basic")
         return "basic"  # Default to basic if not specified
+
+    @staticmethod
+    def is_strategy_enabled(strategy_name: str) -> bool:
+        """
+        Check if a strategy is enabled.
+
+        Parameters:
+            strategy_name: The name of the strategy
+
+        Returns:
+            True if enabled, False otherwise
+        """
+        if strategy_name not in STRATEGIES:
+            return False
+
+        strategy_config = STRATEGIES[strategy_name]
+        return strategy_config.get("enabled", True)

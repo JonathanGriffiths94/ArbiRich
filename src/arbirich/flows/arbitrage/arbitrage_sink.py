@@ -6,6 +6,7 @@ from src.arbirich.models.models import TradeOpportunity
 from src.arbirich.services.redis_channel_manager import RedisChannelManager
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 # Maintain a cache of recently seen opportunities to avoid duplicates
 opportunity_cache = {}

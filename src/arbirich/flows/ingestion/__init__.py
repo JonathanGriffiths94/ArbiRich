@@ -1,4 +1,7 @@
-# Create this file to ensure the package is recognized
 """
-Ingestion flow package for collecting order book data from exchanges.
+Ingestion flow for fetching market data from exchanges.
 """
+
+from src.arbirich.flows.ingestion.ingestion import run_ingestion_flow
+
+__all__ = ["run_ingestion_flow"]
