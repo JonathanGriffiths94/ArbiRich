@@ -55,7 +55,7 @@ strategies = Table(
     Column("total_profit", Numeric(18, 2), nullable=False, server_default=text("0")),
     Column("total_loss", Numeric(18, 2), nullable=False, server_default=text("0")),
     Column("net_profit", Numeric(18, 2), nullable=False, server_default=text("0")),
-    Column("trades_count", Integer, nullable=False, server_default=text("0")),
+    Column("trade_count", Integer, nullable=False, server_default=text("0")),
     Column("start_timestamp", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
     Column(
         "last_updated",

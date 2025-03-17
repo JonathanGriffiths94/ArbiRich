@@ -148,39 +148,55 @@ class DatabaseService:
             result = conn.execute(strategies.select())
             return [Strategy.model_validate(row._asdict()) for row in result]
 
-    def update_strategy_stats(self, strategy_name: str, profit: float, loss: float, trade_count: int = 1) -> None:
-        """Update a strategy's performance metrics"""
-        with self.engine.begin() as conn:
-            # Get current values
-            query = select([strategies.c.total_profit, strategies.c.total_loss, strategies.c.trades_count]).where(
-                strategies.c.name == strategy_name
-            )
-            result = conn.execute(query)
-            row = result.first()
+    def update_strategy_stats(self, strategy_name: str, profit: float = 0, loss: float = 0, trade_count: int = 0):
+        """Update strategy statistics after a trade execution"""
+        try:
+            from decimal import Decimal
 
-            if row:
-                current_profit = float(row.total_profit)
-                current_loss = float(row.total_loss)
-                current_trades = row.trades_count
-
-                # Calculate new values
-                new_profit = current_profit + profit if profit > 0 else current_profit
-                new_loss = current_loss + abs(loss) if loss < 0 else current_loss
-                new_trades = current_trades + trade_count
-                net_profit = new_profit - new_loss
-
-                # Update strategy
-                conn.execute(
-                    strategies.update()
-                    .where(strategies.c.name == strategy_name)
-                    .values(
-                        total_profit=new_profit,
-                        total_loss=new_loss,
-                        net_profit=net_profit,
-                        trades_count=new_trades,
-                        last_updated=datetime.utcnow(),
-                    )
+            with self.engine.begin() as conn:
+                # Get current stats
+                query = select(strategies.c.total_profit, strategies.c.total_loss, strategies.c.trade_count).where(
+                    strategies.c.name == strategy_name
                 )
+
+                result = conn.execute(query).first()
+
+                if result:
+                    # Convert to compatible types
+                    current_profit = Decimal(str(result.total_profit))
+                    current_loss = Decimal(str(result.total_loss))
+                    current_trade_count = result.trade_count
+
+                    # Convert input params to Decimal to match database type
+                    profit_decimal = Decimal(str(profit))
+                    loss_decimal = Decimal(str(loss))
+
+                    # Calculate new values
+                    new_total_profit = current_profit + profit_decimal
+                    new_total_loss = current_loss + loss_decimal
+                    new_net_profit = new_total_profit - new_total_loss
+
+                    # Update with new values
+                    conn.execute(
+                        strategies.update()
+                        .where(strategies.c.name == strategy_name)
+                        .values(
+                            total_profit=new_total_profit,
+                            total_loss=new_total_loss,
+                            net_profit=new_net_profit,  # Add net_profit calculation
+                            trade_count=current_trade_count + trade_count,
+                            last_updated=datetime.now(),
+                        )
+                    )
+
+                    logger.info(
+                        f"Updated stats for {strategy_name}: "
+                        f"profit +{profit}, loss +{loss}, net profit = {new_net_profit}, trades +{trade_count}"
+                    )
+                else:
+                    logger.warning(f"Strategy {strategy_name} not found in database")
+        except Exception as e:
+            logger.error(f"Error updating strategy stats: {e}", exc_info=True)
 
     # ---- TradeOpportunity operations ----
     def create_trade_opportunity(self, opportunity: TradeOpportunity) -> TradeOpportunity:

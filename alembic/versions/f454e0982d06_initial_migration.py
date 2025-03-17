@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: df06ccaed540
+Revision ID: f454e0982d06
 Revises:
-Create Date: 2025-03-17 18:51:07.418697
+Create Date: 2025-03-17 22:24:28.574373
 
 """
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "df06ccaed540"
+revision: str = "f454e0982d06"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -59,7 +59,7 @@ def upgrade() -> None:
         sa.Column("total_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
         sa.Column("total_loss", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
         sa.Column("net_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
-        sa.Column("trades_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("trade_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("start_timestamp", sa.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
         sa.Column("last_updated", sa.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
         sa.PrimaryKeyConstraint("id"),

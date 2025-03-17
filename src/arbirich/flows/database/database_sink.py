@@ -112,6 +112,25 @@ def db_sink(item):
                         saved = db.create_trade_execution(execution)
                         logger.info(f"Trade execution saved to database: {saved.id}")
 
+                        # Calculate profit/loss
+                        profit = execution.executed_sell_price - execution.executed_buy_price
+                        total_value = profit * execution.volume
+
+                        logger.info(f"Calculating P&L: {profit} per unit × {execution.volume} units = {total_value}")
+
+                        # Update strategy stats
+                        try:
+                            db.update_strategy_stats(
+                                strategy_name=execution.strategy,
+                                profit=total_value if total_value > 0 else 0,
+                                loss=abs(total_value) if total_value < 0 else 0,
+                                trade_count=1,
+                            )
+                            logger.info(f"Updated strategy stats for {execution.strategy}")
+                        except Exception as e:
+                            # Log but don't fail the entire function
+                            logger.error(f"Error updating strategy stats: {e}")
+
                         return {"type": "execution", "id": saved.id, "processed": True}
 
                 except Exception as e:

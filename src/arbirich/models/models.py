@@ -91,7 +91,7 @@ class Strategy(BaseModel):
     total_profit: float = 0
     total_loss: float = 0
     net_profit: float = 0
-    trades_count: int = 0
+    trade_count: int = 0
     start_timestamp: Optional[datetime] = None
     last_updated: Optional[datetime] = None
 
