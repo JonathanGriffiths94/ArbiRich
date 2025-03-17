@@ -1,8 +1,8 @@
 import logging
 from typing import Dict, List, Optional
 
+from arbirich.services.redis.redis_service import RedisService
 from src.arbirich.models.models import TradeExecution, TradeOpportunity
-from src.arbirich.services.redis_service import RedisService
 from src.arbirich.utils.strategy_manager import StrategyManager
 
 logger = logging.getLogger(__name__)

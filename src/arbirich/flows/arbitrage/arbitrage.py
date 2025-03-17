@@ -7,6 +7,7 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
+from arbirich.services.redis.redis_service import RedisService
 from src.arbirich.flows.arbitrage.arbitrage_process import (
     detect_arbitrage,
     key_by_asset,
@@ -17,7 +18,6 @@ from src.arbirich.flows.arbitrage.arbitrage_sink import (
     publish_trade_opportunity,
 )
 from src.arbirich.flows.arbitrage.arbitrage_source import use_redis_opportunity_source
-from src.arbirich.services.redis_service import RedisService
 from src.arbirich.utils.strategy_manager import StrategyManager
 
 logger = logging.getLogger(__name__)

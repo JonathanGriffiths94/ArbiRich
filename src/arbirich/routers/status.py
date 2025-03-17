@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from src.arbirich.services.redis_service import RedisService
+from arbirich.services.redis.redis_service import RedisService
 
 router = APIRouter()
 price_service = RedisService()

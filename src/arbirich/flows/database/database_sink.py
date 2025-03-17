@@ -3,8 +3,8 @@ import logging
 
 from pydantic import ValidationError
 
+from arbirich.services.database.database_service import DatabaseService
 from src.arbirich.models.models import TradeExecution, TradeOpportunity
-from src.arbirich.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

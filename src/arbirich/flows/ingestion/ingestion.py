@@ -7,11 +7,11 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
+from arbirich.services.redis.redis_service import RedisService
 from src.arbirich.flows.ingestion.ingestion_process import process_order_book
 from src.arbirich.flows.ingestion.ingestion_sink import publish_order_book
 from src.arbirich.flows.ingestion.ingestion_source import MultiExchangeSource
-from src.arbirich.io.exchange_processors.registry import register_all_processors
-from src.arbirich.services.redis_service import RedisService
+from src.arbirich.services.exchange_processors.registry import register_all_processors
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -38,7 +38,7 @@ def get_processor_class(exchange):
     Import is done here to avoid circular imports.
     """
     try:
-        from src.arbirich.io.exchange_processors.processor_factory import get_processor_for_exchange
+        from src.arbirich.services.exchange_processors.processor_factory import get_processor_for_exchange
 
         processor = get_processor_for_exchange(exchange)
         logger.info(f"Got processor for {exchange}: {processor.__name__}")
@@ -46,7 +46,7 @@ def get_processor_class(exchange):
     except Exception as e:
         logger.error(f"Error getting processor for {exchange}: {e}")
         # Even in case of error, return a default processor
-        from src.arbirich.io.exchange_processors.default_processor import DefaultOrderBookProcessor
+        from src.arbirich.services.exchange_processors.default_processor import DefaultOrderBookProcessor
 
         return DefaultOrderBookProcessor
 

@@ -4,9 +4,9 @@ import pkgutil
 from typing import Dict
 
 from src.arbirich.config import STRATEGIES
-from src.arbirich.strategies.base_strategy import ArbitrageStrategy
-from src.arbirich.strategies.basic_arbitrage_strategy import BasicArbitrageStrategy
-from src.arbirich.strategies.mid_price_arbitrage_strategy import MidPriceArbitrageStrategy
+from src.arbirich.services.strategies.base_strategy import ArbitrageStrategy
+from src.arbirich.services.strategies.basic_arbitrage_strategy import BasicArbitrageStrategy
+from src.arbirich.services.strategies.mid_price_arbitrage_strategy import MidPriceArbitrageStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +68,13 @@ def discover_strategies() -> None:
     logger.info("Discovering strategy implementations...")
 
     # Get the module path for the strategies package
-    import src.arbirich.strategies as strategies_pkg
+    import src.arbirich.services.strategies as strategies_pkg
 
     for _, name, is_pkg in pkgutil.iter_modules(strategies_pkg.__path__):
         if not is_pkg and name not in ("base_strategy", "strategy_factory"):
             try:
                 # Import the module
-                module = importlib.import_module(f"src.arbirich.strategies.{name}")
+                module = importlib.import_module(f"src.arbirich.services.strategies.{name}")
                 logger.debug(f"Imported strategy module: {name}")
 
                 # Strategy classes should register themselves or be registered here

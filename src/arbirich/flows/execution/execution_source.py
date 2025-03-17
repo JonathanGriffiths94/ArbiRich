@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 import time
@@ -5,8 +6,10 @@ from threading import Lock
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
+from src.arbirich.config import STRATEGIES
+from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.flows.arbitrage.arbitrage_source import get_shared_redis_client
-from src.arbirich.services.redis_service import RedisService
+from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -23,8 +26,9 @@ def set_stop_event():
 
 
 class RedisExecutionPartition(StatefulSourcePartition):
-    def __init__(self):
-        logger.info("Initializing RedisExecutionPartition")
+    def __init__(self, strategy_name=None):
+        logger.info(f"Initializing RedisExecutionPartition for strategy: {strategy_name or 'all'}")
+        self.strategy_name = strategy_name
         # Use shared Redis client instead of creating a new one
         self.redis_client = get_shared_redis_client()
         self._running = True
@@ -33,25 +37,30 @@ class RedisExecutionPartition(StatefulSourcePartition):
         self._error_backoff = 1  # Initial backoff in seconds
         self._max_backoff = 30  # Maximum backoff in seconds
 
-        # Subscribe to opportunities channel and verify
-        logger.info("Subscribing to trade opportunities channel")
-        self.redis_client.subscribe_to_trade_opportunities()
+        # Determine which channels to subscribe to
+        self.channels_to_check = []
 
-        # Verify subscription is active by checking Redis pubsub channels
-        try:
-            channels = self.redis_client.client.pubsub_channels()
-            channels = [ch.decode("utf-8") if isinstance(ch, bytes) else ch for ch in channels]
-            if "trade_opportunities" in channels:
-                logger.info("Successfully subscribed to trade_opportunities channel")
-            else:
-                logger.warning("trade_opportunities channel not found in active channels!")
-                logger.info("Creating explicit subscription")
-                # Create a persistent subscription
-                self.pubsub = self.redis_client.client.pubsub()
-                self.pubsub.subscribe("trade_opportunities")
-                self.pubsub.subscribe("trade_opportunities:basic_arbitrage")
-        except Exception as e:
-            logger.error(f"Error verifying subscription: {e}")
+        if strategy_name:
+            # If strategy is specified, only check that strategy's channel
+            strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
+            self.channels_to_check.append(strategy_channel)
+            logger.info(f"Will check strategy-specific channel: {strategy_channel}")
+        else:
+            # Otherwise check all strategy channels
+            for strategy in STRATEGIES.keys():
+                strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy}"
+                self.channels_to_check.append(strategy_channel)
+                logger.info(f"Will check strategy channel: {strategy_channel}")
+
+            # Also check main channel as fallback
+            self.channels_to_check.append(TRADE_OPPORTUNITIES_CHANNEL)
+            logger.info(f"Will check main channel: {TRADE_OPPORTUNITIES_CHANNEL}")
+
+        # Create explicit subscriptions for all channels
+        self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
+        for channel in self.channels_to_check:
+            self.pubsub.subscribe(channel)
+            logger.info(f"Explicitly subscribed to: {channel}")
 
         logger.info("RedisExecutionPartition initialization complete")
 
@@ -66,32 +75,60 @@ class RedisExecutionPartition(StatefulSourcePartition):
                 # Check if we should perform periodic health check
                 current_time = time.time()
                 if current_time - self._last_activity > 30:  # 30 seconds timeout
-                    logger.debug("Performing periodic health check on Redis connection")
+                    logger.info("Performing periodic health check on Redis connection")
                     self._last_activity = current_time
 
                     # Check connection health and recreate if necessary
                     if not self.redis_client.is_healthy():
                         logger.warning("Redis connection appears unhealthy, reconnecting")
-                        # Close existing connection and create a new one
                         try:
                             self.redis_client.close()
                         except Exception as e:
                             logger.warning(f"Error closing Redis connection: {e}")
 
                         self.redis_client = RedisService()
-                        self.redis_client.subscribe_to_trade_opportunities()
+                        # Recreate subscriptions
+                        self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
+                        for channel in self.channels_to_check:
+                            self.pubsub.subscribe(channel)
+                            logger.info(f"Resubscribed to: {channel}")
 
                 if not self._running:
                     logger.info("Partition marked as not running, stopping")
                     return []
 
-                # Get opportunity from Redis
-                opportunity = self.redis_client.get_opportunity()
+                # Check for messages from our pubsub client directly
+                message = self.pubsub.get_message(timeout=0.01)
+                opportunity = None
+
+                if message and message.get("type") == "message":
+                    channel = message.get("channel")
+                    if isinstance(channel, bytes):
+                        channel = channel.decode("utf-8")
+
+                    data = message.get("data")
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+
+                    logger.info(f"Received message from channel: {channel}")
+                    try:
+                        opportunity = json.loads(data)
+                        logger.info(f"Parsed opportunity: {opportunity.get('id', '(no ID)')}")
+                    except json.JSONDecodeError:
+                        logger.error(f"Error decoding message data: {data}")
+
                 if opportunity:
-                    logger.debug(f"Received opportunity: {opportunity}")
+                    logger.info(
+                        f"Processing opportunity: {opportunity.get('id', '(no ID)')} for pair {opportunity.get('pair')}"
+                    )
                     self._last_activity = time.time()
                     self._error_backoff = 1  # Reset backoff on success
                     return [opportunity]
+                else:
+                    # Periodically log that we're waiting for opportunities
+                    if current_time - self._last_activity > 120:  # Every 2 minutes
+                        logger.info("Waiting for opportunities...")
+                        self._last_activity = current_time
 
                 # No opportunity but no error either
                 return []
@@ -109,6 +146,10 @@ class RedisExecutionPartition(StatefulSourcePartition):
 
 
 class RedisExecutionSource(FixedPartitionedSource):
+    def __init__(self, strategy_name=None):
+        self.strategy_name = strategy_name
+        logger.info(f"Created RedisExecutionSource for strategy: {strategy_name or 'all'}")
+
     def list_parts(self):
         # Simple single partition for execution source
         parts = ["execution_part"]
@@ -117,4 +158,4 @@ class RedisExecutionSource(FixedPartitionedSource):
 
     def build_part(self, step_id, for_key, _resume_state):
         logger.info(f"Building execution partition for key: {for_key}")
-        return RedisExecutionPartition()
+        return RedisExecutionPartition(self.strategy_name)

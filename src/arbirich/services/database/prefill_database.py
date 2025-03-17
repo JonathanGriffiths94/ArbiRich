@@ -2,9 +2,9 @@ import logging
 import sys
 from datetime import UTC, datetime
 
+from arbirich.services.database.database_service import DatabaseService
 from src.arbirich.config import EXCHANGE_CONFIGS, EXCHANGES, PAIRS, STRATEGIES
 from src.arbirich.models.models import Exchange, Pair, Strategy
-from src.arbirich.services.database_service import DatabaseService
 
 # Configure logging
 logging.basicConfig(

@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.arbirich.config import STRATEGIES
-from src.arbirich.strategies.strategy_configs import (
+from src.arbirich.services.strategies.strategy_configs import (
     get_all_strategy_names,
     get_strategy_config,
 )

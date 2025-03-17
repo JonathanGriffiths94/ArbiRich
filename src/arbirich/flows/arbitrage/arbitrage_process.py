@@ -27,7 +27,7 @@ def detect_arbitrage(
     Returns:
         TradeOpportunity object if an opportunity is found, None otherwise
     """
-    from src.arbirich.strategies.strategy_factory import get_strategy
+    from src.arbirich.services.strategies.strategy_factory import get_strategy
 
     try:
         # Get the appropriate strategy

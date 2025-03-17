@@ -6,8 +6,8 @@ import requests
 import websockets
 
 from src.arbirich.config import EXCHANGE_CONFIGS
-from src.arbirich.io.exchange_processors.base_processor import BaseOrderBookProcessor
-from src.arbirich.io.exchange_processors.registry import register
+from src.arbirich.services.exchange_processors.base_processor import BaseOrderBookProcessor
+from src.arbirich.services.exchange_processors.registry import register
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

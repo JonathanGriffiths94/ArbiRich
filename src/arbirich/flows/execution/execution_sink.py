@@ -2,7 +2,7 @@ import logging
 import time
 
 from src.arbirich.models.models import TradeExecution, TradeOpportunity
-from src.arbirich.services.redis_service import RedisService
+from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)

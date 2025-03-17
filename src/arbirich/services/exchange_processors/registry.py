@@ -45,14 +45,14 @@ def register_all_processors():
     logger.info("Registering all exchange processors...")
 
     # First, we'll import all the processor modules to trigger the decorators
-    import src.arbirich.io.exchange_processors as pkg
+    import src.arbirich.services.exchange_processors as pkg
 
     for _, name, is_pkg in pkgutil.iter_modules(pkg.__path__):
         # Skip certain modules
         if not is_pkg and name not in ["registry", "processor_factory", "base_processor", "__init__"]:
             try:
                 # Import the module to trigger the register decorators
-                importlib.import_module(f"src.arbirich.io.exchange_processors.{name}")
+                importlib.import_module(f"src.arbirich.services.exchange_processors.{name}")
                 logger.info(f"Successfully imported processor module: {name}")
             except Exception as e:
                 logger.error(f"Error importing processor module {name}: {e}")

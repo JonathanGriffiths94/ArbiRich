@@ -5,7 +5,7 @@ import logging
 import requests
 import websockets
 
-from src.arbirich.io.websockets.base import BaseOrderBookProcessor
+from src.arbirich.services.exchange_processors.base_processor import BaseOrderBookProcessor
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

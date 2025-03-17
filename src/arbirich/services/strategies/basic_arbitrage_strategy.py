@@ -4,7 +4,7 @@ import uuid
 from typing import Optional
 
 from src.arbirich.models.models import OrderBookState, TradeOpportunity
-from src.arbirich.strategies.base_strategy import ArbitrageStrategy
+from src.arbirich.services.strategies.base_strategy import ArbitrageStrategy
 
 logger = logging.getLogger(__name__)
 

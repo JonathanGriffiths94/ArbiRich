@@ -3,7 +3,7 @@ import time
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from src.arbirich.services.redis_service import RedisService
+from arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

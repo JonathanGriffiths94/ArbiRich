@@ -6,7 +6,7 @@ import requests
 import websockets
 
 from src.arbirich.config import EXCHANGE_CONFIGS
-from src.arbirich.io.websockets.base import (
+from src.arbirich.services.exchange_processors.base_processor import (
     BaseOrderBookProcessor,
     OrderBookGapException,
 )

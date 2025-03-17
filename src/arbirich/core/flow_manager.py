@@ -40,13 +40,10 @@ class FlowManager:
             # Give subscriptions a moment to establish
             await asyncio.sleep(1)
 
-            # Start arbitrage flows first (likely to be less problematic)
             await self.start_arbitrage_flows()
 
-            # Start ingestion flow
             await self.start_ingestion_flow()
 
-            # Start both execution flow methods
             await self.start_execution_flows()
 
             # Start the flow status checker in the background
@@ -143,31 +140,31 @@ class FlowManager:
             logger.error(f"FlowManager: Error starting ingestion flow: {e}")
             logger.error(traceback.format_exc())
 
-    async def start_execution_flow(self):
-        """Start the execution flow for trade execution"""
-        try:
-            # Import here to avoid circular imports
-            try:
-                from src.arbirich.flows.execution.execution import run_execution_flow
+    # async def start_execution_flow(self):
+    #     """Start the execution flow for trade execution"""
+    #     try:
+    #         # Import here to avoid circular imports
+    #         try:
+    #             from src.arbirich.flows.execution.execution import run_execution_flow
 
-                logger.info("FlowManager: Imported execution flow")
-            except Exception as e:
-                logger.error(f"FlowManager: Error importing execution flow: {e}")
-                logger.error(traceback.format_exc())
-                return
+    #             logger.info("FlowManager: Imported execution flow")
+    #         except Exception as e:
+    #             logger.error(f"FlowManager: Error importing execution flow: {e}")
+    #             logger.error(traceback.format_exc())
+    #             return
 
-            # Check if task already running
-            task_name = "execution_flow"
-            if task_name in self.tasks and not self.tasks[task_name].done():
-                logger.info(f"FlowManager: Task {task_name} already running")
-                return
+    #         # Check if task already running
+    #         task_name = "execution_flow"
+    #         if task_name in self.tasks and not self.tasks[task_name].done():
+    #             logger.info(f"FlowManager: Task {task_name} already running")
+    #             return
 
-            logger.info("FlowManager: Starting execution flow")
-            self.tasks[task_name] = asyncio.create_task(run_execution_flow(), name=task_name)
-            logger.info("FlowManager: Execution flow task created")
-        except Exception as e:
-            logger.error(f"FlowManager: Error starting execution flow: {e}")
-            logger.error(traceback.format_exc())
+    #         logger.info("FlowManager: Starting execution flow")
+    #         self.tasks[task_name] = asyncio.create_task(run_execution_flow(), name=task_name)
+    #         logger.info("FlowManager: Execution flow task created")
+    #     except Exception as e:
+    #         logger.error(f"FlowManager: Error starting execution flow: {e}")
+    #  logger.error(traceback.format_exc())
 
     async def start_execution_flows(self):
         """Start execution flows for each strategy"""

@@ -6,8 +6,8 @@ import logging
 
 from sqlalchemy import text
 
+from arbirich.services.database.database_service import DatabaseService, engine
 from src.arbirich.config import DATABASE_URL
-from src.arbirich.services.database_service import DatabaseService, engine
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

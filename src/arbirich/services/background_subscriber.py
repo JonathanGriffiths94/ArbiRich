@@ -8,9 +8,9 @@ import threading
 import time
 from typing import List, Set
 
+from arbirich.services.redis.redis_service import RedisService
 from src.arbirich.config import EXCHANGES, PAIRS, STRATEGIES
 from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
-from src.arbirich.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 
