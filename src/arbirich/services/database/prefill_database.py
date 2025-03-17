@@ -2,6 +2,8 @@ import logging
 import sys
 from datetime import UTC, datetime
 
+import sqlalchemy as sa
+
 from arbirich.services.database.database_service import DatabaseService
 from src.arbirich.config import EXCHANGE_CONFIGS, EXCHANGES, PAIRS, STRATEGIES
 from src.arbirich.models.models import Exchange, Pair, Strategy
@@ -15,6 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Update the prefill_database function to check for existing data
 def prefill_database():
     logger.info("Starting database prefill process")
     logger.info(f"Exchanges to add: {EXCHANGES}")
@@ -71,18 +74,37 @@ def prefill_database():
             # Prefill Pairs
             for base, quote in PAIRS:
                 try:
-                    logger.info(f"Processing pair: {base}/{quote}")
+                    logger.info(f"Processing pair: {base}-{quote}")
                     pairs = db.get_all_pairs()
                     symbol = f"{base}-{quote}"
 
                     if not any(p.base_currency == base and p.quote_currency == quote for p in pairs):
                         logger.info(f"Inserting pair: {symbol}")
-                        result = db.create_pair(Pair(base_currency=base, quote_currency=quote, symbol=symbol))
-                        logger.info(f"Pair created with ID: {result.id}")
+
+                        # Here's the fix - use a direct SQL query as a fallback
+                        try:
+                            result = db.create_pair(Pair(base_currency=base, quote_currency=quote, symbol=symbol))
+                            logger.info(f"Pair created with ID: {result.id}")
+                        except Exception as e:
+                            logger.warning(f"Error creating pair with Pair model: {e}, trying direct SQL")
+
+                            # Fallback to direct SQL if the model approach fails
+                            conn = db.engine.connect()
+                            conn.execute(
+                                sa.text("""
+                                INSERT INTO pairs (base_currency, quote_currency, symbol) 
+                                VALUES (:base, :quote, :symbol)
+                                ON CONFLICT (symbol) DO NOTHING
+                                """),
+                                {"base": base, "quote": quote, "symbol": symbol},
+                            )
+                            conn.commit()
+                            conn.close()
+                            logger.info(f"Pair created using direct SQL: {symbol}")
                     else:
                         logger.info(f"Pair {symbol} already exists, skipping")
                 except Exception as e:
-                    logger.error(f"Error processing pair {base}/{quote}", exc_info=e)
+                    logger.error(f"Error processing pair {base}-{quote}", exc_info=e)
 
             # Prefill Strategies
             for strategy_name, config in STRATEGIES.items():

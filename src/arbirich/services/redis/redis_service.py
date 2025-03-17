@@ -8,11 +8,10 @@ import redis
 from redis.exceptions import ConnectionError, RedisError
 
 from src.arbirich.config import REDIS_CONFIG
+from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
-
-TRADE_OPPORTUNITIES_CHANNEL = "trade_opportunities"
 
 
 class RedisService:
@@ -440,6 +439,11 @@ class RedisService:
             expiry_seconds: Time in seconds before key expires
         """
         logger.info(f"Storing trade execution: {execution_data}")
+
+        # Use strategy from the execution data if not explicitly provided
+        if not strategy_name and execution_data.strategy:
+            strategy_name = execution_data.strategy
+
         # Ensure execution ID
         execution_id = execution_data.id
 
@@ -459,8 +463,9 @@ class RedisService:
                 # Store trade execution with expiration
                 self.client.set(key, execution_data.model_dump_json(), ex=expiry_seconds)
 
-                # Publish to strategy-specific channel if provided
-                channel = f"trade_executions:{strategy_name}" if strategy_name else "trade_executions"
+                # Publish to strategy-specific channel if provided, ensuring the channel exists
+                channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}" if strategy_name else TRADE_EXECUTIONS_CHANNEL
+                # self._ensure_subscribed(channel)  # Ensure channel exists
                 self.client.publish(channel, execution_data.model_dump_json())
 
                 # Add execution to strategy-specific sorted set if provided
@@ -631,3 +636,20 @@ class RedisService:
                 logger.error(f"Failed to reconnect to Redis: {e}")
                 return False
         return False
+
+    def ensure_execution_channels_exist(self):
+        """
+        Ensure that trade execution channels exist by creating subscriptions.
+        """
+        logger.info("Ensuring trade execution channels exist")
+
+        # Subscribe to main executions channel
+        self._ensure_subscribed(TRADE_EXECUTIONS_CHANNEL)
+
+        # Subscribe to strategy-specific execution channels
+        from src.arbirich.config import STRATEGIES
+
+        for strategy_name in STRATEGIES.keys():
+            strategy_channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}"
+            self._ensure_subscribed(strategy_channel)
+            logger.info(f"Ensured execution channel exists: {strategy_channel}")

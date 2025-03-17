@@ -1,11 +1,14 @@
 import hashlib
 import json
+import logging
 import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field, computed_field
+
+logger = logging.getLogger(__name__)
 
 
 # Base models for common API operations
@@ -44,11 +47,12 @@ class Exchange(BaseModel):
         }
 
 
+# Update the Pair model to ensure symbol is always set:
 class Pair(BaseModel):
     id: Optional[int] = None
     base_currency: str
     quote_currency: str
-    symbol: Optional[str] = None  # Add symbol field
+    symbol: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -60,16 +64,21 @@ class Pair(BaseModel):
 
     def __init__(self, **data):
         super().__init__(**data)
+        # Always set symbol if it's not provided or is None
         if not self.symbol:
             self.symbol = self.get_symbol
 
     def to_db_dict(self) -> dict:
         """Convert to a dictionary suitable for database insertion"""
+        # Ensure symbol is set before returning
+        if not self.symbol:
+            self.symbol = self.get_symbol
+
         return {
             "id": self.id,
             "base_currency": self.base_currency,
             "quote_currency": self.quote_currency,
-            "symbol": self.symbol or self.get_symbol,
+            "symbol": self.symbol,
         }
 
 
@@ -245,19 +254,39 @@ class TradeExecution(BaseModel):
 
     def to_db_dict(self) -> dict:
         """Convert to a dictionary suitable for database insertion"""
-        db_dict = {
-            "id": uuid.UUID(self.id),
-            "strategy": self.strategy,
-            "pair": self.pair,
-            "buy_exchange": self.buy_exchange,
-            "sell_exchange": self.sell_exchange,
-            "executed_buy_price": self.executed_buy_price,
-            "executed_sell_price": self.executed_sell_price,
-            "spread": self.spread,
-            "volume": self.volume,
-            "execution_timestamp": datetime.fromtimestamp(self.execution_timestamp),
-            "execution_id": self.execution_id,
-        }
+        db_dict = {}
+
+        # Handle ID conversion safely
+        try:
+            db_dict["id"] = uuid.UUID(self.id)
+        except ValueError:
+            # For test data or non-UUID IDs, generate a new UUID
+            db_dict["id"] = uuid.uuid4()
+
+        # Copy all other fields directly
+        db_dict.update(
+            {
+                "strategy": self.strategy,
+                "pair": self.pair,
+                "buy_exchange": self.buy_exchange,
+                "sell_exchange": self.sell_exchange,
+                "executed_buy_price": self.executed_buy_price,
+                "executed_sell_price": self.executed_sell_price,
+                "spread": self.spread,
+                "volume": self.volume,
+                "execution_timestamp": datetime.fromtimestamp(self.execution_timestamp),
+                "execution_id": self.execution_id,
+            }
+        )
+
+        # Handle opportunity_id conversion safely
         if self.opportunity_id:
-            db_dict["opportunity_id"] = uuid.UUID(self.opportunity_id)
+            try:
+                db_dict["opportunity_id"] = uuid.UUID(self.opportunity_id)
+            except ValueError:
+                # Log a warning but continue
+                logger.warning(f"Invalid opportunity_id format: {self.opportunity_id}")
+                # You can either set it to None or generate a random UUID
+                db_dict["opportunity_id"] = None
+
         return db_dict

@@ -6,186 +6,138 @@ This ensures channels always have at least one subscriber.
 import logging
 import threading
 import time
-from typing import List, Set
 
-from arbirich.services.redis.redis_service import RedisService
 from src.arbirich.config import EXCHANGES, PAIRS, STRATEGIES
-from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 
 
 class BackgroundSubscriber:
     """
-    Maintains persistent Redis subscriptions in a background thread.
-    This ensures that all required channels always have at least one subscriber.
+    Maintains Redis subscriptions in a background thread.
+    This ensures channels remain active even if other flows disconnect.
     """
 
     def __init__(self):
-        self.redis = None
+        self.redis = RedisService()
         self.pubsub = None
-        self._stop_event = threading.Event()
-        self._thread = None
-        self.subscribed_channels: Set[str] = set()
+        self.thread = None
+        self.running = False
+        self.channels = []
 
     def start(self):
-        """Start the background subscriber in a separate thread."""
-        if self._thread and self._thread.is_alive():
-            logger.info("Background subscriber already running")
+        """Start the background subscriber thread"""
+        if self.thread and self.thread.is_alive():
+            logger.warning("Background subscriber thread already running")
             return
 
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="background-redis-subscriber")
-        self._thread.start()
+        self.running = True
+        self.thread = threading.Thread(target=self._subscribe_loop, daemon=True)
+        self.thread.start()
         logger.info("Started background Redis subscriber thread")
 
     def stop(self):
-        """Stop the background subscriber."""
-        if not self._thread or not self._thread.is_alive():
-            logger.info("Background subscriber not running")
-            return
+        """Stop the background subscriber thread"""
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=3.0)
 
-        logger.info("Stopping background Redis subscriber...")
-        self._stop_event.set()
-        self._thread.join(timeout=2.0)
+        if self.pubsub:
+            try:
+                self.pubsub.unsubscribe()
+                self.pubsub.close()
+            except Exception as e:
+                logger.error(f"Error closing pubsub: {e}")
 
-        if self._thread.is_alive():
-            logger.warning("Background subscriber thread did not stop gracefully")
-        else:
-            logger.info("Background subscriber thread stopped")
-
-        self._thread = None
-
-    def _get_channels_to_subscribe(self) -> List[str]:
-        """Get the list of channels to subscribe to."""
-        channels = [
-            ORDER_BOOK_CHANNEL,  # Main order book channel
-            TRADE_OPPORTUNITIES_CHANNEL,  # Main opportunities channel
-        ]
-
-        # Add strategy-specific trade opportunity channels
-        for strategy_name in STRATEGIES.keys():
-            channels.append(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}")
-
-        # Add exchange-specific channels
-        for exchange in EXCHANGES:
-            channels.append(f"order_book:{exchange}")
-
-        # Add pair-specific channels
-        for base, quote in PAIRS:
-            pair = f"{base}-{quote}"
-            channels.append(f"order_book:{pair}")
-
-            # Add fully qualified exchange+pair channels
-            for exchange in EXCHANGES:
-                channels.append(f"order_book:{pair}:{exchange}")
-
-        return channels
-
-    def _run(self):
-        """Main subscriber loop."""
         try:
-            # Connect to Redis
-            self.redis = RedisService()
+            self.redis.close()
+        except Exception as e:
+            logger.error(f"Error closing Redis connection: {e}")
+
+        logger.info("Background subscriber stopped")
+
+    def _subscribe_loop(self):
+        """Main subscriber loop that keeps subscriptions active"""
+        try:
+            # Initialize pubsub
             self.pubsub = self.redis.client.pubsub(ignore_subscribe_messages=True)
 
-            # Get channels to subscribe to
-            channels = self._get_channels_to_subscribe()
+            # Subscribe to all required channels
+            self._subscribe_to_channels()
 
-            # Subscribe to all channels
-            for channel in channels:
+            # Keep subscriptions alive
+            while self.running:
                 try:
-                    self.pubsub.subscribe(channel)
-                    self.subscribed_channels.add(channel)
-                    logger.info(f"Subscribed to {channel}")
+                    # Process any pubsub messages (keep subscriptions alive)
+                    message = self.pubsub.get_message(timeout=0.1)
+                    if message:
+                        logger.debug(f"Background subscriber received message: {message}")
+
+                    # Sleep to avoid high CPU usage
+                    time.sleep(0.1)
                 except Exception as e:
-                    logger.error(f"Error subscribing to {channel}: {e}")
-
-            logger.info(f"Background subscriber listening on {len(self.subscribed_channels)} channels")
-
-            # Main loop to keep subscriptions active
-            last_check = time.time()
-            message_count = 0
-
-            while not self._stop_event.is_set():
-                # Get message with timeout (this keeps the subscription alive)
-                message = self.pubsub.get_message(timeout=0.1)
-
-                if message and message.get("type") == "message":
-                    message_count += 1
-
-                # Periodically verify subscriptions are still active
-                current_time = time.time()
-                if current_time - last_check > 30:  # Check every 30 seconds
-                    last_check = current_time
-
-                    # Get active channels from Redis
-                    try:
-                        active_channels = self.redis.client.pubsub_channels()
-                        active_channels = [
-                            ch.decode("utf-8") if isinstance(ch, bytes) else ch for ch in active_channels
-                        ]
-
-                        logger.info(f"Active Redis channels: {active_channels}")
-                        logger.info(f"Processed {message_count} messages so far")
-
-                        # Resubscribe to any missing channels
-                        for channel in channels:
-                            if channel not in active_channels:
-                                logger.warning(f"Resubscribing to {channel}")
-                                try:
-                                    self.pubsub.subscribe(channel)
-                                except Exception as e:
-                                    logger.error(f"Error resubscribing to {channel}: {e}")
-
-                    except Exception as e:
-                        logger.error(f"Error checking active channels: {e}")
-
-                        # If there's an error, try to reconnect
-                        try:
-                            self.redis.reconnect_if_needed()
-                            self.pubsub = self.redis.client.pubsub(ignore_subscribe_messages=True)
-
-                            # Resubscribe to all channels
-                            for channel in channels:
-                                try:
-                                    self.pubsub.subscribe(channel)
-                                except Exception as sub_error:
-                                    logger.error(f"Error resubscribing to {channel}: {sub_error}")
-                        except Exception as reconnect_error:
-                            logger.error(f"Error reconnecting: {reconnect_error}")
-
-                # Small pause to prevent high CPU usage
-                time.sleep(0.01)
-
+                    logger.error(f"Error in background subscriber: {e}")
+                    time.sleep(1)  # Sleep and retry
         except Exception as e:
             logger.error(f"Error in background subscriber: {e}")
         finally:
-            # Clean up
+            logger.info("Background subscriber thread exiting")
+
             if self.pubsub:
                 try:
-                    for channel in self.subscribed_channels:
-                        self.pubsub.unsubscribe(channel)
+                    self.pubsub.unsubscribe()
                     self.pubsub.close()
                 except Exception as e:
-                    logger.error(f"Error unsubscribing: {e}")
+                    logger.error(f"Error closing pubsub: {e}")
 
-            if self.redis:
-                try:
-                    self.redis.close()
-                except Exception as e:
-                    logger.error(f"Error closing Redis connection: {e}")
+            self.redis.close()
 
-            logger.info("Background subscriber stopped")
+    def _subscribe_to_channels(self):
+        """Subscribe to all required channels"""
+        # Subscribe to main channels
+        self._subscribe_channel("order_book")
+        self._subscribe_channel(TRADE_OPPORTUNITIES_CHANNEL)
+        self._subscribe_channel(TRADE_EXECUTIONS_CHANNEL)
+
+        # Subscribe to strategy-specific channels
+        for strategy_name in STRATEGIES.keys():
+            self._subscribe_channel(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}")
+            self._subscribe_channel(f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}")
+
+        # Subscribe to exchange-specific channels
+        for exchange in EXCHANGES:
+            self._subscribe_channel(f"order_book:{exchange}")
+
+        # Subscribe to pair-specific channels
+        for base, quote in PAIRS:
+            symbol = f"{base}-{quote}"
+            self._subscribe_channel(f"order_book:{symbol}")
+
+            # Subscribe to pair-exchange combinations
+            for exchange in EXCHANGES:
+                self._subscribe_channel(f"order_book:{symbol}:{exchange}")
+
+        logger.info(f"Background subscriber listening on {len(self.channels)} channels")
+
+    def _subscribe_channel(self, channel):
+        """Subscribe to a specific channel and log it"""
+        try:
+            self.pubsub.subscribe(channel)
+            self.channels.append(channel)
+            logger.info(f"Subscribed to {channel}")
+        except Exception as e:
+            logger.error(f"Error subscribing to {channel}: {e}")
 
 
 # Singleton instance
-_subscriber = None
+_background_subscriber = None
 
 
 def get_background_subscriber():
-    """Get the singleton background subscriber instance."""
-    global _subscriber
-    if _subscriber is None:
-        _subscriber = BackgroundSubscriber()
-    return _subscriber
+    """Get or create the background subscriber singleton"""
+    global _background_subscriber
+    if _background_subscriber is None:
+        _background_subscriber = BackgroundSubscriber()
+    return _background_subscriber

@@ -1,8 +1,8 @@
 """Initial migration
 
-Revision ID: 058e048249ef
-Revises: f370032e4725
-Create Date: 2025-03-14 21:18:21.909009
+Revision ID: df06ccaed540
+Revises:
+Create Date: 2025-03-17 18:51:07.418697
 
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "058e048249ef"
-down_revision: Union[str, None] = "f370032e4725"
+revision: str = "df06ccaed540"
+down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -44,8 +44,10 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("base_currency", sa.String(), nullable=False),
         sa.Column("quote_currency", sa.String(), nullable=False),
+        sa.Column("symbol", sa.String(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("base_currency", "quote_currency", name="uix_pair_base_quote"),
+        sa.UniqueConstraint("symbol"),
     )
     op.create_table(
         "strategies",
@@ -66,40 +68,40 @@ def upgrade() -> None:
     op.create_table(
         "trade_opportunities",
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("strategy_id", sa.Integer(), nullable=True),
-        sa.Column("pair_id", sa.Integer(), nullable=True),
-        sa.Column("buy_exchange_id", sa.Integer(), nullable=True),
-        sa.Column("sell_exchange_id", sa.Integer(), nullable=True),
+        sa.Column("strategy", sa.String(), nullable=True),
+        sa.Column("pair", sa.String(), nullable=True),
+        sa.Column("buy_exchange", sa.String(), nullable=True),
+        sa.Column("sell_exchange", sa.String(), nullable=True),
         sa.Column("buy_price", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("sell_price", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("spread", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("volume", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("opportunity_timestamp", sa.TIMESTAMP(), nullable=False),
         sa.ForeignKeyConstraint(
-            ["buy_exchange_id"],
-            ["exchanges.id"],
+            ["buy_exchange"],
+            ["exchanges.name"],
         ),
         sa.ForeignKeyConstraint(
-            ["pair_id"],
-            ["pairs.id"],
+            ["pair"],
+            ["pairs.symbol"],
         ),
         sa.ForeignKeyConstraint(
-            ["sell_exchange_id"],
-            ["exchanges.id"],
+            ["sell_exchange"],
+            ["exchanges.name"],
         ),
         sa.ForeignKeyConstraint(
-            ["strategy_id"],
-            ["strategies.id"],
+            ["strategy"],
+            ["strategies.name"],
         ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_table(
         "trade_executions",
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("strategy_id", sa.Integer(), nullable=True),
-        sa.Column("pair_id", sa.Integer(), nullable=True),
-        sa.Column("buy_exchange_id", sa.Integer(), nullable=True),
-        sa.Column("sell_exchange_id", sa.Integer(), nullable=True),
+        sa.Column("strategy", sa.String(), nullable=True),
+        sa.Column("pair", sa.String(), nullable=True),
+        sa.Column("buy_exchange", sa.String(), nullable=True),
+        sa.Column("sell_exchange", sa.String(), nullable=True),
         sa.Column("executed_buy_price", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("executed_sell_price", sa.Numeric(precision=18, scale=8), nullable=False),
         sa.Column("spread", sa.Numeric(precision=18, scale=8), nullable=False),
@@ -108,24 +110,24 @@ def upgrade() -> None:
         sa.Column("execution_id", sa.String(), nullable=True),
         sa.Column("opportunity_id", sa.UUID(), nullable=True),
         sa.ForeignKeyConstraint(
-            ["buy_exchange_id"],
-            ["exchanges.id"],
+            ["buy_exchange"],
+            ["exchanges.name"],
         ),
         sa.ForeignKeyConstraint(
             ["opportunity_id"],
             ["trade_opportunities.id"],
         ),
         sa.ForeignKeyConstraint(
-            ["pair_id"],
-            ["pairs.id"],
+            ["pair"],
+            ["pairs.symbol"],
         ),
         sa.ForeignKeyConstraint(
-            ["sell_exchange_id"],
-            ["exchanges.id"],
+            ["sell_exchange"],
+            ["exchanges.name"],
         ),
         sa.ForeignKeyConstraint(
-            ["strategy_id"],
-            ["strategies.id"],
+            ["strategy"],
+            ["strategies.name"],
         ),
         sa.PrimaryKeyConstraint("id"),
     )

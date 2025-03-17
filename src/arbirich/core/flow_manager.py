@@ -2,8 +2,10 @@ import asyncio
 import logging
 import traceback
 
+from src.arbirich.flows.database.database import run_database_flow
 from src.arbirich.flows.execution.execution_source import set_stop_event
 from src.arbirich.services.background_subscriber import get_background_subscriber
+from src.arbirich.services.database.prefill_database import prefill_database
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,16 @@ class FlowManager:
         logger.info("FlowManager: Starting up flows...")
 
         try:
+            # First prefill the database with configuration data
+            logger.info("FlowManager: Prefilling database with configuration data...")
+            try:
+                prefill_database()
+                logger.info("FlowManager: Database prefill completed successfully")
+            except Exception as e:
+                logger.error(f"FlowManager: Error prefilling database: {e}")
+                logger.error(traceback.format_exc())
+                # Continue with startup even if prefill fails
+
             # Start background Redis subscriber first to ensure channels are active
             subscriber = get_background_subscriber()
             subscriber.start()
@@ -46,6 +58,9 @@ class FlowManager:
 
             await self.start_execution_flows()
 
+            # Add database flow
+            await self.start_database_flow()
+
             # Start the flow status checker in the background
             self.tasks["flow_status_checker"] = asyncio.create_task(
                 self.check_flow_status(), name="flow_status_checker"
@@ -56,29 +71,61 @@ class FlowManager:
             logger.error(f"FlowManager: Error during startup: {e}")
             logger.error(traceback.format_exc())
 
+    # Update the shutdown method for better database flow handling
     async def shutdown(self):
         """Shutdown all flows"""
         logger.info("FlowManager: Shutting down flows...")
 
-        # First signal execution flows to stop
+        # First disable flow-status checker
+        if "flow_status_checker" in self.tasks and not self.tasks["flow_status_checker"].done():
+            logger.info("FlowManager: Cancelling flow status checker")
+            self.tasks["flow_status_checker"].cancel()
+            try:
+                await self.tasks["flow_status_checker"]
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"FlowManager: Error cancelling flow status checker: {e}")
+
+        # First signal database flow to stop with a timeout
+        try:
+            from src.arbirich.flows.database.database import stop_database_flow_async
+
+            logger.info("FlowManager: Signaling database flow to stop")
+            await asyncio.wait_for(stop_database_flow_async(), timeout=5.0)
+            logger.info("FlowManager: Database flow stop completed")
+
+            # Also cancel the task if it exists
+            if "database_flow" in self.tasks and not self.tasks["database_flow"].done():
+                self.tasks["database_flow"].cancel()
+                try:
+                    await asyncio.wait_for(self.tasks["database_flow"], timeout=2.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    pass
+        except Exception as e:
+            logger.error(f"FlowManager: Error stopping database flow: {e}")
+
+        # Then signal execution flows to stop
         try:
             logger.info("FlowManager: Signaling execution flows to stop")
             set_stop_event()
+            await asyncio.sleep(1)  # Brief pause to allow stop signal to propagate
         except Exception as e:
             logger.error(f"FlowManager: Error signaling execution flows to stop: {e}")
 
-        # Then cancel all tasks
+        # Then cancel all remaining tasks
         for name, task in list(self.tasks.items()):
             if not task.done():
                 logger.info(f"FlowManager: Cancelling task {name}")
                 task.cancel()
                 try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+                    await asyncio.wait_for(task, timeout=2.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    logger.warning(f"FlowManager: Task {name} did not stop within timeout")
                 except Exception as e:
                     logger.error(f"FlowManager: Error shutting down {name}: {e}")
 
+        # Final cleanup
         self.tasks = {}
         logger.info("FlowManager: All flows have been shut down.")
 
@@ -140,32 +187,6 @@ class FlowManager:
             logger.error(f"FlowManager: Error starting ingestion flow: {e}")
             logger.error(traceback.format_exc())
 
-    # async def start_execution_flow(self):
-    #     """Start the execution flow for trade execution"""
-    #     try:
-    #         # Import here to avoid circular imports
-    #         try:
-    #             from src.arbirich.flows.execution.execution import run_execution_flow
-
-    #             logger.info("FlowManager: Imported execution flow")
-    #         except Exception as e:
-    #             logger.error(f"FlowManager: Error importing execution flow: {e}")
-    #             logger.error(traceback.format_exc())
-    #             return
-
-    #         # Check if task already running
-    #         task_name = "execution_flow"
-    #         if task_name in self.tasks and not self.tasks[task_name].done():
-    #             logger.info(f"FlowManager: Task {task_name} already running")
-    #             return
-
-    #         logger.info("FlowManager: Starting execution flow")
-    #         self.tasks[task_name] = asyncio.create_task(run_execution_flow(), name=task_name)
-    #         logger.info("FlowManager: Execution flow task created")
-    #     except Exception as e:
-    #         logger.error(f"FlowManager: Error starting execution flow: {e}")
-    #  logger.error(traceback.format_exc())
-
     async def start_execution_flows(self):
         """Start execution flows for each strategy"""
         try:
@@ -185,6 +206,22 @@ class FlowManager:
                 self.tasks[task_name] = asyncio.create_task(run_execution_flow(strategy_name), name=task_name)
         except Exception as e:
             logger.error(f"FlowManager: Error starting execution flows: {e}")
+            logger.error(traceback.format_exc())
+
+    async def start_database_flow(self):
+        """Start the database flow for persisting data"""
+        try:
+            # Check if task already running
+            task_name = "database_flow"
+            if task_name in self.tasks and not self.tasks[task_name].done():
+                logger.info(f"FlowManager: Task {task_name} already running")
+                return
+
+            logger.info("FlowManager: Starting database flow")
+            self.tasks[task_name] = asyncio.create_task(run_database_flow(), name=task_name)
+            logger.info("FlowManager: Database flow task created")
+        except Exception as e:
+            logger.error(f"FlowManager: Error starting database flow: {e}")
             logger.error(traceback.format_exc())
 
     async def check_flow_status(self):

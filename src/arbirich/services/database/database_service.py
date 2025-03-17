@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import List, Optional, Union
 from uuid import UUID
@@ -26,6 +27,8 @@ from src.arbirich.models.schema import (
 # Create engine
 engine = sa.create_engine(DATABASE_URL)
 metadata.create_all(engine)
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseService:
@@ -85,12 +88,22 @@ class DatabaseService:
 
     # ---- Pair operations ----
     def create_pair(self, pair: Pair) -> Pair:
+        """Create a pair with proper symbol handling."""
         with self.engine.begin() as conn:
+            # Ensure symbol is set if not provided
+            if not pair.symbol:
+                pair.symbol = f"{pair.base_currency}-{pair.quote_currency}"
+
+            # Debug log to verify symbol is being set
+            print(f"Creating pair with symbol: {pair.symbol}")
+
+            # Important: Include symbol in the values dictionary
             result = conn.execute(
                 pairs.insert()
                 .values(
                     base_currency=pair.base_currency,
                     quote_currency=pair.quote_currency,
+                    symbol=pair.symbol,  # Now included in the SQL query
                 )
                 .returning(*pairs.c)
             )
@@ -219,19 +232,25 @@ class DatabaseService:
 
     # ---- TradeExecution operations ----
     def create_trade_execution(self, execution: TradeExecution) -> TradeExecution:
-        with self.engine.begin() as conn:
-            result = conn.execute(
-                trade_executions.insert().values(**execution.to_db_dict()).returning(*trade_executions.c)
-            )
-            row = result.first()
-            return TradeExecution.model_validate(
-                {
-                    **row._asdict(),
-                    "execution_timestamp": row.execution_timestamp.timestamp(),
-                    "id": str(row.id),
-                    "opportunity_id": str(row.opportunity_id) if row.opportunity_id else None,
-                }
-            )
+        try:
+            # Convert to db dict and log
+            db_dict = execution.to_db_dict()
+            logger.info(f"Converting execution to db dict: {db_dict}")
+
+            with self.engine.begin() as conn:
+                result = conn.execute(trade_executions.insert().values(**db_dict).returning(*trade_executions.c))
+                row = result.first()
+                return TradeExecution.model_validate(
+                    {
+                        **row._asdict(),
+                        "execution_timestamp": row.execution_timestamp.timestamp(),
+                        "id": str(row.id),
+                        "opportunity_id": str(row.opportunity_id) if row.opportunity_id else None,
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Error creating trade execution: {e}", exc_info=True)
+            raise
 
     def get_trade_execution(self, execution_id: Union[str, UUID]) -> Optional[TradeExecution]:
         if isinstance(execution_id, str):

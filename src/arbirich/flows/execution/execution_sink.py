@@ -2,7 +2,7 @@ import logging
 import time
 
 from src.arbirich.models.models import TradeExecution, TradeOpportunity
-from src.arbirich.services.redis.redis_service import RedisService
+from src.arbirich.services.redis.redis_service import TRADE_EXECUTIONS_CHANNEL, RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -36,6 +36,7 @@ def execute_trade(opportunity_raw: dict) -> dict:
         execution_timestamp=execution_ts,
         opportunity_id=opp.id,
     )
+    logger.info(f"Created execution with opportunity_id={trade_exec.opportunity_id}, execution_id={trade_exec.id}")
 
     trade_msg = (
         f"Executed trade for {trade_exec.pair}: "
@@ -47,9 +48,22 @@ def execute_trade(opportunity_raw: dict) -> dict:
     logger.critical(trade_msg)
 
     try:
-        # Publish or store the trade execution in Redis (as an example).
-        redis_client.publish_trade_execution(trade_exec)
-        logger.debug("Trade execution stored successfully in Redis.")
+        # Publish or store the trade execution in Redis, explicitly using the channel
+        strategy_name = trade_exec.strategy
+        channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}" if strategy_name else TRADE_EXECUTIONS_CHANNEL
+
+        # try:
+        #     # Ensure the channel exists
+        #     logger.info(f"Ensuring trade execution channel {channel} exists...")
+        #     redis_client.ensure_execution_channels_exist()
+        #     logger.info("Channel existence ensured successfully")
+        # except Exception as e:
+        #     logger.error(f"Error ensuring channel exists: {e}", exc_info=True)
+
+        # Publish execution
+        logger.info(f"About to publish trade execution {trade_exec.id} to channel {channel}")
+        redis_client.publish_trade_execution(trade_exec, strategy_name)
+        logger.info(f"Trade execution published to {channel}")
     except Exception as e:
         logger.error(f"Error storing trade execution: {e}")
 

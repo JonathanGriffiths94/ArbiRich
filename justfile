@@ -54,6 +54,18 @@ stop-redis:
 run-bot:
     RUST_BACKTRACE=1 {{ python }} -m main
 
+# Stop running ArbiRich application
+stop-bot:
+    {{ python }} -m src.arbirich.tools.stop_app
+
+# Force kill ArbiRich processes (for when stop-bot doesn't work)
+force-kill:
+    {{ python }} -m src.arbirich.tools.force_kill
+
+# Emergency abort - kills all ArbiRich processes forcibly (LAST RESORT)
+abort:
+    {{ python }} -m src.arbirich.tools.emergency_abort
+
 # Run with redis lifecycle management
 run: start-redis run-bot stop-redis
 
@@ -65,22 +77,8 @@ migrations message="auto":
 migrate:
     {{ alembic }} upgrade head
 
-# Reset database (DROP and recreate - DEV ONLY)
-reset-db:
-    @echo "⚠️  WARNING: This will DROP the entire database and recreate it! ⚠️"
-    @echo "Are you sure you want to continue? [y/N]"
-    @read -r response; \
-    if [ "$$response" = "y" ] || [ "$$response" = "Y" ]; then \
-        PGPASSWORD=arbipassword dropdb -h localhost -U {{ dev_user }} {{ dev_db }} --if-exists && \
-        PGPASSWORD=arbipassword createdb -h localhost -U {{ dev_user }} {{ dev_db }} && \
-        echo "Database reset complete. Running migrations..." && \
-        {{ alembic }} upgrade head && \
-        echo "Prefilling database with initial data..." && \
-        {{ python }} -m src.arbirich.prefill_database && \
-        echo "✅ Database reset and initialization complete!"; \
-    else \
-        echo "Database reset cancelled."; \
-    fi
+db-reset:
+    poetry run python -m src.arbirich.tools.db_reset
 
 # Docker commands
 docker-up:
