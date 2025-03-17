@@ -2,6 +2,9 @@ import asyncio
 import logging
 import traceback
 
+from src.arbirich.flows.execution.execution_source import set_stop_event
+from src.arbirich.services.background_subscriber import get_background_subscriber
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,11 +32,22 @@ class FlowManager:
         logger.info("FlowManager: Starting up flows...")
 
         try:
+            # Start background Redis subscriber first to ensure channels are active
+            subscriber = get_background_subscriber()
+            subscriber.start()
+            logger.info("FlowManager: Started background Redis subscriber")
+
+            # Give subscriptions a moment to establish
+            await asyncio.sleep(1)
+
             # Start arbitrage flows first (likely to be less problematic)
             await self.start_arbitrage_flows()
 
             # Start ingestion flow
             await self.start_ingestion_flow()
+
+            # Start both execution flow methods
+            await self.start_execution_flows()
 
             # Start the flow status checker in the background
             self.tasks["flow_status_checker"] = asyncio.create_task(
@@ -49,6 +63,14 @@ class FlowManager:
         """Shutdown all flows"""
         logger.info("FlowManager: Shutting down flows...")
 
+        # First signal execution flows to stop
+        try:
+            logger.info("FlowManager: Signaling execution flows to stop")
+            set_stop_event()
+        except Exception as e:
+            logger.error(f"FlowManager: Error signaling execution flows to stop: {e}")
+
+        # Then cancel all tasks
         for name, task in list(self.tasks.items()):
             if not task.done():
                 logger.info(f"FlowManager: Cancelling task {name}")
@@ -98,6 +120,7 @@ class FlowManager:
             except Exception as e:
                 logger.error(f"Error importing ingestion flow: {e}")
                 logger.error(traceback.format_exc())
+                return
 
             from src.arbirich.config import EXCHANGES, PAIRS
 
@@ -120,6 +143,53 @@ class FlowManager:
             logger.error(f"FlowManager: Error starting ingestion flow: {e}")
             logger.error(traceback.format_exc())
 
+    async def start_execution_flow(self):
+        """Start the execution flow for trade execution"""
+        try:
+            # Import here to avoid circular imports
+            try:
+                from src.arbirich.flows.execution.execution import run_execution_flow
+
+                logger.info("FlowManager: Imported execution flow")
+            except Exception as e:
+                logger.error(f"FlowManager: Error importing execution flow: {e}")
+                logger.error(traceback.format_exc())
+                return
+
+            # Check if task already running
+            task_name = "execution_flow"
+            if task_name in self.tasks and not self.tasks[task_name].done():
+                logger.info(f"FlowManager: Task {task_name} already running")
+                return
+
+            logger.info("FlowManager: Starting execution flow")
+            self.tasks[task_name] = asyncio.create_task(run_execution_flow(), name=task_name)
+            logger.info("FlowManager: Execution flow task created")
+        except Exception as e:
+            logger.error(f"FlowManager: Error starting execution flow: {e}")
+            logger.error(traceback.format_exc())
+
+    async def start_execution_flows(self):
+        """Start execution flows for each strategy"""
+        try:
+            from src.arbirich.config import STRATEGIES
+            from src.arbirich.flows.execution.execution import run_execution_flow
+
+            strategy_names = list(STRATEGIES.keys())
+            logger.info(f"FlowManager: Starting execution flows for strategies: {strategy_names}")
+
+            for strategy_name in strategy_names:
+                task_name = f"execution_{strategy_name}"
+                if task_name in self.tasks and not self.tasks[task_name].done():
+                    logger.info(f"FlowManager: Task {task_name} already running")
+                    continue
+
+                logger.info(f"FlowManager: Started execution flow for strategy: {strategy_name}")
+                self.tasks[task_name] = asyncio.create_task(run_execution_flow(strategy_name), name=task_name)
+        except Exception as e:
+            logger.error(f"FlowManager: Error starting execution flows: {e}")
+            logger.error(traceback.format_exc())
+
     async def check_flow_status(self):
         """Periodically check and report on the status of all flows"""
         while True:
@@ -133,7 +203,7 @@ class FlowManager:
                         result = task.result()
                         logger.warning(f"Task {name} has completed with result: {result}")
 
-                        # Restart arbitrage flows if they've completed
+                        # Restart flows if they've completed
                         if name.startswith("arbitrage_"):
                             strategy_name = name.replace("arbitrage_", "")
                             logger.info(f"Restarting arbitrage flow for strategy: {strategy_name}")
