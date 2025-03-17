@@ -1,4 +1,4 @@
-name: 🚂 Main CI/CD Workflow
+name: 🚂 Main
 
 on:
   push:
@@ -6,13 +6,16 @@ on:
       "**"
 
 jobs: 
-  ci: 
+  ci:
+    name: 💚 CI 
     uses: ./.github/workflows/ci.yaml
 
   build:
+    name: 🏗️ Build
     uses: ./.github/workflows/build.yaml
     needs: ci
 
   deploy:
+    name: 🚀 Deploy
     uses: ./.github/workflows/deploy.yaml
     needs: build

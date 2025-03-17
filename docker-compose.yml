@@ -1,0 +1,55 @@
+services:
+  app:
+    build: .
+    image: arbirich:latest
+    container_name: arbirich_app
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_DATABAS=0
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=arbidb
+      - POSTGRES_USER=arbiuser
+      - POSTGRES_PASSWORD=arbipassword
+    depends_on:
+      - redis
+      - postgres
+
+  migrate:
+    build: .
+    image: arbirich:latest
+    command: poetry run alembic upgrade head
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=arbidb
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=arbiuser
+      - POSTGRES_PASSWORD=arbipassword
+    depends_on:
+      - postgres
+    restart: "no"
+
+  redis:
+    image: redis:latest
+    container_name: redis-arbirich
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_DATABASE=0
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres-arbirich
+    environment:
+      POSTGRES_DB: arbidb
+      POSTGRES_USER: arbiuser
+      POSTGRES_PASSWORD: arbipassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

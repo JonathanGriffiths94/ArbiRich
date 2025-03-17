@@ -13,16 +13,24 @@ uvicorn = "^0.34.0"
 python-dotenv = "^1.0.1"
 websockets = "^14.2"
 requests = "^2.32.3"
-pybit = "5.5.0"
-python-binance = "^1.0.27"
-kucoin-python = "^1.0.26"
 setuptools = "^75.8.0"
+six = "^1.17.0"
+bytewax = "^0.21.1"
+bytewax-redis = "^0.1"
+redis = "^5.2.1"
+asyncpg = "^0.30.0"
+python-dateutil = "^2.9.0.post0"
+pydantic = "^2.10.6"
+sqlalchemy = "^2.0.39"
+alembic = "^1.15.1"
+psycopg2-binary = "^2.9.10"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.6"
 black = "^25.1.0"
 pytest = "^8.3.4"
 pre-commit = "^4.1.0"
+debugpy = "^1.8.12"
 
 [build-system]
 requires = ["poetry-core"]
@@ -32,4 +40,7 @@ build-backend = "poetry.core.masonry.api"
 arbirich = "main:app"
 
 [tool.ruff]
-line-length = 90
+line-length = 120
+
+[tool.black]
+line-length = 120

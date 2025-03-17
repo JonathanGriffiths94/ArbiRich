@@ -4,56 +4,44 @@ on:
   workflow_call:
 
 jobs:
-  u_test:
+  test:
     runs-on: ubuntu-latest
-    name: 🧪 Run Unit Tests
+    name: 🧪 Run Python Tests
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout code
         uses: actions/checkout@v2
-      - name: Set up Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.12'
-      - name: Install dependencies
+      - name: 📚 Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install poetry
           poetry install
-      - name: Run unit tests
+      - name: ✅ Run unit tests
         run: poetry run pytest tests/units
-
-  i_test:
-    runs-on: ubuntu-latest
-    name: 🧪 Run Integration Tests
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install poetry
-          poetry install
-      - name: Run integration tests
+      - name: ✅ Run integration tests
         run: poetry run pytest tests/integrations
+      - name: ✅ Run flow tests
+        run: poetry run pytest tests/flows
 
   format_check:
     runs-on: ubuntu-latest
     name: 🎨 Run Code Format Check
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout code
         uses: actions/checkout@v2
-      - name: Set up Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.12'
-      - name: Install dependencies
+      - name: 📚 Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install poetry
           poetry install
-      - name: Check code formatting with black
-        run: poetry run black --check src
+      - name: ✅ Check Formatting with Ruff
+        run: poetry run ruff format --check .
+      - name: ✅ Check Import Sorting with Ruff
+        run: poetry run ruff check --select I .
