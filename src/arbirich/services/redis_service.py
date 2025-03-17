@@ -372,7 +372,16 @@ class RedisService:
         Args:
             callback: An optional callback function to execute for each message received.
         """
+        logger.info(f"Subscribing to trade opportunities channel: {TRADE_OPPORTUNITIES_CHANNEL}")
         self._ensure_subscribed(TRADE_OPPORTUNITIES_CHANNEL)
+
+        # Also subscribe to strategy-specific channels
+        from src.arbirich.config import STRATEGIES
+
+        for strategy_name in STRATEGIES.keys():
+            strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
+            logger.info(f"Subscribing to strategy-specific channel: {strategy_channel}")
+            self._ensure_subscribed(strategy_channel)
 
     def get_opportunity(self) -> Optional[Dict[str, Any]]:
         """
