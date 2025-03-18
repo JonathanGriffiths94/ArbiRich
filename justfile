@@ -5,7 +5,7 @@ set dotenv-load
 python := "poetry run python"
 alembic := "poetry run alembic"
 pytest := "poetry run pytest"
-dev_db := "arbidb"
+dev_db := "arbirich_db"
 dev_user := "arbiuser"
 REDIS_CONTAINER := "redis-arbirich"
 
@@ -22,7 +22,6 @@ format:
     poetry run ruff check . --select I --fix # sort imports
     poetry run ruff format .
     poetry run black .
-    poetry run isort .
 
 # Run linter for python
 lint:
@@ -43,15 +42,29 @@ i_test *arguments:
 # Run all checks
 all: u_test i_test format lint
 
-# Redis management
+# Redis management with script
 start-redis:
-    docker run -d --rm --name {{REDIS_CONTAINER}} -p 6379:6379 redis:latest
+    ./scripts/redis-manager.sh start
 
 stop-redis:
-    @docker stop {{REDIS_CONTAINER}} || true
+    ./scripts/redis-manager.sh stop
+
+restart-redis:
+    ./scripts/redis-manager.sh restart
+
+check-redis:
+    ./scripts/redis-manager.sh check
+
+clean-redis:
+    ./scripts/redis-manager.sh clean
+
+# Setup local PostgreSQL database
+setup-local-db:
+    chmod +x ./scripts/create-local-db.sh
+    ./scripts/create-local-db.sh
 
 # Run the application (dev) with Redis check
-run-bot:
+run-bot: setup-local-db
     RUST_BACKTRACE=1 {{ python }} -m main
 
 # Stop running ArbiRich application
@@ -66,8 +79,13 @@ force-kill:
 abort:
     {{ python }} -m src.arbirich.tools.emergency_abort
 
-# Run with redis lifecycle management
-run: start-redis run-bot stop-redis
+# Check database connection
+check-db:
+    python scripts/check_db_connection.py
+
+# Check database connection in Docker
+docker-check-db:
+    docker-compose run --rm app python scripts/check_db_connection.py
 
 # Create database migrations
 migrations message="auto":
@@ -77,34 +95,52 @@ migrations message="auto":
 migrate:
     {{ alembic }} upgrade head
 
-db-reset:
-    poetry run python -m src.arbirich.tools.db_reset
-
-# Docker commands
-docker-up:
-    docker-compose up
-
-docker-down:
-    docker-compose down
-
-docker-run:
-    docker-compose up --abort-on-container-exit
-
-# Reset database in Docker (DROP and recreate - DEV ONLY)
+# Docker database reset command with volume cleanup
 docker-reset-db:
-    echo "Starting necessary services..." && \
-    docker-compose up -d postgres && \
-    echo "Waiting for PostgreSQL to be ready..." && \
-    sleep 5 && \
-    docker-compose exec postgres dropdb -U {{ dev_user }} {{ dev_db }} --if-exists && \
-    docker-compose exec postgres createdb -U {{ dev_user }} {{ dev_db }} && \
-    echo "Running migrations..." && \
-    docker-compose run --rm migrate && \
-    echo "Starting app for prefill..." && \
-    docker-compose up -d app && \
-    sleep 5 && \
-    docker-compose exec app {{ python }} -m src.arbirich.prefill_database && \
-    echo "✅ Database reset and initialization complete!"
+    # Stop any running containers and remove the volume
+    docker compose down -v
+    # Recreate and start postgres container
+    docker compose up -d postgres
+    # Wait for Postgres to be ready
+    chmod +x ./scripts/wait-for-postgres.sh
+    ./scripts/wait-for-postgres.sh
+    # Now that PostgreSQL is ready, reset the database
+    # First check if container is running and get correct container ID/name
+    docker ps | grep postgres-arbirich || echo "Container not running!"
+    # Find which database we can connect to and use it to recreate the target database
+    docker exec $(docker ps -q -f name=postgres-arbirich) sh -c 'for DB in postgres arbiuser template1; do echo "Trying $DB"; if psql -U arbiuser -d $DB -c "SELECT 1" >/dev/null 2>&1; then echo "Using $DB"; PGDATABASE=$DB; break; fi; done; echo "Dropping database if exists"; psql -U arbiuser -d $PGDATABASE -c "DROP DATABASE IF EXISTS arbirich_db;"; echo "Creating database"; psql -U arbiuser -d $PGDATABASE -c "CREATE DATABASE arbirich_db WITH OWNER arbiuser;"'
+    # Run migrations
+    docker compose run --rm migrate
+    echo "Database reset complete!"
+    
+# Docker helper commands
+docker-start:
+    chmod +x ./scripts/docker-compose-helper.sh
+    ./scripts/docker-compose-helper.sh start
+
+docker-stop:
+    chmod +x ./scripts/docker-compose-helper.sh
+    ./scripts/docker-compose-helper.sh stop
+
+docker-logs:
+    chmod +x ./scripts/docker-compose-helper.sh
+    ./scripts/docker-compose-helper.sh logs
+
+# Connect to the database in Docker
+docker-db-connect:
+    docker exec -it postgres-arbirich psql -U arbiuser -d arbirich_db
+
+# Export database schema
+docker-db-schema:
+    docker exec -it postgres-arbirich pg_dump -U arbiuser -d arbirich_db --schema-only > schema.sql
+
+# Export database data (without schema)
+docker-db-data:
+    docker exec -it postgres-arbirich pg_dump -U arbiuser -d arbirich_db --data-only > data.sql
+
+# Run a custom SQL query
+docker-db-query query:
+    echo "{{query}}" | docker exec -i postgres-arbirich psql -U arbiuser -d arbirich_db
 
 # Clean up virtual environment and caches
 clean-venv:

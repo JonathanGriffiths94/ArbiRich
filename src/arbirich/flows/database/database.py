@@ -11,14 +11,14 @@ from bytewax import operators as op
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from arbirich.services.database.database_service import DatabaseService
-from src.arbirich.config import STRATEGIES
+from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.flows.database.database_sink import db_sink
 from src.arbirich.flows.database.database_source import RedisDatabaseSource
+from src.arbirich.services.database.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 db_manager = DatabaseService()
 

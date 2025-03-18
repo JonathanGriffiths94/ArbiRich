@@ -1,34 +1,33 @@
-ARG PYTHON_VER=3.12
-ARG POETRY_VER=1.8.4
+FROM python:3.12-slim
 
-FROM python:${PYTHON_VER}-slim AS base
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+ENV PYTHONPATH /app
 
-ARG POETRY_VER
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  gcc \
+  libpq-dev \
+  curl \
+  build-essential \
+  postgresql-client \
+  && rm -rf /var/lib/apt/lists/*
 
-RUN pip install \
-        --no-cache-dir \
-        --upgrade \
-      pip && \
-    pip install \
-        --no-cache-dir \
-      "poetry==${POETRY_VER}"
-
-ENV POETRY_VIRTUALENVS_IN_PROJECT=1 \
-    POETRY_VIRTUALENVS_CREATE=1
-
-RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
+# Set working directory
 WORKDIR /app
 
-COPY pyproject.toml poetry.lock ./
+# Install Python dependencies
+COPY pyproject.toml poetry.lock* ./
+RUN pip install --no-cache-dir poetry \
+  && poetry config virtualenvs.create false \
+  && poetry install --no-interaction --no-ansi
 
-RUN poetry install --without dev --no-interaction --no-root --all-extras
+# Install additional packages directly
+RUN pip install --no-cache-dir alembic python-dotenv psycopg2-binary
 
+# Copy project files
 COPY . .
 
-CMD ["sh", "-c", "RUST_BACKTRACE=1 poetry run python main.py"]
+# Command to run the application
+CMD ["python", "-m", "main"]

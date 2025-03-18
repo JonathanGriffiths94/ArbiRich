@@ -3,7 +3,7 @@ import logging
 import pkgutil
 from typing import Dict
 
-from src.arbirich.config import STRATEGIES
+from src.arbirich.config.config import STRATEGIES
 from src.arbirich.services.strategies.base_strategy import ArbitrageStrategy
 from src.arbirich.services.strategies.basic_arbitrage_strategy import BasicArbitrageStrategy
 from src.arbirich.services.strategies.mid_price_arbitrage_strategy import MidPriceArbitrageStrategy

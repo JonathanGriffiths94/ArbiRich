@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.arbirich.config import STRATEGIES
+from src.arbirich.config.config import STRATEGIES
 from src.arbirich.services.strategies.strategy_configs import (
     get_all_strategy_names,
     get_strategy_config,
@@ -58,7 +58,7 @@ class StrategyManager:
             return config["exchanges"]
 
         logger.warning(f"No exchanges found for strategy '{strategy_name}', using all exchanges")
-        from src.arbirich.config import EXCHANGES
+        from src.arbirich.config.config import EXCHANGES
 
         return EXCHANGES  # Default to all exchanges if not specified
 

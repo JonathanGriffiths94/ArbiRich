@@ -6,13 +6,13 @@ from threading import Lock
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from src.arbirich.config import STRATEGIES
+from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.flows.arbitrage.arbitrage_source import get_shared_redis_client
 from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # Shared stop event for coordinating shutdown
 _shared_stop_event = threading.Event()
@@ -22,7 +22,7 @@ def set_stop_event():
     """Signal all execution partitions to stop."""
     global _shared_stop_event
     _shared_stop_event.set()
-    logger.info("Stop event set for all execution partitions")
+    logger.debug("Stop event set for all execution partitions")
 
 
 class RedisExecutionPartition(StatefulSourcePartition):
@@ -68,7 +68,7 @@ class RedisExecutionPartition(StatefulSourcePartition):
         try:
             # First check if stop has been requested
             if _shared_stop_event.is_set():
-                logger.info("Stop event detected in execution partition")
+                logger.debug("Stop event detected in execution partition")
                 return []
 
             with self._lock:

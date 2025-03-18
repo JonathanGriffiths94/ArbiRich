@@ -5,7 +5,7 @@ from src.arbirich.models.models import TradeExecution, TradeOpportunity
 from src.arbirich.services.redis.redis_service import TRADE_EXECUTIONS_CHANNEL, RedisService
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 redis_client = RedisService()
 

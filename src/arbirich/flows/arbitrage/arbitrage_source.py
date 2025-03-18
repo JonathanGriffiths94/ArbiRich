@@ -7,8 +7,8 @@ from typing import Dict, List, Optional, Tuple, Union
 from bytewax import operators as op
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from arbirich.services.redis.redis_service import RedisService
 from src.arbirich.models.models import OrderBookUpdate
+from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

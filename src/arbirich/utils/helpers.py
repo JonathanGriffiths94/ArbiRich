@@ -1,6 +1,6 @@
 import logging
 
-from src.arbirich.config import EXCHANGE_CONFIGS, EXCHANGES, PAIRS
+from src.arbirich.config.config import EXCHANGE_CONFIGS, EXCHANGES, PAIRS
 
 logger = logging.getLogger(__name__)
 

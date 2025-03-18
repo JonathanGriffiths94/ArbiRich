@@ -1,33 +1,53 @@
+version: '3.8'
+
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: arbirich:latest
     container_name: arbirich_app
+    volumes:
+      - .:/app
     ports:
       - "8080:8080"
     environment:
-      - REDIS_HOST=redis
-      - REDIS_DATABAS=0
+      - PYTHONPATH=/app
       - POSTGRES_HOST=postgres
-      - POSTGRES_DB=arbidb
-      - POSTGRES_USER=arbiuser
-      - POSTGRES_PASSWORD=arbipassword
-    depends_on:
-      - redis
-      - postgres
-
-  migrate:
-    build: .
-    image: arbirich:latest
-    command: poetry run alembic upgrade head
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_DB=arbidb
       - POSTGRES_PORT=5432
       - POSTGRES_USER=arbiuser
-      - POSTGRES_PASSWORD=arbipassword
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=arbirich_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    env_file:
+      - .env.docker
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python -m main
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: arbirich:latest
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONPATH=/app
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=arbiuser
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=arbirich_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "cd /app && alembic upgrade head"
     restart: "no"
 
   redis:
@@ -35,21 +55,30 @@ services:
     container_name: redis-arbirich
     ports:
       - "6379:6379"
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_DATABASE=0
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
 
   postgres:
-    image: postgres:latest
+    image: postgres:17
     container_name: postgres-arbirich
     environment:
-      POSTGRES_DB: arbidb
-      POSTGRES_USER: arbiuser
-      POSTGRES_PASSWORD: arbipassword
+      - POSTGRES_USER=arbiuser
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=arbirich_db
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arbiuser -d arbirich_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   postgres_data:

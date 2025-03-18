@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Set
 import redis
 from redis.exceptions import ConnectionError, RedisError
 
-from src.arbirich.config import REDIS_CONFIG
+from src.arbirich.config.config import REDIS_CONFIG
 from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 
@@ -35,33 +35,42 @@ class RedisService:
 
     def _connect(self) -> None:
         """Establish connection to Redis with retries"""
-        for attempt in range(self.retry_attempts):
-            try:
-                # Log the connection attempt with the actual host being used
-                logger.info(f"Attempting to connect to Redis at {self.host}:{self.port}")
+        logger.info(f"Attempting to connect to Redis at {self.host}:{self.port}")
 
-                self.client = redis.Redis(
-                    host=self.host,
-                    port=self.port,
-                    db=self.db,
-                    decode_responses=True,
-                    socket_timeout=5,
-                    socket_connect_timeout=5,
-                    health_check_interval=30,
-                )
-                # Test connection
+        # Try with the specified host first
+        self.client = redis.Redis(host=self.host, port=self.port, db=self.db, decode_responses=True)
+
+        # Test the connection
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
                 self.client.ping()
                 logger.info(f"Connected to Redis at {self.host}:{self.port}")
                 return
-            except (ConnectionError, RedisError) as e:
-                if attempt < self.retry_attempts - 1:
-                    logger.warning(
-                        f"Redis connection attempt {attempt + 1} failed: {e}. Retrying in {self.retry_delay}s..."
-                    )
-                    time.sleep(self.retry_delay)
-                else:
-                    logger.error(f"Failed to connect to Redis after {self.retry_attempts} attempts: {e}")
+            except redis.exceptions.ConnectionError as e:
+                if attempt == self.retry_attempts:
+                    logger.error(f"Failed to connect to Redis after {attempt} attempts: {str(e)}")
+
+                    # If original host isn't working and it's not localhost, try localhost as fallback
+                    if self.host != "localhost":
+                        logger.info("Trying fallback connection to localhost")
+                        try:
+                            self.client = redis.Redis(
+                                host="localhost", port=self.port, db=self.db, decode_responses=True
+                            )
+                            self.client.ping()
+                            self.host = "localhost"
+                            logger.info(f"Connected to Redis at localhost:{self.port}")
+                            return
+                        except Exception as fallback_e:
+                            logger.error(f"Fallback connection failed: {str(fallback_e)}")
+
+                    # If we reach here, all connection attempts failed
                     raise
+
+                logger.warning(
+                    f"Redis connection attempt {attempt} failed: {str(e)}. Retrying in {self.retry_delay}s..."
+                )
+                time.sleep(self.retry_delay)
 
     def _reconnect(self):
         """Try to reconnect to Redis."""
@@ -375,7 +384,7 @@ class RedisService:
         self._ensure_subscribed(TRADE_OPPORTUNITIES_CHANNEL)
 
         # Also subscribe to strategy-specific channels
-        from src.arbirich.config import STRATEGIES
+        from src.arbirich.config.config import STRATEGIES
 
         for strategy_name in STRATEGIES.keys():
             strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
@@ -647,7 +656,7 @@ class RedisService:
         self._ensure_subscribed(TRADE_EXECUTIONS_CHANNEL)
 
         # Subscribe to strategy-specific execution channels
-        from src.arbirich.config import STRATEGIES
+        from src.arbirich.config.config import STRATEGIES
 
         for strategy_name in STRATEGIES.keys():
             strategy_channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}"

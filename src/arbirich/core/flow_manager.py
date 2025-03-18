@@ -132,7 +132,7 @@ class FlowManager:
     async def start_arbitrage_flows(self):
         """Start arbitrage flows for each strategy"""
         try:
-            from src.arbirich.config import STRATEGIES
+            from src.arbirich.config.config import STRATEGIES
             from src.arbirich.flows.arbitrage.arbitrage import run_arbitrage_flow
 
             strategy_names = list(STRATEGIES.keys())
@@ -166,7 +166,7 @@ class FlowManager:
                 logger.error(traceback.format_exc())
                 return
 
-            from src.arbirich.config import EXCHANGES, PAIRS
+            from src.arbirich.config.config import EXCHANGES, PAIRS
 
             # Create exchange_pairs mapping
             exchange_pairs = {}
@@ -190,7 +190,7 @@ class FlowManager:
     async def start_execution_flows(self):
         """Start execution flows for each strategy"""
         try:
-            from src.arbirich.config import STRATEGIES
+            from src.arbirich.config.config import STRATEGIES
             from src.arbirich.flows.execution.execution import run_execution_flow
 
             strategy_names = list(STRATEGIES.keys())

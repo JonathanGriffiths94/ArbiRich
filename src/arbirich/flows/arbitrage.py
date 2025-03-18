@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import time
 
 from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink
@@ -48,28 +47,8 @@ def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=True):
     # Add Redis opportunity source to the flow
     input_stream = use_redis_opportunity_source(flow, "redis_input", exchange_channels, pairs)
 
-    # Wrap key_by_asset with error handling
-    def safe_key_by_asset(record):
-        try:
-            result = key_by_asset(record)
-            # Extra sanity check to ensure we always return a tuple with two elements
-            if result is None or not isinstance(result, tuple) or len(result) != 2:
-                logger.error(f"key_by_asset returned invalid result: {result}")
-                # Return a placeholder that won't cause errors
-                return "error", {"exchange": "error", "symbol": "error", "timestamp": time.time()}
-            return result
-        except Exception as e:
-            logger.error(f"Error in safe_key_by_asset: {e}", exc_info=True)
-            # Return a placeholder that won't cause errors
-            return "error", {"exchange": "error", "symbol": "error", "timestamp": time.time()}
-
-    # Group order books by trading pair
-    keyed_stream = op.map("key_by_asset", input_stream, safe_key_by_asset)
-
-    # Filter out error placeholders
-    valid_stream = op.filter("filter_errors", keyed_stream, lambda x: x[0] != "error")
-
-    asset_state_stream = op.stateful_map("asset_state", valid_stream, update_asset_state)
+    keyed_stream = op.map("key_by_asset", input_stream, key_by_asset)
+    asset_state_stream = op.stateful_map("asset_state", keyed_stream, update_asset_state)
 
     # Filter not ready states
     ready_state = op.filter("ready", asset_state_stream, lambda kv: kv[1] is not None)

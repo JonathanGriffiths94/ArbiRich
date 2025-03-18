@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 
 import sqlalchemy as sa
 
-from arbirich.services.database.database_service import DatabaseService
-from src.arbirich.config import EXCHANGE_CONFIGS, EXCHANGES, PAIRS, STRATEGIES
+from src.arbirich.config.config import EXCHANGE_CONFIGS, EXCHANGES, PAIRS, STRATEGIES
 from src.arbirich.models.models import Exchange, Pair, Strategy
+from src.arbirich.services.database.database_service import DatabaseService
 
 # Configure logging
 logging.basicConfig(
@@ -91,11 +91,13 @@ def prefill_database():
                             # Fallback to direct SQL if the model approach fails
                             conn = db.engine.connect()
                             conn.execute(
-                                sa.text("""
+                                sa.text(
+                                    """
                                 INSERT INTO pairs (base_currency, quote_currency, symbol) 
                                 VALUES (:base, :quote, :symbol)
                                 ON CONFLICT (symbol) DO NOTHING
-                                """),
+                                """
+                                ),
                                 {"base": base, "quote": quote, "symbol": symbol},
                             )
                             conn.commit()

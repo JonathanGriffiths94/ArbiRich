@@ -3,7 +3,7 @@ import logging
 import pkgutil
 from typing import Dict, Type
 
-from src.arbirich.config import EXCHANGES
+from src.arbirich.config.config import EXCHANGES
 
 logger = logging.getLogger(__name__)
 
