@@ -17,7 +17,19 @@ def get_version() -> str:
         return "dev"
 
 
-def display_banner(additional_info: Optional[str] = None, log_only: bool = False) -> None:
+ASCII_BANNER = """
+$$$$$$\\            $$\\       $$\\ $$$$$$$\\  $$\\           $$\\       
+$$  __$$\\           $$ |      \\__|$$  __$$\\ \\__|          $$ |      
+$$ /  $$ | $$$$$$\\  $$$$$$$\\  $$\\ $$ |  $$ |$$\\  $$$$$$$\\ $$$$$$$\\  
+$$$$$$$$ |$$  __$$\\ $$  __$$\\ $$ |$$$$$$$  |$$ |$$  _____|$$  __$$\\ 
+$$  __$$ |$$ |  \\__|$$ |  $$ |$$ |$$  __$$< $$ |$$ /      $$ |  $$ |
+$$ |  $$ |$$ |      $$ |  $$ |$$ |$$ |  $$ |$$ |$$ |      $$ |  $$ |
+$$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\\$$$$$$$\\ $$ |  $$ |
+\\__|  \\__|\\__|      \\_______/ \\__|\\__|  \\__|\\__| \\_______|\\___|  \\__|
+"""
+
+
+def display_banner(additional_info: Optional[str] = None, log_only: bool = True) -> None:
     """
     Display a cool ASCII art banner for ArbiRich.
 
@@ -28,30 +40,18 @@ def display_banner(additional_info: Optional[str] = None, log_only: bool = False
     version = get_version()
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    banner = r"""
-    ╔═══════════════════════════════════════════════════════════════════╗
-    ║                                                                   ║
-    ║     ___         __    _ ____  _      __                           ║
-    ║    /   |  _____/ /_  (_) __ \(_)____/ /_                          ║
-    ║   / /| | / ___/ __ \/ / /_/ / / ___/ __ \                         ║
-    ║  / ___ |/ /  / /_/ / / _, _/ / /__/ / / /                         ║
-    ║ /_/  |_/_/  /_.___/_/_/ |_/_/\___/_/ /_/                          ║
-    ║                                                                   ║
-    ║              Crypto Arbitrage Trading Platform                    ║
-    ╟───────────────────────────────────────────────────────────────────╢
-    ║  Version: {version:<10}                  Started: {time}  ║
-    ╚═══════════════════════════════════════════════════════════════════╝
-    """
+    footer = f"Cryptocurrency Arbitrage Platform | Version: {version} | {current_time}"
+    separator = "=" * len(footer)
 
-    # Format the banner with version and time
-    formatted_banner = banner.format(version=version, time=current_time)
+    # Combine banner parts
+    banner = f"{ASCII_BANNER}\n{separator}\n{footer}\n{separator}"
 
     # Print the banner to console if not log_only
     if not log_only:
-        print(formatted_banner)
+        print(banner)
 
     # Add the banner to the log
-    for line in formatted_banner.split("\n"):
+    for line in banner.split("\n"):
         if line.strip():
             logger.info(line)
 
