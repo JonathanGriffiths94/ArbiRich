@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   app:
     build:
@@ -20,15 +18,10 @@ services:
       - POSTGRES_DB=arbirich_db
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-    env_file:
-      - .env.docker
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: python -m main
-    restart: unless-stopped
+      - postgres
+      - redis
+    command: python -m src.arbirich.main
 
   migrate:
     build:
@@ -45,9 +38,8 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=arbirich_db
     depends_on:
-      postgres:
-        condition: service_healthy
-    command: sh -c "cd /app && alembic upgrade head"
+      - postgres
+    command: alembic upgrade head
     restart: "no"
 
   redis:
@@ -55,12 +47,9 @@ services:
     container_name: redis-arbirich
     ports:
       - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_DATABASE=0
 
   postgres:
     image: postgres:17
@@ -73,12 +62,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U arbiuser -d arbirich_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
 
 volumes:
   postgres_data:

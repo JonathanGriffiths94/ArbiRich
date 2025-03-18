@@ -1,11 +1,12 @@
 import logging
 import os
+import time  # Import time for the sleep function
 
 import uvicorn
 from dotenv import load_dotenv
 
 from src.arbirich.core.app import make_app
-from src.arbirich.utils.banner import display_banner  # Changed to use the basic banner
+from src.arbirich.utils.banner import display_banner
 
 if __name__ == "__main__":
     # Configure logging
@@ -22,8 +23,16 @@ if __name__ == "__main__":
     # Load environment variables
     load_dotenv()
 
-    # Display the basic banner at startup - now with log_only=True to prevent duplication
-    display_banner(f"Environment: {os.getenv('ENV', 'development').upper()}", log_only=True)
+    # Display the banner at startup
+    display_banner(
+        f"Environment: {os.getenv('ENV', 'development').upper()}", log_only=False
+    )  # Set log_only=False to see the banner
+
+    # Add a pause to admire the banner (3 seconds)
+    banner_pause = float(os.getenv("BANNER_PAUSE", "1.5"))  # Configurable via environment variable
+    if banner_pause > 0:
+        logger.info(f"Starting application in {banner_pause} seconds...")
+        time.sleep(banner_pause)
 
     # Create and run the FastAPI application
     app = make_app()
