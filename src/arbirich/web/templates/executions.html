@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}ArbiRich - Executions{% endblock %}
+
+{% block content %}
+<h1 class="text-3xl font-bold mb-6">Trade Executions</h1>
+
+<div class="bg-white p-4 rounded-lg shadow-md">
+    <div class="overflow-x-auto">
+        <table class="w-full table-auto">
+            <thead class="bg-gray-100">
+                <tr>
+                    <th class="px-4 py-2 text-left">ID</th>
+                    <th class="px-4 py-2 text-left">Opportunity</th>
+                    <th class="px-4 py-2 text-left">Symbol</th>
+                    <th class="px-4 py-2 text-left">Status</th>
+                    <th class="px-4 py-2 text-left">Buy Order ID</th>
+                    <th class="px-4 py-2 text-left">Sell Order ID</th>
+                    <th class="px-4 py-2 text-left">Expected Profit</th>
+                    <th class="px-4 py-2 text-left">Actual Profit</th>
+                    <th class="px-4 py-2 text-left">Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exec in executions %}
+                <tr class="border-t hover:bg-gray-50">
+                    <td class="px-4 py-2 font-mono text-sm">{{ exec.id[:8] }}...</td>
+                    <td class="px-4 py-2 font-mono text-sm">
+                        {% if exec.opportunity_id %}
+                        {{ exec.opportunity_id[:8] }}...
+                        {% else %}
+                        N/A
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2 font-semibold">{{ exec.symbol }}</td>
+                    <td class="px-4 py-2">
+                        <span class="px-2 py-1 rounded-full text-xs font-semibold
+                        {% if exec.status == 'completed' %}
+                            bg-green-100 text-green-800
+                        {% elif exec.status == 'failed' %}
+                            bg-red-100 text-red-800
+                        {% else %}
+                            bg-yellow-100 text-yellow-800
+                        {% endif %}">
+                            {{ exec.status }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-2 font-mono text-xs">{{ exec.buy_order_id or 'N/A' }}</td>
+                    <td class="px-4 py-2 font-mono text-xs">{{ exec.sell_order_id or 'N/A' }}</td>
+                    <td
+                        class="px-4 py-2 text-right {% if exec.expected_profit > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ exec.expected_profit | round(4) }}
+                    </td>
+                    <td
+                        class="px-4 py-2 text-right {% if exec.actual_profit > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ exec.actual_profit | round(4) }}
+                    </td>
+                    <td class="px-4 py-2">
+                        {% if exec.created_at %}
+                        {{ exec.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                        {% else %}
+                        N/A
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

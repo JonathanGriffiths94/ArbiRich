@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}ArbiRich - Opportunities{% endblock %}
+
+{% block content %}
+<h1 class="text-3xl font-bold mb-6">Trade Opportunities</h1>
+
+<div class="bg-white p-4 rounded-lg shadow-md">
+    <div class="overflow-x-auto">
+        <table class="w-full table-auto">
+            <thead class="bg-gray-100">
+                <tr>
+                    <th class="px-4 py-2 text-left">ID</th>
+                    <th class="px-4 py-2 text-left">Strategy</th>
+                    <th class="px-4 py-2 text-left">Symbol</th>
+                    <th class="px-4 py-2 text-left">Buy Exchange</th>
+                    <th class="px-4 py-2 text-left">Sell Exchange</th>
+                    <th class="px-4 py-2 text-left">Buy Price</th>
+                    <th class="px-4 py-2 text-left">Sell Price</th>
+                    <th class="px-4 py-2 text-left">Profit %</th>
+                    <th class="px-4 py-2 text-left">Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for opp in opportunities %}
+                <tr class="border-t hover:bg-gray-50">
+                    <td class="px-4 py-2 font-mono text-sm">{{ opp.id[:8] }}...</td>
+                    <td class="px-4 py-2">{{ opp.strategy }}</td>
+                    <td class="px-4 py-2 font-semibold">{{ opp.symbol }}</td>
+                    <td class="px-4 py-2">{{ opp.buy_exchange }}</td>
+                    <td class="px-4 py-2">{{ opp.sell_exchange }}</td>
+                    <td class="px-4 py-2 text-right">{{ opp.buy_price | round(6) }}</td>
+                    <td class="px-4 py-2 text-right">{{ opp.sell_price | round(6) }}</td>
+                    <td
+                        class="px-4 py-2 text-right {% if opp.profit_percent > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ opp.profit_percent | round(4) }}%
+                    </td>
+                    <td class="px-4 py-2">{{ opp.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

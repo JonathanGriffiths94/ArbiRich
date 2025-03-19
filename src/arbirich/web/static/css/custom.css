@@ -1,0 +1,26 @@
+/* Custom styles for ArbiRich frontend */
+
+.logo {
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+.profit-positive {
+    color: #10B981;
+    font-weight: bold;
+}
+
+.profit-negative {
+    color: #EF4444;
+    font-weight: bold;
+}
+
+/* Dashboard card animations */
+.dashboard-card {
+    transition: all 0.2s ease-in-out;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}

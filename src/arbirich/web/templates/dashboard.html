@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}ArbiRich - Dashboard{% endblock %}
+
+{% block content %}
+<h1 class="text-3xl font-bold mb-6">Dashboard</h1>
+
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <!-- Stats Cards -->
+    <div class="bg-white p-6 rounded-lg shadow-md dashboard-card">
+        <h2 class="text-xl font-bold text-blue-700">Total Opportunities</h2>
+        <p class="text-3xl font-bold" id="total-opportunities">{{ stats.total_opportunities }}</p>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md dashboard-card">
+        <h2 class="text-xl font-bold text-green-700">Total Executions</h2>
+        <p class="text-3xl font-bold" id="total-executions">{{ stats.total_executions }}</p>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md dashboard-card">
+        <h2 class="text-xl font-bold text-purple-700">Success Rate</h2>
+        <p class="text-3xl font-bold" id="success-rate">
+            {% if stats.total_opportunities > 0 %}
+            {{ (stats.total_executions / stats.total_opportunities * 100) | round(2) }}%
+            {% else %}
+            0%
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<!-- Chart -->
+<div class="bg-white p-4 rounded-lg shadow-md mb-8">
+    <h2 class="text-xl font-bold mb-4">Profit Trend</h2>
+    <canvas id="opportunitiesChart" height="100"></canvas>
+</div>
+
+<!-- Recent Opportunities Table -->
+<div class="bg-white p-4 rounded-lg shadow-md mb-8">
+    <h2 class="text-xl font-bold mb-4">Recent Opportunities</h2>
+    <div class="overflow-x-auto">
+        <table class="w-full table-auto" id="opportunitiesTable">
+            <thead class="bg-gray-100">
+                <tr>
+                    <th class="px-4 py-2 text-left">ID</th>
+                    <th class="px-4 py-2 text-left">Strategy</th>
+                    <th class="px-4 py-2 text-left">Symbol</th>
+                    <th class="px-4 py-2 text-left">Profit %</th>
+                    <th class="px-4 py-2 text-left">Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for opp in opportunities %}
+                <tr class="border-t">
+                    <td class="px-4 py-2">{{ opp.id[:8] }}...</td>
+                    <td class="px-4 py-2">{{ opp.strategy }}</td>
+                    <td class="px-4 py-2">{{ opp.pair }}</td>
+                    <td
+                        class="px-4 py-2 {% if opp.profit_percent > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ opp.profit_percent | round(4) }}%
+                    </td>
+                    <td class="px-4 py-2">{{ opp.created_at.strftime('%Y-%m-%d %H:%M:%S') if opp.created_at else 'N/A'
+                        }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="mt-4 text-right">
+        <a href="/opportunities" class="text-blue-600 hover:underline">View All Opportunities</a>
+    </div>
+</div>
+
+<!-- Recent Executions Table -->
+<div class="bg-white p-4 rounded-lg shadow-md">
+    <h2 class="text-xl font-bold mb-4">Recent Executions</h2>
+    <div class="overflow-x-auto">
+        <table class="w-full table-auto" id="executionsTable">
+            <thead class="bg-gray-100">
+                <tr>
+                    <th class="px-4 py-2 text-left">ID</th>
+                    <th class="px-4 py-2 text-left">Opportunity ID</th>
+                    <th class="px-4 py-2 text-left">Status</th>
+                    <th class="px-4 py-2 text-left">Actual Profit</th>
+                    <th class="px-4 py-2 text-left">Created At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exec in executions %}
+                <tr class="border-t">
+                    <td class="px-4 py-2">{{ exec.id[:8] }}...</td>
+                    <td class="px-4 py-2">
+                        {% if exec.opportunity_id %}
+                        {{ exec.opportunity_id[:8] }}...
+                        {% else %}
+                        N/A
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2">
+                        <span class="px-2 py-1 rounded-full text-xs font-semibold
+                        {% if exec.status == 'completed' %}
+                            bg-green-100 text-green-800
+                        {% elif exec.status == 'failed' %}
+                            bg-red-100 text-red-800
+                        {% else %}
+                            bg-yellow-100 text-yellow-800
+                        {% endif %}">
+                            {{ exec.status }}
+                        </span>
+                    </td>
+                    <td
+                        class="px-4 py-2 {% if exec.actual_profit > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ exec.actual_profit | round(4) }}
+                    </td>
+                    <td class="px-4 py-2">
+                        {% if exec.created_at %}
+                        {{ exec.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                        {% else %}
+                        N/A
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="mt-4 text-right">
+        <a href="/executions" class="text-blue-600 hover:underline">View All Executions</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Chart setup for opportunities visualization
+    const ctx = document.getElementById('opportunitiesChart').getContext('2d');
+    const labels = [
+        {% for opp in opportunities[: 10] %}
+    "{{ opp.created_at.strftime('%H:%M:%S') if opp.created_at else 'N/A' }}",
+        {% endfor %}
+    ];
+    const profitData = [
+        {% for opp in opportunities[: 10] %}
+    { { opp.profit_percent | default (0) } },
+    {% endfor %}
+    ];
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels.reverse(),  // Show earliest data first
+            datasets: [{
+                label: 'Profit Percentage',
+                data: profitData.reverse(),
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                fill: true,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: false
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}
