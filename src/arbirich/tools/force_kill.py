@@ -5,93 +5,72 @@ This is a last resort when normal shutdown doesn't work.
 """
 
 import os
-import signal
 import subprocess
-import time
 
 
-def find_processes(process_names):
-    """Find all processes matching the given names"""
+def get_own_pid():
+    """Get the current process ID."""
+    return os.getpid()
+
+
+def force_kill_arbirich_processes():
+    """Find and kill all ArbiRich-related processes."""
+    own_pid = get_own_pid()
+
+    # Use pgrep to find ArbiRich processes without including ourselves
     try:
-        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, check=True)
-        processes = []
+        # Find Python processes with "arbirich" in the command line
+        # excluding our own PID
+        cmd = f"pgrep -f arbirich | grep -v {own_pid}"
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+        output, _ = process.communicate()
 
-        for line in result.stdout.split("\n"):
-            # Check if line contains any of the process names
-            if any(name.lower() in line.lower() for name in process_names):
-                # Skip the ps command itself and this script
-                if "force_kill.py" in line or "ps aux" in line:
-                    continue
+        # Parse PIDs
+        pids = [int(pid) for pid in output.decode().strip().split("\n") if pid]
 
-                parts = line.split()
-                if len(parts) > 1:
-                    try:
-                        pid = int(parts[1])
-                        cmd = " ".join(parts[10:]) if len(parts) > 10 else ""
-                        processes.append((pid, cmd))
-                    except (ValueError, IndexError):
-                        pass
+        if not pids:
+            print("No ArbiRich processes found.")
+            return
 
-        return processes
+        # Write PIDs to a temp file so we can kill them from a shell script
+        # This prevents the Python process from killing itself
+        with open("/tmp/arbirich_pids.txt", "w") as f:
+            for pid in pids:
+                f.write(f"{pid}\n")
+
+        # Create a shell script that will kill the processes
+        kill_script = """#!/bin/bash
+echo "Force killing ArbiRich processes..."
+while read pid; do
+    if [ -n "$pid" ] && kill -0 $pid 2>/dev/null; then
+        echo "  Killing PID $pid"
+        kill -9 $pid
+    fi
+done < /tmp/arbirich_pids.txt
+echo "Done."
+rm /tmp/arbirich_pids.txt
+"""
+
+        # Write the shell script
+        with open("/tmp/arbirich_kill.sh", "w") as f:
+            f.write(kill_script)
+
+        # Make it executable
+        os.chmod("/tmp/arbirich_kill.sh", 0o755)
+
+        # Execute it using subprocess and wait for completion
+        print(f"Found {len(pids)} ArbiRich-related processes to kill.")
+        subprocess.call(["/bin/bash", "/tmp/arbirich_kill.sh"])
+
+        # Clean up
+        if os.path.exists("/tmp/arbirich_kill.sh"):
+            os.remove("/tmp/arbirich_kill.sh")
+
     except Exception as e:
-        print(f"Error finding processes: {e}")
-        return []
-
-
-def force_kill():
-    """Kill all ArbiRich related processes"""
-    # Find all python processes related to ArbiRich
-    process_names = ["arbirich", "bytewax", "redis-arbirich"]
-    processes = find_processes(process_names)
-
-    if not processes:
-        print("No ArbiRich processes found.")
-        return
-
-    print(f"Found {len(processes)} ArbiRich-related processes:")
-    for pid, cmd in processes:
-        print(f"  PID {pid}: {cmd[:100]}...")
-
-    # Try graceful termination first (SIGTERM)
-    print("Sending SIGTERM to all processes...")
-    for pid, _ in processes:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass  # Process already gone
-        except PermissionError:
-            print(f"  No permission to kill PID {pid}, try running with sudo")
-
-    # Wait a bit for graceful shutdown
-    print("Waiting 3 seconds for graceful termination...")
-    time.sleep(3)
-
-    # Check which processes are still running
-    still_running = []
-    for pid, cmd in processes:
-        try:
-            # Check if process exists by sending signal 0
-            os.kill(pid, 0)
-            still_running.append((pid, cmd))
-        except ProcessLookupError:
-            print(f"  PID {pid} terminated successfully")
-        except PermissionError:
-            print(f"  No permission to check PID {pid}")
-
-    # Force kill remaining processes (SIGKILL)
-    if still_running:
-        print(f"{len(still_running)} processes still running, sending SIGKILL...")
-        for pid, _ in still_running:
-            try:
-                os.kill(pid, signal.SIGKILL)
-                print(f"  SIGKILL sent to PID {pid}")
-            except (ProcessLookupError, PermissionError):
-                pass
-    else:
-        print("All processes terminated successfully.")
+        print(f"Error while killing processes: {e}")
 
 
 if __name__ == "__main__":
     print("Force killing all ArbiRich processes...")
-    force_kill()
+    force_kill_arbirich_processes()
     print("Force kill complete.")

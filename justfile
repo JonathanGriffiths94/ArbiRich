@@ -69,15 +69,14 @@ run-bot: setup-local-db
 
 # Stop running ArbiRich application
 stop-bot:
-    {{ python }} -m src.arbirich.tools.stop_app
+    bash -c "$(poetry run python -c 'import sys; from src.arbirich.tools.stop_app import stop_arbirich_processes; stop_arbirich_processes(); sys.exit(0)')"
 
-# Force kill ArbiRich processes (for when stop-bot doesn't work)
 force-kill:
     {{ python }} -m src.arbirich.tools.force_kill
 
 # Emergency abort - kills all ArbiRich processes forcibly (LAST RESORT)
 abort:
-    {{ python }} -m src.arbirich.tools.emergency_abort
+    pkill -f "arbirich|main.py" || echo "No ArbiRich processes found"
 
 # Check database connection
 check-db:

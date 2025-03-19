@@ -29,13 +29,14 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\\$$$$$$$\\ $$ |  $$ |
 """
 
 
-def display_banner(additional_info: Optional[str] = None, log_only: bool = True) -> None:
+def display_banner(additional_info: Optional[str] = None, log_only: bool = True, console_only: bool = False) -> None:
     """
     Display a cool ASCII art banner for ArbiRich.
 
     Args:
         additional_info: Optional additional information to display
         log_only: If True, only log the banner, don't print to console
+        console_only: If True, only print to console, don't log (overrides log_only)
     """
     version = get_version()
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -46,19 +47,24 @@ def display_banner(additional_info: Optional[str] = None, log_only: bool = True)
     # Combine banner parts
     banner = f"{ASCII_BANNER}\n{separator}\n{footer}\n{separator}"
 
-    # Print the banner to console if not log_only
-    if not log_only:
+    # Print the banner to console if not log_only or if console_only
+    if not log_only or console_only:
         print(banner)
 
-    # Add the banner to the log
-    for line in banner.split("\n"):
-        if line.strip():
-            logger.info(line)
+    # Add the banner to the log unless console_only is True
+    if not console_only:
+        for line in banner.split("\n"):
+            if line.strip():
+                logger.info(line)
 
     # Print additional information if provided
     if additional_info:
         info_lines = additional_info.strip().split("\n")
         for line in info_lines:
-            logger.info(line)
-            if not log_only:
+            # Log it unless console_only is True
+            if not console_only:
+                logger.info(line)
+
+            # Print it if not log_only or if console_only
+            if not log_only or console_only:
                 print(line)

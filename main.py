@@ -23,13 +23,15 @@ if __name__ == "__main__":
     # Load environment variables
     load_dotenv()
 
-    # Display the banner at startup
+    # Display the banner at startup - print to console only, don't log
     display_banner(
-        f"Environment: {os.getenv('ENV', 'development').upper()}", log_only=False
-    )  # Set log_only=False to see the banner
+        f"Environment: {os.getenv('ENV', 'development').upper()}",
+        log_only=False,
+        console_only=True,  # Add this parameter to only print to console and not log
+    )
 
     # Add a pause to admire the banner (3 seconds)
-    banner_pause = float(os.getenv("BANNER_PAUSE", "1.5"))  # Configurable via environment variable
+    banner_pause = float(os.getenv("BANNER_PAUSE", "1.5"))  # Add a default value and convert to float
     if banner_pause > 0:
         logger.info(f"Starting application in {banner_pause} seconds...")
         time.sleep(banner_pause)
