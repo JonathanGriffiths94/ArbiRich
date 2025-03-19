@@ -7,11 +7,11 @@ from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 from bytewax.run import cli_main
 
-from arbirich.services.redis.redis_service import RedisService
 from src.arbirich.flows.ingestion.ingestion_process import process_order_book
 from src.arbirich.flows.ingestion.ingestion_sink import publish_order_book
 from src.arbirich.flows.ingestion.ingestion_source import MultiExchangeSource
 from src.arbirich.services.exchange_processors.registry import register_all_processors
+from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -170,7 +170,7 @@ async def run_ingestion_flow(exchanges_and_pairs: Dict[str, List[str]]):
 
 # For CLI usage
 if __name__ == "__main__":
-    from src.arbirich.config import EXCHANGES, PAIRS
+    from src.arbirich.config.config import EXCHANGES, PAIRS
 
     # Set up logging
     logging.basicConfig(

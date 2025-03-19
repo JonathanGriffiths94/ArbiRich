@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-from arbirich.services.exchange_configs import EXCHANGE_CONFIGS
+from src.arbirich.services.exchange_configs import EXCHANGE_CONFIGS
 from src.arbirich.services.strategies.strategy_configs import (
     get_active_strategies,
     get_unique_exchanges,

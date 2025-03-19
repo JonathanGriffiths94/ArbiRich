@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 from sqlalchemy.sql import select
 
-from src.arbirich.config import DATABASE_URL
+from src.arbirich.config.config import DATABASE_URL
 from src.arbirich.models.models import (
     Exchange,
     Pair,

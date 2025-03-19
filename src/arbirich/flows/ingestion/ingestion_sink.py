@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, Optional
 
-from arbirich.services.redis.redis_service import RedisService
+from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Set to DEBUG for more detailed logs

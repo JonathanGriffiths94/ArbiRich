@@ -2,9 +2,9 @@ import logging
 import time
 from typing import Optional
 
-from arbirich.services.redis.redis_service import RedisService
 from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.models.models import TradeOpportunity
+from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 

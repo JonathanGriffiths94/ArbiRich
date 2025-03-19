@@ -5,106 +5,67 @@ Stop the ArbiRich application cleanly.
 
 import os
 import signal
-import subprocess
-import sys
 import time
 
-
-def find_main_process():
-    """Find the main ArbiRich process"""
-    try:
-        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, check=True)
-
-        for line in result.stdout.split("\n"):
-            # Look for the main Python process running main.py
-            if "python" in line and "main.py" in line and "arbirich" in line.lower():
-                # Skip this script itself
-                if "stop_app.py" in line:
-                    continue
-
-                parts = line.split()
-                if len(parts) > 1:
-                    try:
-                        pid = int(parts[1])
-                        return pid, line
-                    except ValueError:
-                        pass
-
-        # If main.py not found, look for any arbirich process
-        for line in result.stdout.split("\n"):
-            if "python" in line and "arbirich" in line.lower():
-                if "stop_app.py" in line:
-                    continue
-
-                parts = line.split()
-                if len(parts) > 1:
-                    try:
-                        pid = int(parts[1])
-                        return pid, line
-                    except ValueError:
-                        pass
-
-        return None, None
-    except Exception as e:
-        print(f"Error finding process: {e}")
-        return None, None
+import psutil
 
 
-def stop_application():
-    """Stop the main ArbiRich application process"""
-    pid, process_info = find_main_process()
+def find_arbirich_processes(exclude_pid=None):
+    """Find ArbiRich processes excluding the current one."""
+    arbirich_processes = []
 
-    if not pid:
-        print("No ArbiRich process found.")
-        return False
+    # Get current process ID to exclude
+    current_pid = os.getpid() if exclude_pid is None else exclude_pid
 
-    print(f"Found ArbiRich process (PID {pid}):")
-    print(f"  {process_info}")
+    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            # Skip the current process
+            if proc.pid == current_pid:
+                continue
 
-    try:
-        # Send SIGTERM for graceful shutdown
-        print(f"Sending SIGTERM to process {pid}...")
-        os.kill(pid, signal.SIGTERM)
+            # Look for main.py or ArbiRich mentions in command line
+            cmdline = " ".join(proc.cmdline()) if proc.cmdline() else ""
+            if "arbirich" in cmdline.lower() and "main.py" in cmdline.lower():
+                arbirich_processes.append(proc)
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
 
-        # Wait up to 15 seconds for process to exit
-        max_wait = 15
-        print(f"Waiting up to {max_wait} seconds for process to exit...")
+    return arbirich_processes
 
-        for i in range(max_wait):
-            try:
-                # Check if process still exists
-                os.kill(pid, 0)
-                # If we're here, process still exists
-                time.sleep(1)
-                sys.stdout.write(".")
-                sys.stdout.flush()
-            except ProcessLookupError:
-                # Process has exited
-                print("\nProcess exited cleanly!")
-                return True
 
-        print("\nProcess didn't exit in time. Sending SIGKILL...")
-        os.kill(pid, signal.SIGKILL)
-        print("SIGKILL sent.")
-        return True
+def stop_arbirich_processes():
+    """Stop all ArbiRich processes gracefully."""
+    # Get ArbiRich processes
+    arbirich_processes = find_arbirich_processes()
 
-    except ProcessLookupError:
-        print("Process not found or already stopped.")
-        return True
-    except PermissionError:
-        print("No permission to kill this process. Try running with sudo.")
-        return False
-    except Exception as e:
-        print(f"Error stopping process: {e}")
-        return False
+    if not arbirich_processes:
+        print("No ArbiRich processes found.")
+        return
+
+    print(f"Found {len(arbirich_processes)} ArbiRich processes:")
+    for proc in arbirich_processes:
+        print(f"  PID {proc.pid}: {' '.join(proc.cmdline())[:80]}...")
+
+    # Send SIGTERM signal
+    print("Sending SIGTERM to processes...")
+    for proc in arbirich_processes:
+        try:
+            os.kill(proc.pid, signal.SIGTERM)
+        except OSError as e:
+            print(f"Failed to terminate process {proc.pid}: {e}")
+
+    # Wait a bit for processes to terminate
+    print("Waiting for processes to terminate...")
+    time.sleep(2)
+
+    # Check if processes still exist
+    still_running = [p for p in arbirich_processes if psutil.pid_exists(p.pid)]
+    if still_running:
+        print(f"{len(still_running)} processes still running.")
+    else:
+        print("All ArbiRich processes terminated successfully.")
 
 
 if __name__ == "__main__":
     print("Stopping ArbiRich application...")
-    if stop_application():
-        print("ArbiRich application stopped.")
-    else:
-        print("Failed to stop ArbiRich application.")
-        print("You can try with force kill:")
-        print("  python -m src.arbirich.tools.force_kill")
-        sys.exit(1)
+    stop_arbirich_processes()

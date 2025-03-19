@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 
-from src.arbirich.config import STRATEGIES
+from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.services.redis.redis_service import RedisService
 

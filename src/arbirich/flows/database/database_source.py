@@ -4,7 +4,7 @@ import time
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from arbirich.services.redis.redis_service import RedisService
+from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -27,7 +27,7 @@ class RedisDatabasePartition(StatefulSourcePartition):
     def next_batch(self) -> list:
         # Check for stop event first
         if self._stop_event and self._stop_event.is_set():
-            logger.info(f"Stop event detected for channel {self.channel}, returning empty batch")
+            logger.debug(f"Stop event detected for channel {self.channel}, returning empty batch")
             self._running = False
             return []
 

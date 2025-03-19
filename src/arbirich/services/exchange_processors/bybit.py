@@ -5,7 +5,7 @@ import logging
 import requests
 import websockets
 
-from src.arbirich.config import EXCHANGE_CONFIGS
+from src.arbirich.config.config import EXCHANGE_CONFIGS
 from src.arbirich.services.exchange_processors.base_processor import BaseOrderBookProcessor
 from src.arbirich.services.exchange_processors.registry import register
 

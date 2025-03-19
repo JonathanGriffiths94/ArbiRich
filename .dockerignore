@@ -1,0 +1,39 @@
+# Exclude development and version control files
+.git
+.gitignore
+.github
+.pytest_cache
+.coverage
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+.env.*
+!.env.docker
+.venv/
+venv/
+ENV/
+
+# Exclude development tools
+.vscode/
+.idea/
+*.log
+*.swp
+*.swo
+.DS_Store
+
+# Exclude documentation, tests, etc.
+docs/
+tests/
+*.md
+LICENSE
+*.yml
+*.yaml
+!docker-compose.yml
+
+# Exclude previous builds
+dist/
+build/
+*.egg-info
