@@ -95,7 +95,7 @@ migrate:
     {{ alembic }} upgrade head
 
 # Docker database reset command with volume cleanup
-docker-reset-db:
+docker-db-reset:
     # Stop any running containers and remove the volume
     docker compose down -v
     # Recreate and start postgres container
