@@ -1,11 +1,19 @@
 import asyncio
 import json
+import logging
 from typing import Any, Dict, List
 
 from fastapi import WebSocket
 
 from src.arbirich.services.database.database_service import DatabaseService
-from src.arbirich.web.frontend import get_dashboard_stats
+from src.arbirich.web.frontend import (
+    get_dashboard_stats,
+    get_recent_executions,
+    get_recent_opportunities,
+    get_strategy_leaderboard,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
@@ -17,27 +25,78 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        logger.info(f"Client connected. Total connections: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
+        logger.info(f"Client disconnected. Remaining connections: {len(self.active_connections)}")
 
     async def broadcast(self, message: Dict[str, Any]):
         """Send a message to all connected clients."""
         for connection in self.active_connections:
-            await connection.send_text(json.dumps(message))
+            try:
+                await connection.send_text(json.dumps(message))
+            except Exception as e:
+                logger.error(f"Error sending message to client: {e}")
 
 
 # Create a connection manager instance
 manager = ConnectionManager()
 
 
-async def get_dashboard_data():
-    """Get dashboard data from the database to broadcast to clients."""
+async def get_full_dashboard_data():
+    """Get complete dashboard data from the database to send to clients."""
     with DatabaseService() as db_service:
-        # Get statistics using the helper function from frontend.py
+        # Get statistics
         stats = get_dashboard_stats(db_service)
+        # Get only 5 opportunities for the dashboard
+        opportunities = get_recent_opportunities(db_service, limit=5)
+        # Get only 5 executions for the dashboard
+        executions = get_recent_executions(db_service, limit=5)
+        # Get strategy leaderboard
+        strategies = get_strategy_leaderboard(db_service)
 
-    return {"type": "stats", "stats": stats}
+        # Prepare chart data
+        labels = []
+        data = []
+        for opp in reversed(opportunities):  # Reverse to get chronological order
+            if opp.get("created_at"):
+                labels.append(
+                    opp["created_at"].strftime("%H:%M:%S") if hasattr(opp["created_at"], "strftime") else "N/A"
+                )
+                data.append(opp.get("profit_percent", 0))
+
+        chart_data = {"labels": labels, "data": data}
+
+    return {
+        "type": "full_update",
+        "stats": stats,
+        "opportunities": opportunities,
+        "executions": executions,
+        "strategies": strategies,
+        "chart_data": chart_data,
+    }
+
+
+async def handle_websocket_message(websocket: WebSocket, message: str):
+    """Handle messages from WebSocket clients."""
+    try:
+        data = json.loads(message)
+        action = data.get("action")
+
+        if action == "ping":
+            # Just acknowledge the ping
+            await websocket.send_text(json.dumps({"type": "pong"}))
+
+        elif action == "get_data":
+            # Send full dashboard data
+            full_data = await get_full_dashboard_data()
+            await websocket.send_text(json.dumps(full_data))
+
+    except json.JSONDecodeError:
+        logger.error(f"Invalid JSON received: {message}")
+    except Exception as e:
+        logger.error(f"Error handling WebSocket message: {e}")
 
 
 async def websocket_broadcast_task():
@@ -45,13 +104,15 @@ async def websocket_broadcast_task():
     while True:
         try:
             # Get data from database
-            data = await get_dashboard_data()
+            data = await get_full_dashboard_data()
 
             # Broadcast to all connected clients
-            await manager.broadcast(data)
+            if manager.active_connections:
+                await manager.broadcast(data)
+                logger.debug(f"Broadcast data to {len(manager.active_connections)} clients")
 
             # Wait before sending next update
-            await asyncio.sleep(5)  # Update every 5 seconds
+            await asyncio.sleep(30)  # Update every 30 seconds
         except Exception as e:
-            print(f"Error in websocket broadcast: {e}")
-            await asyncio.sleep(5)  # Wait before retrying
+            logger.error(f"Error in websocket broadcast: {e}")
+            await asyncio.sleep(30)  # Wait before retrying

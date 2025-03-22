@@ -1,26 +1,205 @@
-/* Custom styles for ArbiRich frontend */
+/* Custom styles for ArbiRich frontend - Money Green Theme */
 
+:root {
+    --primary-green: #0d904f;
+    /* Money/cash green */
+    --primary-hover: #07713e;
+    --primary-light: #5cbf91;
+    --dark-bg: #0a1e14;
+    /* Very dark money green */
+    --dark-card: #122520;
+    --dark-element: #1c352d;
+    --profit-green: #3abe78;
+    /* Success green */
+    --loss-red: #e55039;
+    /* Loss red */
+    --text-light: #e0e9e5;
+    --text-dim: #a0b3ac;
+    --border-dark: #1e3d34;
+    --highlight: rgba(13, 144, 79, 0.15);
+    --dollar-accent: #85bb65;
+    /* US dollar bill green */
+}
+
+body {
+    background-color: var(--dark-bg);
+    color: var(--text-light);
+}
+
+/* Logo styling */
 .logo {
     font-weight: bold;
-    letter-spacing: 0.5px;
+    letter-spacing: 1px;
+    color: var(--dollar-accent);
+    text-shadow: 0 0 10px rgba(133, 187, 101, 0.4);
+    font-family: 'Courier New', monospace;
 }
 
 .profit-positive {
-    color: #10B981;
+    color: var(--profit-green);
     font-weight: bold;
 }
 
 .profit-negative {
-    color: #EF4444;
+    color: var(--loss-red);
     font-weight: bold;
+}
+
+/* Navigation bar */
+.nav-bg {
+    background-color: var(--dark-element);
+    border-bottom: 1px solid var(--border-dark);
+}
+
+.nav-link {
+    color: var(--text-light);
+}
+
+.nav-link:hover {
+    color: var(--primary-green);
+}
+
+/* Dashboard cards */
+.card-bg {
+    background-color: var(--dark-card);
+    border: 1px solid var(--border-dark);
+}
+
+.card-header {
+    color: var(--primary-green);
+    font-weight: bold;
+}
+
+/* Table styling */
+.table-header {
+    background-color: var(--dark-element);
+    color: var(--primary-green);
+}
+
+.table-row {
+    border-color: var(--border-dark);
+}
+
+.table-row:hover {
+    background-color: rgba(0, 255, 0, 0.05);
 }
 
 /* Dashboard card animations */
 .dashboard-card {
     transition: all 0.2s ease-in-out;
+    background-color: var(--dark-card);
+    border: 1px solid var(--border-dark);
 }
 
 .dashboard-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 10px 15px -3px rgba(0, 255, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+    border-color: var(--primary-green);
+}
+
+/* Highlight effect for new rows */
+.new-row-highlight {
+    background-color: var(--highlight);
+    animation: fadeHighlight 3s;
+}
+
+@keyframes fadeHighlight {
+    from {
+        background-color: var(--highlight);
+    }
+
+    to {
+        background-color: transparent;
+    }
+}
+
+/* Auto-refresh indicator */
+.refresh-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: 5px;
+    background-color: var(--primary-green);
+    box-shadow: 0 0 10px var(--primary-green);
+}
+
+.refresh-indicator.updating {
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+        box-shadow: 0 0 15px var(--primary-green);
+    }
+
+    50% {
+        opacity: 0.3;
+        box-shadow: 0 0 5px var(--primary-green);
+    }
+
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 15px var(--primary-green);
+    }
+}
+
+/* Button styling */
+.btn-primary {
+    background-color: var(--primary-green);
+    color: var(--dark-bg);
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+}
+
+/* ASCII art styling */
+.ascii-art {
+    color: var(--dollar-accent);
+    text-shadow: 0 0 10px rgba(133, 187, 101, 0.5);
+    font-family: 'Courier New', monospace;
+}
+
+/* Dark mode charts with green accents */
+.chart-container {
+    background-color: var(--dark-card);
+    border: 1px solid var(--border-dark);
+}
+
+/* Dollar-bill inspired elements */
+.btn-money {
+    background-color: var(--dollar-accent);
+    color: var(--dark-bg);
+    border: 1px solid var(--primary-hover);
+    transition: all 0.2s ease;
+}
+
+.btn-money:hover {
+    background-color: var(--primary-hover);
+    color: var(--text-light);
+    box-shadow: 0 0 15px rgba(13, 144, 79, 0.4);
+}
+
+/* Money-themed headers */
+.money-header {
+    color: var(--dollar-accent);
+    font-weight: bold;
+    border-bottom: 1px solid var(--primary-green);
+    padding-bottom: 0.5rem;
+}
+
+/* Money-themed badge */
+.money-badge {
+    background-color: var(--dark-element);
+    border: 1px solid var(--dollar-accent);
+    color: var(--dollar-accent);
+}
+
+/* Chart styling for money theme */
+.chart-money {
+    border: 1px solid var(--dollar-accent);
+    background-color: var(--dark-card);
+    box-shadow: 0 4px 6px rgba(13, 144, 79, 0.1);
 }
