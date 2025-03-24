@@ -3,18 +3,16 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import and_, func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from src.arbirich.models.models import StrategyDB as Strategy
 from src.arbirich.models.models import (
-    ExchangeDB,
-    PairDB,
     StrategyExchangeMetrics,
     StrategyMetrics,
     StrategyTradingPairMetrics,
     TradeExecution,
 )
-from src.arbirich.models.models import StrategyDB as Strategy
 from src.arbirich.services.database.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
@@ -69,7 +67,7 @@ class StrategyMetricsService:
         """
         try:
             # Get executions for this strategy in the time period
-            from src.arbirich.models.schema import strategies, trade_executions
+            from src.arbirich.models.schema import strategies
 
             # Get the strategy first
             strategy_query = select(strategies).where(strategies.c.id == strategy_id)
@@ -87,7 +85,7 @@ class StrategyMetricsService:
 
             # Use SQLAlchemy text() for raw SQL queries
             query = text(
-                f"""
+                """
                 SELECT * FROM trade_executions 
                 WHERE strategy = :strategy_name 
                 AND execution_timestamp BETWEEN :start_date AND :end_date

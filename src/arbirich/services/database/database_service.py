@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Union
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -15,9 +15,7 @@ from src.arbirich.models.models import (
     Exchange,
     Pair,
     Strategy,
-    StrategyExchangeMetrics,
     StrategyMetrics,
-    StrategyTradingPairMetrics,
     TradeExecution,
     TradeOpportunity,
 )

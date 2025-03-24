@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from arbirich.services.strategy_metrics_service import StrategyMetricsService
+from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.services.database.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)

@@ -26,7 +26,7 @@ except ImportError:
     logger.warning("python-dotenv not installed, using environment variables as is")
 
 try:
-    from arbirich.services.strategy_metrics_service import StrategyMetricsService
+    from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
     from src.arbirich.services.database.database_service import DatabaseService
 except ImportError as e:
     logger.error(f"Failed to import required modules: {e}")

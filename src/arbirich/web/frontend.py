@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from arbirich.services.strategy_metrics_service import StrategyMetricsService
+from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.services.database.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
@@ -280,7 +280,7 @@ async def strategy_detail(request: Request, strategy_name: str, db: DatabaseServ
         # Get metrics if available - handle possible errors with relationships
         metrics = None
         try:
-            from arbirich.services.strategy_metrics_service import StrategyMetricsService
+            from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 
             metrics_service = StrategyMetricsService(db)
             metrics = metrics_service.get_latest_metrics_for_strategy(strategy.id)

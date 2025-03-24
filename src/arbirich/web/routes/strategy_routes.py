@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from arbirich.services.strategy_metrics_service import StrategyMetricsService
+from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.models.models import StrategyExchangeMetrics, StrategyTradingPairMetrics
 from src.arbirich.services.database.database_service import DatabaseService
 
