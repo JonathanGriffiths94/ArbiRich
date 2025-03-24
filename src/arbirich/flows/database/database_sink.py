@@ -3,6 +3,7 @@ import logging
 import time
 import traceback
 import uuid
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
@@ -132,6 +133,64 @@ def db_sink(item):
                                 trade_count=1,
                             )
                             logger.info(f"Updated strategy stats for {execution.strategy}")
+                        except Exception as e:
+                            # Log but don't fail the entire function
+                            logger.error(f"Error updating strategy stats: {e}")
+
+                        try:
+                            db.update_strategy_stats(
+                                strategy_name=execution.strategy,
+                                profit=total_value if total_value > 0 else 0,
+                                loss=abs(total_value) if total_value < 0 else 0,
+                                trade_count=1,
+                            )
+                            logger.info(f"Updated strategy stats for {execution.strategy}")
+
+                            try:
+                                from src.arbirich.services.metrics.strategy_metrics_service import (
+                                    StrategyMetricsService,
+                                )
+
+                                # Get the strategy ID
+                                strategy = db.get_strategy_by_name(execution.strategy)
+                                if strategy:
+                                    # Create metrics service
+                                    metrics_service = StrategyMetricsService(db_service=db)
+
+                                    # Calculate daily metrics
+                                    now = datetime.now()
+                                    day_start = datetime(now.year, now.month, now.day)
+
+                                    metrics = metrics_service.calculate_strategy_metrics(
+                                        session=db.session,
+                                        strategy_id=strategy.id,
+                                        period_start=day_start,
+                                        period_end=now,
+                                    )
+
+                                    if metrics:
+                                        logger.info(f"Updated daily metrics for strategy {strategy.name}")
+
+                                    # Optionally calculate weekly metrics too
+                                    week_start = now - timedelta(days=now.weekday())
+                                    week_start = datetime(week_start.year, week_start.month, week_start.day)
+
+                                    weekly_metrics = metrics_service.calculate_strategy_metrics(
+                                        session=db.session,
+                                        strategy_id=strategy.id,
+                                        period_start=week_start,
+                                        period_end=now,
+                                    )
+
+                                    if weekly_metrics:
+                                        logger.info(f"Updated weekly metrics for strategy {strategy.name}")
+                                else:
+                                    logger.warning(
+                                        f"Strategy {execution.strategy} not found, skipping metrics calculation"
+                                    )
+                            except Exception as metrics_error:
+                                logger.error(f"Error calculating strategy metrics: {metrics_error}")
+                                # Don't fail the whole function if metrics calculation fails
                         except Exception as e:
                             # Log but don't fail the entire function
                             logger.error(f"Error updating strategy stats: {e}")
