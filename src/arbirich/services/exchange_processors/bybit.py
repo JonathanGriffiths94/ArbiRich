@@ -5,7 +5,7 @@ import logging
 import requests
 import websockets
 
-from src.arbirich.config.config import EXCHANGE_CONFIGS
+from src.arbirich.config.config import ALL_EXCHANGES
 from src.arbirich.services.exchange_processors.base_processor import BaseOrderBookProcessor
 from src.arbirich.services.exchange_processors.registry import register
 
@@ -22,13 +22,26 @@ class BybitOrderBookProcessor(BaseOrderBookProcessor):
         subscription_type: str,
         use_rest_snapshot: bool,
     ):
-        self.product = product
-        self.cfg = EXCHANGE_CONFIGS.get(exchange)
-        self.ws_url = self.cfg["ws"]["ws_url"]
-        formatted_product = self.process_asset()
-        self.subscribe_message = json.dumps({"op": "subscribe", "args": [f"orderbook.200.{formatted_product}"]})
-        self.last_snapshot = None  # to store snapshot from WS
+        # First get the config
+        self.config = ALL_EXCHANGES.get(exchange)
+        if not self.config:
+            raise ValueError(f"Exchange {exchange} not found in configuration")
+
+        # Set these before calling super().__init__
+        self.delimiter = self.config.get("delimiter", "")
+        self.mapping = self.config.get("mapping", {})
+
+        # Initialize parent first
         super().__init__(exchange, product, subscription_type, use_rest_snapshot)
+
+        # Now get the formatted product using the parent's process_asset method
+        formatted_product = self.process_asset()
+
+        # Set remaining attributes
+        self.ws_url = self.config.get("ws_url")
+        self.subscribe_message = json.dumps({"op": "subscribe", "args": [f"orderbook.200.{formatted_product}"]})
+        self.last_snapshot = None
+        self.snapshot_url = self.config.get("rest_url")  # Make sure this is defined
 
     async def connect(self):
         logger.info(f"Connecting to {self.ws_url}...")

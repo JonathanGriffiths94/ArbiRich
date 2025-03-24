@@ -1,0 +1,159 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}ArbiRich - API Documentation{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-bold text-lime-green">API Documentation</h1>
+    <a href="/"
+        class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300">
+        Back to Dashboard
+    </a>
+</div>
+
+<div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
+    <h2 class="text-xl font-bold text-dollar-green mb-4">ArbiRich REST API</h2>
+    <p class="text-gray-300 mb-4">
+        The ArbiRich API allows you to programmatically access trading data, opportunities, and executions.
+        This documentation outlines available endpoints and how to use them.
+    </p>
+
+    <div class="bg-dark-element p-4 rounded-lg mb-4">
+        <h3 class="text-lg font-semibold text-dollar-green mb-2">Base URL</h3>
+        <pre class="bg-dark-bg p-3 rounded font-mono text-gray-300 overflow-x-auto">http://localhost:8080/api/</pre>
+    </div>
+
+    <p class="text-gray-300 mb-4">
+        All requests require a valid API key. You can obtain yours from the <a href="/settings"
+            class="text-dollar-green hover:underline">settings page</a>.
+    </p>
+</div>
+
+<!-- Endpoints -->
+<div class="dashboard-card rounded-lg shadow-md p-6">
+    <h2 class="text-xl font-bold text-dollar-green mb-4">Endpoints</h2>
+
+    <!-- Status Endpoint -->
+    <div class="border-b border-dark-element pb-4 mb-4">
+        <div class="flex items-start mb-2">
+            <span class="px-2 py-1 bg-dollar-green text-dark-bg rounded-md font-mono mr-3">GET</span>
+            <h3 class="text-lg font-semibold text-dollar-green">/status</h3>
+        </div>
+        <p class="text-gray-300 mb-3">Get the current status of the ArbiRich system.</p>
+
+        <h4 class="font-semibold text-dollar-green mb-2">Example Response:</h4>
+        <pre class="bg-dark-element p-3 rounded font-mono text-gray-300 overflow-x-auto mb-3">
+{
+    "status": "operational",
+    "version": "0.1.0",
+    "uptime": "3d 4h 12m",
+    "active_strategies": 3,
+    "timestamp": "2023-07-01T12:34:56Z"
+}
+        </pre>
+    </div>
+
+    <!-- Opportunities Endpoint -->
+    <div class="border-b border-dark-element pb-4 mb-4">
+        <div class="flex items-start mb-2">
+            <span class="px-2 py-1 bg-dollar-green text-dark-bg rounded-md font-mono mr-3">GET</span>
+            <h3 class="text-lg font-semibold text-dollar-green">/opportunities</h3>
+        </div>
+        <p class="text-gray-300 mb-3">Get recent arbitrage opportunities.</p>
+
+        <h4 class="font-semibold text-dollar-green mb-2">Query Parameters:</h4>
+        <ul class="list-disc pl-6 mb-3 text-gray-300">
+            <li><span class="font-mono">limit</span> - Number of opportunities to return (default: 10, max: 100)</li>
+            <li><span class="font-mono">strategy</span> - Filter by strategy name</li>
+            <li><span class="font-mono">pair</span> - Filter by trading pair</li>
+        </ul>
+
+        <h4 class="font-semibold text-dollar-green mb-2">Example Response:</h4>
+        <pre class="bg-dark-element p-3 rounded font-mono text-gray-300 overflow-x-auto mb-3">
+{
+    "opportunities": [
+        {
+            "id": "a1b2c3d4",
+            "strategy": "basic_arbitrage",
+            "pair": "BTC-USDT",
+            "buy_exchange": "binance",
+            "sell_exchange": "coinbase",
+            "buy_price": 29500.50,
+            "sell_price": 29550.25,
+            "spread": 49.75,
+            "volume": 0.15,
+            "timestamp": "2023-07-01T12:34:56Z"
+        },
+        // ...more opportunities
+    ]
+}
+        </pre>
+    </div>
+
+    <!-- Executions Endpoint -->
+    <div class="border-b border-dark-element pb-4 mb-4">
+        <div class="flex items-start mb-2">
+            <span class="px-2 py-1 bg-dollar-green text-dark-bg rounded-md font-mono mr-3">GET</span>
+            <h3 class="text-lg font-semibold text-dollar-green">/executions</h3>
+        </div>
+        <p class="text-gray-300 mb-3">Get recent trade executions.</p>
+
+        <h4 class="font-semibold text-dollar-green mb-2">Query Parameters:</h4>
+        <ul class="list-disc pl-6 mb-3 text-gray-300">
+            <li><span class="font-mono">limit</span> - Number of executions to return (default: 10, max: 100)</li>
+            <li><span class="font-mono">strategy</span> - Filter by strategy name</li>
+            <li><span class="font-mono">pair</span> - Filter by trading pair</li>
+        </ul>
+
+        <h4 class="font-semibold text-dollar-green mb-2">Example Response:</h4>
+        <pre class="bg-dark-element p-3 rounded font-mono text-gray-300 overflow-x-auto mb-3">
+{
+    "executions": [
+        {
+            "id": "d4c3b2a1",
+            "opportunity_id": "a1b2c3d4",
+            "strategy": "basic_arbitrage",
+            "pair": "BTC-USDT",
+            "buy_exchange": "binance",
+            "sell_exchange": "coinbase",
+            "executed_buy_price": 29500.50,
+            "executed_sell_price": 29550.25,
+            "volume": 0.15,
+            "profit": 7.46,
+            "status": "completed",
+            "timestamp": "2023-07-01T12:35:10Z"
+        },
+        // ...more executions
+    ]
+}
+        </pre>
+    </div>
+
+    <!-- Strategies Endpoint -->
+    <div>
+        <div class="flex items-start mb-2">
+            <span class="px-2 py-1 bg-dollar-green text-dark-bg rounded-md font-mono mr-3">GET</span>
+            <h3 class="text-lg font-semibold text-dollar-green">/strategies</h3>
+        </div>
+        <p class="text-gray-300 mb-3">Get information about available trading strategies.</p>
+
+        <h4 class="font-semibold text-dollar-green mb-2">Example Response:</h4>
+        <pre class="bg-dark-element p-3 rounded font-mono text-gray-300 overflow-x-auto mb-3">
+{
+    "strategies": [
+        {
+            "id": 1,
+            "name": "basic_arbitrage",
+            "starting_capital": 10000,
+            "min_spread": 0.05,
+            "net_profit": 523.45,
+            "trade_count": 147,
+            "is_active": true
+        },
+        // ...more strategies
+    ]
+}
+        </pre>
+    </div>
+</div>
+{% endblock %}

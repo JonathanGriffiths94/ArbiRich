@@ -5,9 +5,24 @@ from typing import Dict
 import psycopg2
 import redis
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
-router = APIRouter(prefix="/api", tags=["Status"])
+"""
+Status API
+
+Provides endpoints for checking the status of the ArbiRich system.
+"""
+
+router = APIRouter(
+    prefix="/status",
+    tags=["System Status"],
+)
 logger = logging.getLogger(__name__)
+
+
+class StatusResponse(BaseModel):
+    status: str
+    version: str = "0.1.0"
 
 
 @router.get("/health")
@@ -53,9 +68,12 @@ async def health_check() -> Dict[str, str]:
     return status
 
 
-@router.get("/")
-async def root() -> Dict[str, str]:
+@router.get("/", response_model=StatusResponse)
+async def get_status():
     """
-    Root endpoint
+    Get the current status of the ArbiRich system.
     """
-    return {"message": "Welcome to ArbiRich API"}
+    return {
+        "status": "operational",
+        "version": "0.1.0",
+    }

@@ -1,8 +1,8 @@
-"""Initial migration
+"""auto
 
-Revision ID: f454e0982d06
+Revision ID: 272a10e9a349
 Revises:
-Create Date: 2025-03-17 22:24:28.574373
+Create Date: 2025-03-23 12:35:38.143769
 
 """
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "f454e0982d06"
+revision: str = "272a10e9a349"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -35,6 +35,7 @@ def upgrade() -> None:
         sa.Column("api_response_time", sa.Integer(), nullable=True),
         sa.Column("mapping", sa.JSON(), nullable=True),
         sa.Column("additional_info", sa.JSON(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("created_at", sa.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name"),
@@ -45,6 +46,7 @@ def upgrade() -> None:
         sa.Column("base_currency", sa.String(), nullable=False),
         sa.Column("quote_currency", sa.String(), nullable=False),
         sa.Column("symbol", sa.String(), nullable=False),
+        sa.Column("is_active", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("base_currency", "quote_currency", name="uix_pair_base_quote"),
         sa.UniqueConstraint("symbol"),
@@ -61,9 +63,47 @@ def upgrade() -> None:
         sa.Column("net_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
         sa.Column("trade_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("start_timestamp", sa.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
+        sa.Column("is_active", sa.Boolean(), server_default=sa.text("false"), nullable=False),
         sa.Column("last_updated", sa.TIMESTAMP(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name"),
+    )
+    op.create_table(
+        "strategy_metrics",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("strategy_id", sa.Integer(), nullable=False),
+        sa.Column("period_start", sa.DateTime(), nullable=False),
+        sa.Column("period_end", sa.DateTime(), nullable=False),
+        sa.Column("win_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("loss_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("win_rate", sa.Numeric(precision=5, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("gross_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("gross_loss", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("net_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("profit_factor", sa.Numeric(precision=8, scale=4), server_default=sa.text("0"), nullable=False),
+        sa.Column("max_drawdown", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column(
+            "max_drawdown_percentage", sa.Numeric(precision=5, scale=2), server_default=sa.text("0"), nullable=False
+        ),
+        sa.Column(
+            "avg_profit_per_trade", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False
+        ),
+        sa.Column("avg_loss_per_trade", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("risk_reward_ratio", sa.Numeric(precision=8, scale=4), server_default=sa.text("0"), nullable=False),
+        sa.Column("total_volume", sa.Numeric(precision=18, scale=8), server_default=sa.text("0"), nullable=False),
+        sa.Column(
+            "avg_volume_per_trade", sa.Numeric(precision=18, scale=8), server_default=sa.text("0"), nullable=False
+        ),
+        sa.Column("avg_hold_time_seconds", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("market_volatility", sa.Numeric(precision=8, scale=4), nullable=True),
+        sa.Column("correlation_to_market", sa.Numeric(precision=5, scale=2), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=True),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["strategy_id"],
+            ["strategies.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
     op.create_table(
         "trade_opportunities",
@@ -92,6 +132,44 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["strategy"],
             ["strategies.name"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_table(
+        "strategy_exchange_metrics",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("strategy_metrics_id", sa.Integer(), nullable=False),
+        sa.Column("exchange_id", sa.Integer(), nullable=False),
+        sa.Column("trade_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("net_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("win_rate", sa.Numeric(precision=5, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["exchange_id"],
+            ["exchanges.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["strategy_metrics_id"],
+            ["strategy_metrics.id"],
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_table(
+        "strategy_trading_pair_metrics",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("strategy_metrics_id", sa.Integer(), nullable=False),
+        sa.Column("trading_pair_id", sa.Integer(), nullable=False),
+        sa.Column("trade_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("net_profit", sa.Numeric(precision=18, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("win_rate", sa.Numeric(precision=5, scale=2), server_default=sa.text("0"), nullable=False),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=True),
+        sa.ForeignKeyConstraint(
+            ["strategy_metrics_id"],
+            ["strategy_metrics.id"],
+        ),
+        sa.ForeignKeyConstraint(
+            ["trading_pair_id"],
+            ["pairs.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -138,7 +216,10 @@ def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_table("trade_executions")
+    op.drop_table("strategy_trading_pair_metrics")
+    op.drop_table("strategy_exchange_metrics")
     op.drop_table("trade_opportunities")
+    op.drop_table("strategy_metrics")
     op.drop_table("strategies")
     op.drop_table("pairs")
     op.drop_table("exchanges")

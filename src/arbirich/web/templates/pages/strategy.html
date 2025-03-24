@@ -1,0 +1,330 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}ArbiRich - {{ strategy.name }} Strategy{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-bold text-lime-green">{{ strategy.name }}</h1>
+    <a href="/strategies"
+        class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300">
+        Back to Strategies
+    </a>
+</div>
+
+<!-- Strategy Overview Card -->
+<div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
+    <h2 class="text-xl font-bold text-dollar-green mb-4">Strategy Overview</h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-dark-element p-4 rounded-lg">
+            <p class="text-gray-400 text-sm">Starting Capital</p>
+            <p class="text-xl font-semibold">${{ strategy.starting_capital | round(2) }}</p>
+        </div>
+
+        <div class="bg-dark-element p-4 rounded-lg">
+            <p class="text-gray-400 text-sm">Net Profit</p>
+            <p
+                class="text-xl font-semibold {% if strategy.net_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                ${{ strategy.net_profit | round(2) }}
+            </p>
+        </div>
+
+        <div class="bg-dark-element p-4 rounded-lg">
+            <p class="text-gray-400 text-sm">ROI</p>
+            <p
+                class="text-xl font-semibold {% if strategy.net_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                {{ ((strategy.net_profit / strategy.starting_capital) * 100) | round(2) }}%
+            </p>
+        </div>
+
+        <div class="bg-dark-element p-4 rounded-lg">
+            <p class="text-gray-400 text-sm">Trade Count</p>
+            <p class="text-xl font-semibold">{{ strategy.trade_count }}</p>
+        </div>
+    </div>
+</div>
+
+<!-- Add metrics section to the existing strategy template -->
+
+<!-- Add this after the strategy header section but before opportunities/executions -->
+{% if metrics %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <!-- Performance Metrics Card -->
+    <div class="dashboard-card rounded-lg shadow-md p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-dollar-green">Performance Metrics</h2>
+            <a href="/strategy/{{ strategy.name }}/recalculate-metrics"
+                class="text-sm text-lime-green hover:text-lime-700 hover:underline">
+                Recalculate
+            </a>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <h3 class="text-sm font-medium text-gray-400">Win Rate</h3>
+                <p class="text-lg font-bold">{{ metrics.win_rate|round(2) }}%</p>
+            </div>
+            <div>
+                <h3 class="text-sm font-medium text-gray-400">Profit Factor</h3>
+                <p class="text-lg font-bold">{{ metrics.profit_factor|round(2) }}</p>
+            </div>
+            <div>
+                <h3 class="text-sm font-medium text-gray-400">Wins / Losses</h3>
+                <p class="text-lg font-bold">{{ metrics.win_count }} / {{ metrics.loss_count }}</p>
+            </div>
+            <div>
+                <h3 class="text-sm font-medium text-gray-400">Risk/Reward</h3>
+                <p class="text-lg font-bold">{{ metrics.risk_reward_ratio|round(2) }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Financial Metrics Card -->
+    <div class="dashboard-card rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-bold text-dollar-green mb-4">Financial Metrics</h2>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <h3 class="text-sm font-medium text-gray-400">Gross Profit</h3>
+                <p class="text-lg font-bold text-profit-green">${{ metrics.gross_profit|round(2) }}</p>
+            </div>
+            <div>
+                <h3 class="text-sm font-medium text-gray-400">Gross Loss</h3>
+                <p class="text-lg font-bold text-loss-red">${{ metrics.gross_loss|round(2) }}</p>
+            </div>
+            <div>
+                <h3 class="text-sm font-medium text-gray-400">Net Profit</h3>
+                <p
+                    class="text-lg font-bold {% if metrics.net_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                    ${{ metrics.net_profit|round(2) }}
+                </p>
+            </div>
+            <div>
+                <h3 class="text-sm font-medium text-gray-400">Max Drawdown</h3>
+                <p class="text-lg font-bold text-loss-red">{{ metrics.max_drawdown_percentage|round(2) }}%</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trading Pair Metrics -->
+{% if pair_metrics %}
+<div class="dashboard-card rounded-lg shadow-md p-4 mb-8">
+    <h2 class="text-xl font-bold text-dollar-green mb-4">Trading Pair Performance</h2>
+    <div class="overflow-x-auto">
+        <table class="w-full table-auto">
+            <thead class="bg-dark-element">
+                <tr>
+                    <th class="px-4 py-2 text-left text-dollar-green">Pair</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Trades</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Win Rate</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Net Profit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pair in pair_metrics %}
+                <tr class="border-t border-dark-element hover:bg-dark-element">
+                    <td class="px-4 py-2 font-medium">{{ pair.trading_pair.symbol }}</td>
+                    <td class="px-4 py-2 text-right">{{ pair.trade_count }}</td>
+                    <td class="px-4 py-2 text-right">{{ pair.win_rate|round(2) }}%</td>
+                    <td
+                        class="px-4 py-2 text-right {% if pair.net_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                        ${{ pair.net_profit|round(2) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Exchange Metrics -->
+{% if exchange_metrics %}
+<div class="dashboard-card rounded-lg shadow-md p-4 mb-8">
+    <h2 class="text-xl font-bold text-dollar-green mb-4">Exchange Performance</h2>
+    <div class="overflow-x-auto">
+        <table class="w-full table-auto">
+            <thead class="bg-dark-element">
+                <tr>
+                    <th class="px-4 py-2 text-left text-dollar-green">Exchange</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Trades</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Win Rate</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Net Profit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exch in exchange_metrics %}
+                <tr class="border-t border-dark-element hover:bg-dark-element">
+                    <td class="px-4 py-2 font-medium">{{ exch.exchange.name }}</td>
+                    <td class="px-4 py-2 text-right">{{ exch.trade_count }}</td>
+                    <td class="px-4 py-2 text-right">{{ exch.win_rate|round(2) }}%</td>
+                    <td
+                        class="px-4 py-2 text-right {% if exch.net_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                        ${{ exch.net_profit|round(2) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% else %}
+<!-- No metrics found message -->
+<div class="dashboard-card rounded-lg shadow-md p-6 mb-8">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold text-dollar-green">Performance Metrics</h2>
+    </div>
+    <div class="text-center py-6">
+        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2z"></path>
+        </svg>
+        <p class="text-lg text-gray-400 mb-4">No metrics available for this strategy.</p>
+        <a href="/strategy/{{ strategy.name }}/recalculate-metrics"
+            class="bg-lime-green hover:bg-lime-700 text-black py-2 px-4 rounded-lg transition-colors duration-300">
+            Calculate Metrics
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<!-- Strategy Configuration -->
+<div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
+    <h2 class="text-xl font-bold text-dollar-green mb-4">Strategy Configuration</h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+            <h3 class="text-lg font-semibold text-dollar-green mb-3">General Settings</h3>
+            <ul class="space-y-2">
+                <li class="flex justify-between">
+                    <span class="text-gray-400">Strategy Type:</span>
+                    <span class="font-semibold">
+                        {% if strategy.additional_info and strategy.additional_info is mapping %}
+                        {{ strategy.additional_info.get('type', 'basic') }}
+                        {% else %}
+                        basic
+                        {% endif %}
+                    </span>
+                </li>
+                <li class="flex justify-between">
+                    <span class="text-gray-400">Minimum Spread:</span>
+                    <span class="font-semibold">{{ (strategy.min_spread * 100) | round(4) }}%</span>
+                </li>
+                <li class="flex justify-between">
+                    <span class="text-gray-400">Status:</span>
+                    <span
+                        class="font-semibold {% if strategy.is_active %}text-profit-green{% else %}text-gray-400{% endif %}">
+                        {% if strategy.is_active is defined and strategy.is_active %}Active{% else %}Inactive{% endif %}
+                    </span>
+                </li>
+                <li class="flex justify-between">
+                    <span class="text-gray-400">Start Date:</span>
+                    <span class="font-semibold">{{ strategy.start_timestamp.strftime('%Y-%m-%d') if
+                        strategy.start_timestamp else 'N/A' }}</span>
+                </li>
+            </ul>
+        </div>
+
+        <div>
+            <h3 class="text-lg font-semibold text-dollar-green mb-3">Advanced Settings</h3>
+            <ul class="space-y-2">
+                {% if strategy.additional_info and strategy.additional_info is mapping %}
+                {% for key, value in strategy.additional_info.items() if key != 'type' %}
+                <li class="flex justify-between">
+                    <span class="text-gray-400">{{ key|replace('_', ' ')|title }}:</span>
+                    <span class="font-semibold">{{ value }}</span>
+                </li>
+                {% else %}
+                <li class="text-gray-400">No additional configuration</li>
+                {% endfor %}
+                {% else %}
+                <li class="text-gray-400">No additional configuration</li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Strategy Performance -->
+<div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold text-dollar-green">Performance Metrics</h2>
+        <a href="/admin/calculate-metrics/{{ strategy.id }}?period_days=30"
+            class="text-xs bg-dollar-green text-dark-bg py-1 px-2 rounded">
+            Recalculate
+        </a>
+    </div>
+
+    {% if metrics %}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="bg-dark-element p-4 rounded-lg">
+            <p class="text-gray-400 text-sm">Win Rate</p>
+            <p class="text-xl font-semibold">{{ metrics.win_rate }}%</p>
+            <p class="text-gray-400 text-xs">{{ metrics.win_count }} wins / {{ metrics.loss_count }} losses</p>
+        </div>
+
+        <div class="bg-dark-element p-4 rounded-lg">
+            <p class="text-gray-400 text-sm">Profit Factor</p>
+            <p class="text-xl font-semibold">{{ metrics.profit_factor }}</p>
+        </div>
+
+        <div class="bg-dark-element p-4 rounded-lg">
+            <p class="text-gray-400 text-sm">Max Drawdown</p>
+            <p class="text-xl font-semibold text-loss-red">${{ metrics.max_drawdown }}</p>
+            <p class="text-gray-400 text-xs">{{ metrics.max_drawdown_percentage }}%</p>
+        </div>
+    </div>
+    {% else %}
+    <p class="text-gray-400">No metrics data available</p>
+    {% endif %}
+</div>
+
+<!-- Recent Executions -->
+<div class="dashboard-card rounded-lg shadow-md p-6">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold text-dollar-green">Recent Executions</h2>
+        <span class="text-sm text-gray-400">Showing latest {{ executions|length }}</span>
+    </div>
+
+    {% if executions %}
+    <div class="overflow-x-auto">
+        <table class="w-full table-auto">
+            <thead class="bg-dark-element">
+                <tr>
+                    <th class="px-4 py-2 text-left text-dollar-green">Pair</th>
+                    <th class="px-4 py-2 text-left text-dollar-green">Buy Exchange</th>
+                    <th class="px-4 py-2 text-left text-dollar-green">Sell Exchange</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Buy Price</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Sell Price</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Volume</th>
+                    <th class="px-4 py-2 text-right text-dollar-green">Profit</th>
+                    <th class="px-4 py-2 text-center text-dollar-green">Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for execution in executions %}
+                <tr class="border-t border-dark-element hover:bg-dark-element">
+                    <td class="px-4 py-2 font-medium">{{ execution.pair }}</td>
+                    <td class="px-4 py-2">{{ execution.buy_exchange }}</td>
+                    <td class="px-4 py-2">{{ execution.sell_exchange }}</td>
+                    <td class="px-4 py-2 text-right">${{ execution.executed_buy_price | round(4) }}</td>
+                    <td class="px-4 py-2 text-right">${{ execution.executed_sell_price | round(4) }}</td>
+                    <td class="px-4 py-2 text-right">{{ execution.volume | round(4) }}</td>
+                    <td
+                        class="px-4 py-2 text-right {% if execution.profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                        ${{ execution.profit | round(2) }}
+                    </td>
+                    <td class="px-4 py-2 text-center text-gray-300">
+                        {{ execution.execution_timestamp.strftime('%Y-%m-%d %H:%M') }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-gray-400">No executions found for this strategy</p>
+    {% endif %}
+</div>
+{% endblock %}

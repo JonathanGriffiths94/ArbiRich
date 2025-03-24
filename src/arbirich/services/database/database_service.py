@@ -1,10 +1,13 @@
+import json
 import logging
 from datetime import datetime
-from typing import List, Optional, Union
+from decimal import Decimal
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql import select
 
 from src.arbirich.config.config import DATABASE_URL
@@ -12,6 +15,9 @@ from src.arbirich.models.models import (
     Exchange,
     Pair,
     Strategy,
+    StrategyExchangeMetrics,
+    StrategyMetrics,
+    StrategyTradingPairMetrics,
     TradeExecution,
     TradeOpportunity,
 )
@@ -37,6 +43,21 @@ class DatabaseService:
     def __init__(self, engine: Engine = engine):
         self.engine = engine
         self.connection = None
+        self._session = None
+        self.Session = sessionmaker(bind=engine)
+        # Reference to tables for easier access
+        self.tables = type(
+            "Tables",
+            (),
+            {
+                "exchanges": exchanges,
+                "pairs": pairs,
+                "strategies": strategies,
+                "trade_opportunities": trade_opportunities,
+                "trade_executions": trade_executions,
+            },
+        )
+        self.logger = logger
 
     def __enter__(self):
         self.connection = self.engine.connect()
@@ -46,20 +67,39 @@ class DatabaseService:
         if self.connection:
             self.connection.close()
             self.connection = None
+        if self._session:
+            self._session.close()
+            self._session = None
+
+    @property
+    def session(self) -> Session:
+        """Get a SQLAlchemy session."""
+        if self._session is None:
+            self._session = self.Session()
+        return self._session
 
     # ---- Exchange operations ----
     def create_exchange(self, exchange: Exchange) -> Exchange:
         with self.engine.begin() as conn:
-            result = conn.execute(
-                exchanges.insert()
-                .values(
-                    name=exchange.name,
-                    api_rate_limit=exchange.api_rate_limit,
-                    trade_fees=exchange.trade_fees,
-                    additional_info=exchange.additional_info,
-                )
-                .returning(*exchanges.c)
-            )
+            # Convert to db dict if it's a Pydantic model
+            if hasattr(exchange, "to_db_dict"):
+                exchange_data = exchange.to_db_dict()
+            else:
+                exchange_data = {
+                    "name": exchange.name,
+                    "api_rate_limit": exchange.api_rate_limit,
+                    "trade_fees": exchange.trade_fees,
+                    "rest_url": exchange.rest_url,
+                    "ws_url": exchange.ws_url,
+                    "delimiter": exchange.delimiter,
+                    "withdrawal_fee": exchange.withdrawal_fee,
+                    "api_response_time": exchange.api_response_time,
+                    "mapping": exchange.mapping,
+                    "additional_info": exchange.additional_info,
+                    "is_active": exchange.is_active,
+                }
+
+            result = conn.execute(exchanges.insert().values(**exchange_data).returning(*exchanges.c))
             row = result.first()
             return Exchange.model_validate(row._asdict())
 
@@ -69,17 +109,90 @@ class DatabaseService:
             row = result.first()
             return Exchange.model_validate(row._asdict()) if row else None
 
+    def get_exchange_by_name(self, name: str) -> Optional[Exchange]:
+        """
+        Get an exchange by its name.
+
+        Args:
+            name: The name of the exchange
+
+        Returns:
+            Exchange object if found, None otherwise
+        """
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(exchanges.select().where(exchanges.c.name == name))
+                row = result.first()
+                return Exchange.model_validate(row._asdict()) if row else None
+        except Exception as e:
+            self.logger.error(f"Error getting exchange by name {name}: {e}")
+            raise
+
     def get_all_exchanges(self) -> List[Exchange]:
         with self.engine.begin() as conn:
             result = conn.execute(exchanges.select())
             return [Exchange.model_validate(row._asdict()) for row in result]
 
-    def update_exchange(self, exchange_id: int, **kwargs) -> Optional[Exchange]:
+    def get_active_exchanges(self) -> List[Exchange]:
+        """Get all active exchanges."""
         with self.engine.begin() as conn:
-            conn.execute(exchanges.update().where(exchanges.c.id == exchange_id).values(**kwargs))
-            result = conn.execute(exchanges.select().where(exchanges.c.id == exchange_id))
-            row = result.first()
-            return Exchange.model_validate(row._asdict()) if row else None
+            result = conn.execute(exchanges.select().where(exchanges.c.is_active == True))
+            return [Exchange.model_validate(row._asdict()) for row in result]
+
+    def update_exchange(self, exchange: Exchange) -> Exchange:
+        """
+        Update an existing exchange.
+
+        Args:
+            exchange: Exchange object to update
+
+        Returns:
+            Updated Exchange object
+        """
+        try:
+            # Convert Pydantic model to dict for database
+            if hasattr(exchange, "to_db_dict"):
+                exchange_data = exchange.to_db_dict()
+            else:
+                exchange_data = exchange.model_dump()
+
+            # Remove id from the data if present
+            if "id" in exchange_data:
+                exchange_id = exchange_data["id"]
+                del exchange_data["id"]
+            else:
+                exchange_id = exchange.id
+
+            # Update the exchange
+            with self.engine.begin() as conn:
+                conn.execute(exchanges.update().where(exchanges.c.id == exchange_id).values(**exchange_data))
+                result = conn.execute(exchanges.select().where(exchanges.c.id == exchange_id))
+                row = result.first()
+                return Exchange.model_validate(row._asdict())
+
+        except Exception as e:
+            self.logger.error(f"Error updating exchange {exchange.name}: {e}")
+            raise
+
+    def activate_exchange(self, exchange_id: int) -> bool:
+        """Activate an exchange by ID."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(exchanges.update().where(exchanges.c.id == exchange_id).values(is_active=True))
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error activating exchange {exchange_id}: {e}")
+            return False
+
+    def deactivate_exchange(self, exchange_id: int) -> bool:
+        """Deactivate an exchange by ID."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(exchanges.update().where(exchanges.c.id == exchange_id).values(is_active=False))
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error deactivating exchange {exchange_id}: {e}")
+            return False
 
     def delete_exchange(self, exchange_id: int) -> bool:
         with self.engine.begin() as conn:
@@ -89,26 +202,33 @@ class DatabaseService:
     # ---- Pair operations ----
     def create_pair(self, pair: Pair) -> Pair:
         """Create a pair with proper symbol handling."""
-        with self.engine.begin() as conn:
+        try:
             # Ensure symbol is set if not provided
             if not pair.symbol:
                 pair.symbol = f"{pair.base_currency}-{pair.quote_currency}"
 
             # Debug log to verify symbol is being set
-            print(f"Creating pair with symbol: {pair.symbol}")
+            logger.debug(f"Creating pair with symbol: {pair.symbol}")
 
-            # Important: Include symbol in the values dictionary
-            result = conn.execute(
-                pairs.insert()
-                .values(
-                    base_currency=pair.base_currency,
-                    quote_currency=pair.quote_currency,
-                    symbol=pair.symbol,  # Now included in the SQL query
-                )
-                .returning(*pairs.c)
-            )
-            row = result.first()
-            return Pair.model_validate(row._asdict())
+            # Convert to db dict if it's a Pydantic model
+            if hasattr(pair, "to_db_dict"):
+                pair_data = pair.to_db_dict()
+            else:
+                pair_data = {
+                    "base_currency": pair.base_currency,
+                    "quote_currency": pair.quote_currency,
+                    "symbol": pair.symbol,
+                    "is_active": pair.is_active,
+                }
+
+            with self.engine.begin() as conn:
+                # Important: Include symbol in the values dictionary
+                result = conn.execute(pairs.insert().values(**pair_data).returning(*pairs.c))
+                row = result.first()
+                return Pair.model_validate(row._asdict())
+        except Exception as e:
+            logger.error(f"Error creating pair: {e}")
+            raise
 
     def get_pair(self, pair_id: int) -> Optional[Pair]:
         with self.engine.begin() as conn:
@@ -116,26 +236,126 @@ class DatabaseService:
             row = result.first()
             return Pair.model_validate(row._asdict()) if row else None
 
+    def get_pair_by_symbol(self, symbol: str) -> Optional[Pair]:
+        """
+        Get a trading pair by its symbol.
+
+        Args:
+            symbol: The symbol of the trading pair
+
+        Returns:
+            Pair object if found, None otherwise
+        """
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(pairs.select().where(pairs.c.symbol == symbol))
+                row = result.first()
+                return Pair.model_validate(row._asdict()) if row else None
+        except Exception as e:
+            self.logger.error(f"Error getting pair by symbol {symbol}: {e}")
+            raise
+
     def get_all_pairs(self) -> List[Pair]:
         with self.engine.begin() as conn:
             result = conn.execute(pairs.select())
             return [Pair.model_validate(row._asdict()) for row in result]
 
+    def get_active_pairs(self) -> List[Pair]:
+        """Get all active trading pairs."""
+        with self.engine.begin() as conn:
+            result = conn.execute(pairs.select().where(pairs.c.is_active == True))
+            return [Pair.model_validate(row._asdict()) for row in result]
+
+    def update_pair(self, pair: Pair) -> Pair:
+        """
+        Update an existing trading pair.
+
+        Args:
+            pair: Pair object to update
+
+        Returns:
+            Updated Pair object
+        """
+        try:
+            # Convert Pydantic model to dict for database
+            if hasattr(pair, "to_db_dict"):
+                pair_data = pair.to_db_dict()
+            else:
+                pair_data = pair.model_dump()
+
+            # Remove id from the data if present
+            if "id" in pair_data:
+                pair_id = pair_data["id"]
+                del pair_data["id"]
+            else:
+                pair_id = pair.id
+
+            # Update the pair
+            with self.engine.begin() as conn:
+                conn.execute(pairs.update().where(pairs.c.id == pair_id).values(**pair_data))
+                result = conn.execute(pairs.select().where(pairs.c.id == pair_id))
+                row = result.first()
+                return Pair.model_validate(row._asdict())
+
+        except Exception as e:
+            self.logger.error(f"Error updating pair {pair.symbol}: {e}")
+            raise
+
+    def activate_pair(self, pair_id: int) -> bool:
+        """Activate a pair by ID."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(pairs.update().where(pairs.c.id == pair_id).values(is_active=True))
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error activating pair {pair_id}: {e}")
+            return False
+
+    def deactivate_pair(self, pair_id: int) -> bool:
+        """Deactivate a pair by ID."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(pairs.update().where(pairs.c.id == pair_id).values(is_active=False))
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error deactivating pair {pair_id}: {e}")
+            return False
+
     # ---- Strategy operations ----
     def create_strategy(self, strategy: Strategy) -> Strategy:
-        with self.engine.begin() as conn:
-            result = conn.execute(
-                strategies.insert()
-                .values(
-                    name=strategy.name,
-                    starting_capital=strategy.starting_capital,
-                    min_spread=strategy.min_spread,
-                    additional_info=strategy.additional_info,
-                )
-                .returning(*strategies.c)
-            )
-            row = result.first()
-            return Strategy.model_validate(row._asdict())
+        try:
+            # Convert additional_info to JSON string if it's a dict
+            strategy_data = {}
+            if hasattr(strategy, "model_dump"):
+                strategy_dict = strategy.model_dump()
+                if isinstance(strategy_dict.get("additional_info"), dict):
+                    strategy_dict["additional_info"] = json.dumps(strategy_dict["additional_info"])
+                strategy_data = strategy_dict
+            else:
+                strategy_data = {
+                    "name": strategy.name,
+                    "starting_capital": strategy.starting_capital,
+                    "min_spread": strategy.min_spread,
+                    "additional_info": (
+                        json.dumps(strategy.additional_info)
+                        if isinstance(strategy.additional_info, dict)
+                        else strategy.additional_info
+                    ),
+                    "is_active": strategy.is_active,
+                }
+
+            # Remove fields that shouldn't be part of the insert
+            for field in ["id", "metrics", "latest_metrics"]:
+                if field in strategy_data:
+                    del strategy_data[field]
+
+            with self.engine.begin() as conn:
+                result = conn.execute(strategies.insert().values(**strategy_data).returning(*strategies.c))
+                row = result.first()
+                return Strategy.model_validate(row._asdict())
+        except Exception as e:
+            logger.error(f"Error creating strategy: {e}")
+            raise
 
     def get_strategy(self, strategy_id: int) -> Optional[Strategy]:
         with self.engine.begin() as conn:
@@ -143,16 +363,95 @@ class DatabaseService:
             row = result.first()
             return Strategy.model_validate(row._asdict()) if row else None
 
+    def get_strategy_by_name(self, name: str) -> Optional[Strategy]:
+        """
+        Get a strategy by its name.
+
+        Args:
+            name: The name of the strategy
+
+        Returns:
+            Strategy object if found, None otherwise
+        """
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(strategies.select().where(strategies.c.name == name))
+                row = result.first()
+                return Strategy.model_validate(row._asdict()) if row else None
+        except Exception as e:
+            self.logger.error(f"Error getting strategy by name {name}: {e}")
+            raise
+
     def get_all_strategies(self) -> List[Strategy]:
         with self.engine.begin() as conn:
             result = conn.execute(strategies.select())
             return [Strategy.model_validate(row._asdict()) for row in result]
 
+    def get_active_strategies(self) -> List[Strategy]:
+        """Get all active strategies."""
+        with self.engine.begin() as conn:
+            result = conn.execute(strategies.select().where(strategies.c.is_active == True))
+            return [Strategy.model_validate(row._asdict()) for row in result]
+
+    def update_strategy(self, strategy: Strategy) -> Strategy:
+        """
+        Update an existing strategy.
+
+        Args:
+            strategy: Strategy object to update
+
+        Returns:
+            Updated Strategy object
+        """
+        try:
+            # Convert additional_info to JSON string if it's a dict
+            if hasattr(strategy, "model_dump"):
+                strategy_dict = strategy.model_dump()
+                if isinstance(strategy_dict.get("additional_info"), dict):
+                    strategy_dict["additional_info"] = json.dumps(strategy_dict["additional_info"])
+            else:
+                strategy_dict = {
+                    "name": strategy.name,
+                    "starting_capital": strategy.starting_capital,
+                    "min_spread": strategy.min_spread,
+                    "additional_info": (
+                        json.dumps(strategy.additional_info)
+                        if isinstance(strategy.additional_info, dict)
+                        else strategy.additional_info
+                    ),
+                    "total_profit": strategy.total_profit,
+                    "total_loss": strategy.total_loss,
+                    "net_profit": strategy.net_profit,
+                    "trade_count": strategy.trade_count,
+                    "is_active": strategy.is_active,
+                }
+
+            # Remove id from the dict
+            if "id" in strategy_dict:
+                strategy_id = strategy_dict["id"]
+                del strategy_dict["id"]
+            else:
+                strategy_id = strategy.id
+
+            # Remove fields that shouldn't be part of the update
+            for field in ["metrics", "latest_metrics"]:
+                if field in strategy_dict:
+                    del strategy_dict[field]
+
+            # Update the strategy
+            with self.engine.begin() as conn:
+                conn.execute(strategies.update().where(strategies.c.id == strategy_id).values(**strategy_dict))
+                result = conn.execute(strategies.select().where(strategies.c.id == strategy_id))
+                row = result.first()
+                return Strategy.model_validate(row._asdict())
+
+        except Exception as e:
+            self.logger.error(f"Error updating strategy {strategy.name}: {e}")
+            raise
+
     def update_strategy_stats(self, strategy_name: str, profit: float = 0, loss: float = 0, trade_count: int = 0):
         """Update strategy statistics after a trade execution"""
         try:
-            from decimal import Decimal
-
             with self.engine.begin() as conn:
                 # Get current stats
                 query = select(strategies.c.total_profit, strategies.c.total_loss, strategies.c.trade_count).where(
@@ -197,6 +496,26 @@ class DatabaseService:
                     logger.warning(f"Strategy {strategy_name} not found in database")
         except Exception as e:
             logger.error(f"Error updating strategy stats: {e}", exc_info=True)
+
+    def activate_strategy(self, strategy_id: int) -> bool:
+        """Activate a strategy by ID."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(strategies.update().where(strategies.c.id == strategy_id).values(is_active=True))
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error activating strategy {strategy_id}: {e}")
+            return False
+
+    def deactivate_strategy(self, strategy_id: int) -> bool:
+        """Deactivate a strategy by ID."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(strategies.update().where(strategies.c.id == strategy_id).values(is_active=False))
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Error deactivating strategy {strategy_id}: {e}")
+            return False
 
     # ---- TradeOpportunity operations ----
     def create_trade_opportunity(self, opportunity: TradeOpportunity) -> TradeOpportunity:
@@ -302,3 +621,87 @@ class DatabaseService:
                 )
                 executions.append(execution)
             return executions
+
+    # ---- Strategy Metrics operations ----
+    def create_strategy_metrics(self, metrics):
+        """Create a new strategy metrics record."""
+        self.session.add(metrics)
+        self.session.commit()
+        return metrics
+
+    def get_strategy_metrics(self, metrics_id=None, strategy_id=None):
+        """
+        Get strategy metrics by ID or all metrics for a specific strategy.
+
+        Args:
+            metrics_id: Optional ID of the specific metrics record
+            strategy_id: Optional ID of the strategy to get all metrics for
+
+        Returns:
+            A single metrics record or list of metrics records
+        """
+        try:
+            if metrics_id is not None:
+                return self.session.query(StrategyMetrics).filter(StrategyMetrics.id == metrics_id).first()
+            elif strategy_id is not None:
+                return (
+                    self.session.query(StrategyMetrics)
+                    .filter(StrategyMetrics.strategy_id == strategy_id)
+                    .order_by(StrategyMetrics.period_end.desc())
+                    .all()
+                )
+            else:
+                return None
+        except Exception as e:
+            logger.error(f"Error getting strategy metrics: {e}")
+            raise
+
+    def get_latest_strategy_metrics(self, strategy_id):
+        """Get the most recent metrics for a strategy."""
+        return (
+            self.session.query(StrategyMetrics)
+            .filter(StrategyMetrics.strategy_id == strategy_id)
+            .order_by(StrategyMetrics.period_end.desc())
+            .first()
+        )
+
+    def get_strategy_metrics_for_period(
+        self, strategy_id: int, start_date: datetime, end_date: datetime
+    ) -> List[StrategyMetrics]:
+        """Get all metrics for a strategy within a period."""
+        try:
+            return (
+                self.session.query(StrategyMetrics)
+                .filter(
+                    StrategyMetrics.strategy_id == strategy_id,
+                    StrategyMetrics.period_end >= start_date,
+                    StrategyMetrics.period_end <= end_date,
+                )
+                .order_by(StrategyMetrics.period_end.asc())
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting metrics for strategy {strategy_id} in period {start_date} to {end_date}: {e}")
+            return []
+
+    def create_strategy_trading_pair_metrics(self, metrics):
+        """Create a new strategy trading pair metrics record."""
+        self.session.add(metrics)
+        self.session.commit()
+        return metrics
+
+    def create_strategy_exchange_metrics(self, metrics):
+        """Create a new strategy exchange metrics record."""
+        self.session.add(metrics)
+        self.session.commit()
+        return metrics
+
+    def save_strategy_metrics(self, metrics):
+        """Save strategy metrics to the database."""
+        try:
+            self.session.add(metrics)
+            self.session.commit()
+            return metrics
+        except Exception as e:
+            self.session.rollback()
+            raise e

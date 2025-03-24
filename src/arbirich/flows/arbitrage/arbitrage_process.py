@@ -13,7 +13,7 @@ logger.setLevel(logging.INFO)
 
 
 def detect_arbitrage(
-    asset: str, state: OrderBookState, threshold: float, strategy_name: str = "arbitrage"
+    asset: str, state: OrderBookState, threshold: float, strategy_name: str = "basic_arbitrage"
 ) -> Optional[TradeOpportunity]:
     """
     Detect arbitrage opportunities for a given asset using the specified strategy.
@@ -29,6 +29,7 @@ def detect_arbitrage(
     """
     from src.arbirich.services.strategies.strategy_factory import get_strategy
 
+    logger.debug(f"Detecting arbitrage for: {strategy_name}")
     try:
         # Get the appropriate strategy
         strategy = get_strategy(strategy_name)

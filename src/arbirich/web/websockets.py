@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, List
 
 from fastapi import WebSocket
@@ -100,19 +101,105 @@ async def handle_websocket_message(websocket: WebSocket, message: str):
 
 
 async def websocket_broadcast_task():
-    """Background task to broadcast data to connected clients."""
-    while True:
+    """
+    Background task to broadcast updates via WebSockets.
+
+    This task runs continuously, polling for updates to send to connected clients.
+    """
+    from src.arbirich.services.redis.redis_service import RedisService
+
+    logger = logging.getLogger(__name__)
+    logger.info("Starting WebSocket broadcast task")
+
+    # Use a try-except block to catch and log exceptions
+    try:
+        # Initialize Redis for pub/sub
+        redis = RedisService()
+        logger.info("Redis service initialized for WebSocket broadcasts")
+
+        # Subscribe to relevant channels
+        pubsub = redis.client.pubsub()
+        pubsub.subscribe("broadcast")
+        pubsub.subscribe("status_updates")
+        pubsub.subscribe("trade_opportunities")
+        pubsub.subscribe("trade_executions")
+        logger.info("Subscribed to Redis channels for broadcasts")
+
+        # Run broadcast loop
+        while True:
+            # Process messages with a timeout to allow for clean shutdown
+            message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
+            if message:
+                try:
+                    # Process message and broadcast to clients
+                    channel = message.get("channel", b"unknown").decode("utf-8")
+                    data = message.get("data")
+
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+
+                    # Log the received message type but not the full content to avoid log spam
+                    logger.debug(f"Broadcasting message from channel {channel}")
+
+                    # Broadcast to active connections
+                    await broadcast_to_connections(channel, data)
+                except Exception as e:
+                    logger.error(f"Error processing WebSocket message: {e}", exc_info=True)
+
+            # Periodic broadcast of system status
+            await asyncio.sleep(0.1)  # Small sleep to prevent CPU hogging
+    except asyncio.CancelledError:
+        logger.info("WebSocket broadcast task cancelled, shutting down")
+        raise  # Re-raise to allow proper cleanup
+    except Exception as e:
+        logger.error(f"WebSocket broadcast task encountered an error: {e}", exc_info=True)
+        # Sleep briefly before exiting to avoid immediate restarts causing CPU spikes
+        await asyncio.sleep(1)
+        # Return normally to allow the application to continue running
+    finally:
+        # Clean up resources
         try:
-            # Get data from database
-            data = await get_full_dashboard_data()
-
-            # Broadcast to all connected clients
-            if manager.active_connections:
-                await manager.broadcast(data)
-                logger.debug(f"Broadcast data to {len(manager.active_connections)} clients")
-
-            # Wait before sending next update
-            await asyncio.sleep(30)  # Update every 30 seconds
+            pubsub.unsubscribe()
+            pubsub.close()
+            logger.info("Cleaned up WebSocket broadcast resources")
         except Exception as e:
-            logger.error(f"Error in websocket broadcast: {e}")
-            await asyncio.sleep(30)  # Wait before retrying
+            logger.error(f"Error cleaning up WebSocket resources: {e}")
+
+
+async def broadcast_to_connections(channel: str, data: str):
+    """
+    Broadcast a message to all connected WebSocket clients.
+
+    Args:
+        channel: The Redis channel the message came from
+        data: The message data (usually JSON string)
+    """
+    try:
+        # Parse the data to a dictionary if it's a string
+        if isinstance(data, str):
+            try:
+                import json
+
+                data_dict = json.loads(data)
+            except json.JSONDecodeError:
+                data_dict = {"raw": data}
+        else:
+            data_dict = {"raw": str(data)}
+
+        # Add channel information to the message
+        message = {
+            "type": channel.replace(":", "_"),  # Clean channel name for the frontend
+            "channel": channel,
+            "data": data_dict,
+            "timestamp": time.time(),
+        }
+
+        # Broadcast the message to all connected clients
+        for connection in manager.active_connections:
+            try:
+                await connection.send_text(json.dumps(message))
+            except Exception as e:
+                logger.error(f"Error sending message to client: {e}")
+                # Don't remove the connection here - do that only when receive_text throws
+    except Exception as e:
+        logger.error(f"Error preparing broadcast message: {e}")

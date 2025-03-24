@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArbiRich - Crypto Arbitrage Platform</title>
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'money-green': '#0d904f',
+                        'money-light': '#5cbf91',
+                        'money-dark': '#07713e',
+                        'dollar-green': '#85bb65',
+                        'dark-bg': '#0a1e14',
+                        'dark-card': '#122520',
+                        'dark-element': '#1c352d',
+                        'profit-green': '#3abe78',
+                        'loss-red': '#e55039',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js via CDN for graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/custom.css">
+    <!-- Icon -->
+    <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon">
+    <!-- Load sidebar.js script with defer attribute -->
+    <script src="/static/js/sidebar.js" defer></script>
+</head>
+
+<body class="bg-dark-bg text-gray-100">
+    <!-- Header -->
+    <header class="bg-dark-element p-4 shadow-md">
+        <div class="container mx-auto flex justify-between items-center">
+            <a href="/" class="text-xl font-bold logo flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mr-2" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                ArbiRich
+            </a>
+            <!-- Navigation links or other header content can go here -->
+        </div>
+    </header>
+
+    <!-- Mobile menu button (only visible on small screens) -->
+    <button id="mobile-menu-button" class="mobile-menu-button" aria-label="Toggle mobile menu">
+        <div class="hamburger-icon">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    </button>
+
+    <!-- Page layout with sidebar and content -->
+    <div class="flex h-screen pt-16">
+        <!-- Sidebar - will be controlled by JavaScript -->
+        <aside id="sidebar" class="bg-dark-element fixed top-0 left-0 h-full w-64 pt-16 shadow-lg z-30">
+            <!-- Sidebar content goes here -->
+            <nav class="px-4 py-4">
+                <ul>
+                    <li class="mb-2">
+                        <a href="/dashboard"
+                            class="sidebar-link flex items-center py-2 px-4 rounded-lg hover:bg-dark-card">
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <!-- Other menu items -->
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main content area -->
+        <div id="content-wrapper" class="flex-1 p-6 ml-64 transition-all duration-300">
+            <main class="container mx-auto">
+                <!-- Page content goes here -->
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-dark-element text-gray-400 p-4 mt-8">
+        <div class="container mx-auto text-center">
+            <p>ArbiRich Crypto Arbitrage Platform &copy; <span id="current-year"></span></p>
+        </div>
+    </footer>
+
+    <!-- Common scripts -->
+    <script>
+        // Set current year in footer
+        document.getElementById('current-year').textContent = new Date().getFullYear();
+    </script>
+
+    <!-- Custom page scripts -->
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

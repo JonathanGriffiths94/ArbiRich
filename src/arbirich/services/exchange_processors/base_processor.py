@@ -23,6 +23,8 @@ class BaseOrderBookProcessor(ABC):
     ):
         self.exchange = exchange
         self.product = product
+        self.mapping = {}
+        self.delimiter = ""
         self.subscription_type = subscription_type  # "snapshot" or "delta"
         self.use_rest_snapshot = use_rest_snapshot
         self.order_book = {"bids": {}, "asks": {}}
@@ -155,12 +157,10 @@ class BaseOrderBookProcessor(ABC):
             # If splitting fails, fall back to using the product as-is.
             return self.product.upper()
         # Check if quote currency has a mapping for the product
-        mapping = self.cfg.get("mapping", {})
-        if quote in mapping.keys():
-            quote = mapping[quote]
+        if quote in self.mapping.keys():
+            quote = self.mapping[quote]
         # Return symbol with exchange specific format
-        delimiter = self.cfg.get("delimiter", "")
-        return delimiter.join((quote, base))
+        return self.delimiter.join((quote, base))
 
     def asset_map(self):
         pass

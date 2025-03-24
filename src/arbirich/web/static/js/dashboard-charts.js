@@ -24,7 +24,31 @@ function configureOpportunitiesChart(canvas) {
     const ctx = canvas.getContext('2d');
 
     // Get data from the page
-    const chartData = JSON.parse(canvas.getAttribute('data-chart') || '{"labels":[],"data":[]}');
+    let chartData;
+    try {
+        const dataAttr = canvas.getAttribute('data-chart');
+        if (dataAttr) {
+            chartData = JSON.parse(dataAttr);
+        } else {
+            // Try to get data from the inline script
+            const chartLabelsElement = document.getElementById('chart-labels');
+            const chartDataElement = document.getElementById('chart-data');
+
+            if (chartLabelsElement && chartDataElement) {
+                const labels = JSON.parse(chartLabelsElement.textContent);
+                const data = JSON.parse(chartDataElement.textContent);
+                chartData = { labels, data };
+            } else {
+                console.warn('No chart data found');
+                chartData = { labels: [], data: [] };
+            }
+        }
+    } catch (e) {
+        console.error('Error parsing chart data:', e);
+        chartData = { labels: [], data: [] };
+    }
+
+    console.log('Chart data:', chartData);
 
     window.opportunitiesChart = new Chart(ctx, {
         type: 'line',

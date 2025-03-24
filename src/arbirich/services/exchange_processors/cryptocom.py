@@ -5,7 +5,7 @@ import time
 
 import websockets
 
-from src.arbirich.config.config import EXCHANGE_CONFIGS
+from src.arbirich.config.config import ALL_EXCHANGES
 from src.arbirich.services.exchange_processors.base_processor import BaseOrderBookProcessor
 from src.arbirich.services.exchange_processors.registry import register
 
@@ -22,9 +22,14 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
         subscription_type: str,
         use_rest_snapshot: bool,
     ):
+        super().__init__(exchange, product, subscription_type, use_rest_snapshot)
+        self.config = ALL_EXCHANGES.get(exchange)
+        if not self.config:
+            raise ValueError(f"Exchange {exchange} not found in configuration")
         self.product = product
-        self.cfg = EXCHANGE_CONFIGS.get(exchange)
-        self.ws_url = self.cfg["ws"]["ws_url"]
+        self.ws_url = self.config.get("ws_url")
+        self.delimiter = self.config.get("delimiter", "")
+        self.mapping = self.config.get("mapping", {})
         self.formatted_product = self._format_product(product)
         self.subscribe_message = json.dumps(
             {
@@ -36,7 +41,6 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
             }
         )
         self.last_snapshot = None  # Store the last received snapshot
-        super().__init__(exchange, product, subscription_type, use_rest_snapshot)
 
     def _format_product(self, product):
         """Format the product symbol for Crypto.com (e.g., BTC-USDT -> BTC_USDT)"""

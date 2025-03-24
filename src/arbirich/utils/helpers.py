@@ -1,6 +1,6 @@
 import logging
 
-from src.arbirich.config.config import EXCHANGE_CONFIGS, EXCHANGES, PAIRS
+from src.arbirich.config.config import ALL_EXCHANGES, EXCHANGES, PAIRS
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ def build_exchanges_dict() -> dict:
     """
     exchanges_dict = {}
     for exch in EXCHANGES:
-        config = EXCHANGE_CONFIGS.get(exch)
+        config = ALL_EXCHANGES.get(exch)
         if not config:
             continue
         delimiter = "-"

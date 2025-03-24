@@ -8,7 +8,7 @@ import redis
 from redis.exceptions import ConnectionError, RedisError
 
 from src.arbirich.config.config import REDIS_CONFIG
-from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
@@ -138,18 +138,18 @@ class RedisService:
 
     def publish_order_book(self, exchange: str, symbol: str, order_book):
         """
-        Publish an order book update to Redis.
+        Publish an order book update to Redis using multiple channel formats
+        for maximum compatibility.
 
         Parameters:
             exchange: The exchange name
             symbol: The trading pair symbol
             order_book: The order book data to publish (can be dict or OrderBookUpdate model)
+
+        Returns:
+            Total number of subscribers reached
         """
         try:
-            # Create channel name
-            channel = "order_book"
-            logger.debug(f"Publishing to channel: {channel}")
-
             # Convert Pydantic model to dict if needed
             if hasattr(order_book, "model_dump"):
                 order_data = order_book.model_dump()
@@ -169,16 +169,27 @@ class RedisService:
             if "timestamp" not in order_data:
                 order_data["timestamp"] = time.time()
 
-            # Convert to JSON and publish
+            # Convert to JSON for publishing
             message_json = json.dumps(order_data)
-            result = self.client.publish(channel, message_json)
 
-            if result > 0:
-                logger.debug(f"Published order book for {exchange}:{symbol} to {result} subscribers")
+            # Publish to the channel format that matches arbitrage subscriptions
+            total_subscribers = 0
+
+            # Primary channel format: "order_book:{exchange}:{symbol}"
+            primary_channel = f"{ORDER_BOOK_CHANNEL}:{exchange}:{symbol}"
+            primary_subs = self.client.publish(primary_channel, message_json)
+
+            # Also publish to legacy format for backward compatibility
+            legacy_subs = self.client.publish("order_book", message_json)
+
+            total_subscribers = primary_subs + legacy_subs
+
+            if total_subscribers > 0:
+                logger.debug(f"Published order book for {exchange}:{symbol} to {total_subscribers} subscribers")
             else:
-                logger.debug(f"Published order book for {exchange}:{symbol} but no subscribers")
+                logger.warning(f"Published order book for {exchange}:{symbol} but no subscribers")
 
-            return result
+            return total_subscribers
         except Exception as e:
             logger.error(f"Error publishing order book to Redis: {e}", exc_info=True)
             return 0
@@ -240,7 +251,7 @@ class RedisService:
             return self._shared_pubsub
 
     def subscribe_to_order_book_updates(
-        self, channel: str = "trade_opportunities", callback: Optional[Callable] = None
+        self, channel: str, callback: Optional[Callable] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Subscribe to a Redis Pub/Sub channel and yield messages indefinitely.

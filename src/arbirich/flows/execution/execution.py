@@ -77,9 +77,30 @@ async def run_execution_flow(strategy_name=None):
 # Expose the flow for CLI usage.
 flow = build_flow()
 
+# if __name__ == "__main__":
+#     import sys
+
+#     # Allow specifying a strategy name via command line
+#     strategy_name = sys.argv[1] if len(sys.argv) > 1 else None
+#     asyncio.run(run_execution_flow(strategy_name))
+
 if __name__ == "__main__":
     import sys
 
-    # Allow specifying a strategy name via command line
-    strategy_name = sys.argv[1] if len(sys.argv) > 1 else None
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Get the strategy name from command line args
+    if len(sys.argv) > 1:
+        strategy_name = sys.argv[1]
+    else:
+        # Get the first strategy from config
+        from src.arbirich.config.config import STRATEGIES
+
+        strategy_name = next(iter(STRATEGIES.keys()))
+
+    logger.info(f"Running arbitrage flow for strategy: {strategy_name}")
     asyncio.run(run_execution_flow(strategy_name))

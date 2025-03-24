@@ -2,10 +2,10 @@ import asyncio
 import logging
 import traceback
 
+from arbirich.services.database.prefill_database_activate import prefill_database
 from src.arbirich.flows.database.database import run_database_flow
 from src.arbirich.flows.execution.execution_source import set_stop_event
 from src.arbirich.services.background_subscriber import get_background_subscriber
-from src.arbirich.services.database.prefill_database import prefill_database
 
 logger = logging.getLogger(__name__)
 

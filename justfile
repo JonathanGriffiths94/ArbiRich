@@ -65,7 +65,7 @@ setup-local-db:
 
 # Run the application (dev) with Redis check
 run-bot: setup-local-db
-    RUST_BACKTRACE=1 {{ python }} -m main
+    RUST_BACKTRACE=1 {{ python }} -m src.arbirich.main
 
 # Stop running ArbiRich application
 stop-bot:
@@ -88,6 +88,7 @@ docker-check-db:
 
 # Create database migrations
 migrations message="auto":
+    rm -rf src/arbirich/migrations/versions/*
     {{ alembic }} revision --autogenerate -m "{{ message }}"
 
 # Apply database migrations
@@ -155,3 +156,16 @@ clean-cache:
 
 # Clean everything
 clean: clean-cache clean-venv
+
+# Reset the local database and rerun migrations
+reset-db:
+    chmod +x ./scripts/reset_local_db.sh
+    ./scripts/reset_local_db.sh
+
+# Create seed data for development
+prefill-db *arguments:
+    {{ python }} -m src.arbirich.services.database.prefill_database {{arguments}}
+
+seed-db:
+    {{ python }} ./scripts/create_seed_data.py
+    {{ python }} ./scripts/recalculate_metrics.py

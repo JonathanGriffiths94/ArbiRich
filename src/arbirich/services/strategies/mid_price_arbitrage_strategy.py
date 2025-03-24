@@ -87,6 +87,7 @@ class MidPriceArbitrageStrategy(ArbitrageStrategy):
 
         for exchange, order_book in state.symbols[asset].items():
             mid_price = self.calculate_mid_price(order_book)
+            logger.debug(f"Mid-prices for {exchange}:{asset} - {mid_prices}")
             if mid_price:
                 mid_prices[exchange] = mid_price
 
@@ -103,6 +104,7 @@ class MidPriceArbitrageStrategy(ArbitrageStrategy):
         high_price = highest_exchange[1]
         spread = (high_price - low_price) / low_price
 
+        logger.debug(f"Mid-price spread: {spread:.6f} vs threshold {self.threshold:.6f}")
         # Check if spread exceeds threshold
         if spread > self.threshold:
             low_exchange = lowest_exchange[0]

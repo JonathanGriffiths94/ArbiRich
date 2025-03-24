@@ -77,9 +77,12 @@ def db_sink(item):
             opportunity_id = data.get("opportunity_id")
             logger.info(f"Processing execution with ID: {data.get('id')} linked to opportunity {opportunity_id}")
 
+            # Add an initial delay before looking up the opportunity
+            time.sleep(1.0)
+
             # Try to save the execution with retries
             max_retries = 3
-            retry_delay = 1.0  # seconds
+            retry_delay = 2.0  # seconds - increased from original
 
             for attempt in range(1, max_retries + 1):
                 try:
@@ -89,10 +92,12 @@ def db_sink(item):
 
                     if not opportunity_exists:
                         if attempt < max_retries:
+                            # Exponential backoff for retries
+                            wait_time = 2**attempt  # 2, 4, 8 seconds
                             logger.warning(
-                                f"Opportunity {opportunity_id} not found in database, retry {attempt}/{max_retries}"
+                                f"Opportunity {opportunity_id} not found, retrying in {wait_time}s (attempt {attempt}/{max_retries})"
                             )
-                            time.sleep(retry_delay)
+                            time.sleep(wait_time)
                             continue
                         else:
                             logger.warning(

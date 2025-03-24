@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ArbiRich{% endblock %}</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        // Tailwind Config
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'dark-bg': '#121a17',
+                        'dark-element': '#1c2821',
+                        'dark-card': '#29352f',
+                        'dollar-green': '#85bb65',
+                        'money-dark': '#5d8247',
+                        'profit-green': '#3abe78',
+                        'loss-red': '#e15d5d',
+                        'text-dim': '#8a9a94',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #121a17;
+            color: #e0e9e5;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .dashboard-card {
+            background-color: #1c2821;
+        }
+
+        /* Toggle Switch Styling */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #29352f;
+            transition: .4s;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: #e0e9e5;
+            transition: .4s;
+        }
+
+        input:checked+.slider {
+            background-color: #85bb65;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
+        }
+
+        .slider.round {
+            border-radius: 20px;
+        }
+
+        .slider.round:before {
+            border-radius: 50%;
+        }
+
+        /* Refresh indicator animation */
+        .refresh-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #85bb65;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Active navigation highlight */
+        .nav-item.active {
+            border-left: 3px solid #85bb65;
+            background-color: rgba(133, 187, 101, 0.1);
+        }
+
+        /* Pipeline diagram styles */
+        .pipeline-diagram-container {
+            overflow-x: auto;
+            background-color: #121a17;
+            border-radius: 0.5rem;
+        }
+    </style>
+
+    {% block head %}{% endblock %}
+</head>
+
+<body class="min-h-screen flex">
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 border-r border-gray-800 pt-6 pb-8 overflow-y-auto hidden md:block">
+        <div class="px-6 mb-8">
+            <h1 class="text-2xl font-bold text-dollar-green">ArbiRich</h1>
+            <p class="text-xs text-text-dim">Crypto Arbitrage System</p>
+        </div>
+
+        <nav class="mt-6">
+            <div class="px-4 mb-2">
+                <span class="text-xs text-text-dim uppercase tracking-wider">Main</span>
+            </div>
+
+            <a href="/"
+                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/' %}active{% endif %}">
+                <i class="fas fa-chart-line w-5"></i>
+                <span class="ml-3">Dashboard</span>
+            </a>
+
+            <a href="/monitor"
+                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/monitor' %}active{% endif %}">
+                <i class="fas fa-desktop w-5"></i>
+                <span class="ml-3">System Monitor</span>
+            </a>
+
+            <div class="px-4 mb-2 mt-6">
+                <span class="text-xs text-text-dim uppercase tracking-wider">Configuration</span>
+            </div>
+
+            <a href="/setup"
+                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/setup' %}active{% endif %}">
+                <i class="fas fa-cogs w-5"></i>
+                <span class="ml-3">System Setup</span>
+            </a>
+
+            <a href="/strategies"
+                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/strategies' %}active{% endif %}">
+                <i class="fas fa-chess w-5"></i>
+                <span class="ml-3">Strategies</span>
+            </a>
+
+            <a href="/exchanges"
+                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/exchanges' %}active{% endif %}">
+                <i class="fas fa-exchange-alt w-5"></i>
+                <span class="ml-3">Exchanges</span>
+            </a>
+        </nav>
+
+        <div class="px-6 mt-auto pt-8">
+            <div class="p-3 bg-dark-element rounded-lg">
+                <div class="flex items-center">
+                    <div class="mr-3">
+                        <i class="fas fa-info-circle text-dollar-green"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm font-medium">System Status</div>
+                        <div class="text-xs text-text-dim mt-1">All systems operational</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Mobile Navigation Bar -->
+    <div
+        class="fixed bottom-0 left-0 right-0 bg-dark-element border-t border-gray-800 flex justify-around py-2 md:hidden z-10">
+        <a href="/"
+            class="text-center p-2 {% if request.url.path == '/' %}text-dollar-green{% else %}text-gray-400{% endif %}">
+            <i class="fas fa-chart-line block text-lg"></i>
+            <span class="text-xs mt-1">Dashboard</span>
+        </a>
+
+        <a href="/monitor"
+            class="text-center p-2 {% if request.url.path == '/monitor' %}text-dollar-green{% else %}text-gray-400{% endif %}">
+            <i class="fas fa-desktop block text-lg"></i>
+            <span class="text-xs mt-1">Monitor</span>
+        </a>
+
+        <a href="/setup"
+            class="text-center p-2 {% if request.url.path == '/setup' %}text-dollar-green{% else %}text-gray-400{% endif %}">
+            <i class="fas fa-cogs block text-lg"></i>
+            <span class="text-xs mt-1">Setup</span>
+        </a>
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-1 p-6 pb-20 md:pb-6 overflow-y-auto">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- JavaScript -->
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

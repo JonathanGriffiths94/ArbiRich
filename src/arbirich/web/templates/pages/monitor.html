@@ -1,0 +1,263 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}ArbiRich - Monitor{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-bold text-dollar-green">System Monitor</h1>
+    <div class="flex items-center">
+        <span class="text-sm text-text-dim mr-3">Auto-updating every 5s</span>
+        <span class="refresh-indicator" id="refresh-indicator"></span>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- System Status Card -->
+    <div class="dashboard-card rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-bold text-dollar-green mb-4">System Status</h2>
+
+        <div class="space-y-4">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-300">CPU Usage</span>
+                <div class="w-2/3">
+                    <div class="h-2 bg-dark-element rounded-full">
+                        <div class="h-2 bg-dollar-green rounded-full" style="width: 45%"></div>
+                    </div>
+                    <div class="text-right text-sm text-gray-400 mt-1">45%</div>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <span class="text-gray-300">Memory Usage</span>
+                <div class="w-2/3">
+                    <div class="h-2 bg-dark-element rounded-full">
+                        <div class="h-2 bg-dollar-green rounded-full" style="width: 62%"></div>
+                    </div>
+                    <div class="text-right text-sm text-gray-400 mt-1">62%</div>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <span class="text-gray-300">Disk Usage</span>
+                <div class="w-2/3">
+                    <div class="h-2 bg-dark-element rounded-full">
+                        <div class="h-2 bg-dollar-green rounded-full" style="width: 28%"></div>
+                    </div>
+                    <div class="text-right text-sm text-gray-400 mt-1">28%</div>
+                </div>
+            </div>
+
+            <div class="flex justify-between">
+                <span class="text-gray-300">Uptime</span>
+                <span class="text-gray-300">3 days, 7 hours</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Running Processes Card -->
+    <div class="dashboard-card rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-bold text-dollar-green mb-4">Active Processes</h2>
+
+        <div class="space-y-3">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <span class="h-2 w-2 rounded-full bg-profit-green mr-2"></span>
+                    <span class="text-gray-300">Price Fetcher</span>
+                </div>
+                <span class="text-xs bg-dark-element text-gray-400 px-2 py-1 rounded">PID: 12345</span>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <span class="h-2 w-2 rounded-full bg-profit-green mr-2"></span>
+                    <span class="text-gray-300">Opportunity Scanner</span>
+                </div>
+                <span class="text-xs bg-dark-element text-gray-400 px-2 py-1 rounded">PID: 12346</span>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <span class="h-2 w-2 rounded-full bg-profit-green mr-2"></span>
+                    <span class="text-gray-300">Trade Executor</span>
+                </div>
+                <span class="text-xs bg-dark-element text-gray-400 px-2 py-1 rounded">PID: 12347</span>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <span class="h-2 w-2 rounded-full bg-profit-green mr-2"></span>
+                    <span class="text-gray-300">Web Server</span>
+                </div>
+                <span class="text-xs bg-dark-element text-gray-400 px-2 py-1 rounded">PID: 12348</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exchange Status Card -->
+    <div class="dashboard-card rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-bold text-dollar-green mb-4">Exchange Status</h2>
+
+        <div class="space-y-3">
+            <div class="flex justify-between items-center">
+                <span class="text-gray-300">Binance</span>
+                <span
+                    class="px-2 py-1 rounded-full text-xs font-semibold bg-green-900 text-profit-green">Connected</span>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <span class="text-gray-300">Bybit</span>
+                <span
+                    class="px-2 py-1 rounded-full text-xs font-semibold bg-green-900 text-profit-green">Connected</span>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <span class="text-gray-300">KuCoin</span>
+                <span class="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-900 text-yellow-300">Rate
+                    Limited</span>
+            </div>
+
+            <div class="flex justify-between items-center">
+                <span class="text-gray-300">Crypto.com</span>
+                <span class="px-2 py-1 rounded-full text-xs font-semibold bg-red-900 text-loss-red">Disconnected</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Logs Card -->
+    <div class="dashboard-card rounded-lg shadow-md p-6">
+        <h2 class="text-xl font-bold text-dollar-green mb-4">Recent Logs</h2>
+
+        <div class="h-48 overflow-y-auto bg-dark-element p-3 rounded font-mono text-xs">
+            <div class="text-gray-400">[2023-05-16 10:15:32] <span class="text-blue-400">INFO</span> - Price update
+                completed for BTC/USDT</div>
+            <div class="text-gray-400">[2023-05-16 10:15:35] <span class="text-blue-400">INFO</span> - Price update
+                completed for ETH/USDT</div>
+            <div class="text-gray-400">[2023-05-16 10:15:38] <span class="text-profit-green">SUCCESS</span> - Found
+                arbitrage opportunity BTC/USDT (Binance->Bybit)</div>
+            <div class="text-gray-400">[2023-05-16 10:15:45] <span class="text-yellow-400">WARNING</span> - Rate limit
+                approaching for KuCoin API</div>
+            <div class="text-gray-400">[2023-05-16 10:15:50] <span class="text-profit-green">SUCCESS</span> - Executed
+                trade #12345</div>
+            <div class="text-gray-400">[2023-05-16 10:16:02] <span class="text-blue-400">INFO</span> - Price update
+                completed for BTC/USDT</div>
+            <div class="text-gray-400">[2023-05-16 10:16:15] <span class="text-loss-red">ERROR</span> - Failed to
+                connect to Crypto.com API</div>
+            <div class="text-gray-400">[2023-05-16 10:16:22] <span class="text-blue-400">INFO</span> - Retry attempt 1
+                for Crypto.com connection</div>
+            <div class="text-gray-400">[2023-05-16 10:16:35] <span class="text-blue-400">INFO</span> - Price update
+                completed for ETH/USDT</div>
+            <div class="text-gray-400">[2023-05-16 10:16:38] <span class="text-loss-red">ERROR</span> - Retry failed for
+                Crypto.com API</div>
+        </div>
+
+        <div class="flex justify-end mt-4">
+            <a href="#" class="text-dollar-green hover:text-money-dark text-sm">View Full Logs</a>
+        </div>
+    </div>
+</div>
+
+<!-- Live Trading Activity Chart -->
+<div class="dashboard-card rounded-lg shadow-md p-4 mt-6">
+    <h2 class="text-xl font-bold text-dollar-green mb-4">Live Trading Activity</h2>
+    <div style="height: 300px; position: relative;">
+        <canvas id="activityChart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Setup the activity chart
+    const ctx = document.getElementById('activityChart').getContext('2d');
+
+    // Generate some random data for the chart
+    const generateData = () => Array.from({ length: 30 }, () => Math.floor(Math.random() * 10));
+
+    // Create labels for last 30 minutes
+    const labels = Array.from({ length: 30 }, (_, i) => {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - 29 + i);
+        return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    });
+
+    // Create the chart
+    const activityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Opportunities Found',
+                    data: generateData(),
+                    borderColor: '#85bb65',
+                    backgroundColor: 'rgba(133, 187, 101, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 2,
+                    borderWidth: 2
+                },
+                {
+                    label: 'Trades Executed',
+                    data: generateData().map(v => v * 0.3),
+                    borderColor: '#3abe78',
+                    backgroundColor: 'rgba(58, 190, 120, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 2,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    backgroundColor: '#122520',
+                    titleColor: '#85bb65',
+                    bodyColor: '#e0e9e5',
+                    borderColor: '#0d904f',
+                    borderWidth: 1
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.05)'
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            },
+            animation: {
+                duration: 1000
+            }
+        }
+    });
+
+    // Auto-update the chart every 15 seconds
+    setInterval(() => {
+        activityChart.data.labels.shift();
+        const now = new Date();
+        activityChart.data.labels.push(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+        activityChart.data.datasets.forEach(dataset => {
+            dataset.data.shift();
+            if (dataset.label === 'Opportunities Found') {
+                dataset.data.push(Math.floor(Math.random() * 10));
+            } else {
+                dataset.data.push(Math.floor(Math.random() * 3));
+            }
+        });
+
+        activityChart.update();
+    }, 15000);
+</script>
+{% endblock %}

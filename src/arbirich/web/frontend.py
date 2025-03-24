@@ -1,53 +1,191 @@
+import json
+import logging
 import os
+from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from arbirich.services.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.services.database.database_service import DatabaseService
+
+logger = logging.getLogger(__name__)
 
 # Define the directory containing the templates
 templates_dir = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=templates_dir)
 
-# Create a router for frontend routes
-router = APIRouter(prefix="", tags=["frontend"])
+# Create a router for frontend routes - don't use empty prefix
+router = APIRouter(tags=["frontend"])
+
+
+# Add get_db function for dependency injection
+def get_db():
+    db = DatabaseService()
+    try:
+        yield db
+    finally:
+        pass
 
 
 @router.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    """Render the dashboard homepage."""
+async def get_index(request: Request):
+    """Render the index page with setup, dashboard, and monitor buttons."""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@router.get("/{path:path}", response_class=HTMLResponse)
+async def catch_all(request: Request, path: str):
+    """Catch all other routes and display 404 page."""
+    try:
+        # First check if path exists in templates directory
+        template_path = f"src/arbirich/web/templates/pages/{path}.html"
+
+        if os.path.exists(template_path):
+            # For dashboard route, we need to pass the stats
+            if path == "dashboard":
+                with DatabaseService() as db_service:
+                    # Get strategies for the dashboard
+                    strategies = db_service.get_all_strategies()
+
+                    # Sort strategies by profit (most profitable first)
+                    strategies = sorted(strategies, key=lambda s: s.net_profit, reverse=True)
+
+                    # Get metrics for each strategy
+                    metrics_service = StrategyMetricsService(db_service)
+                    for strategy in strategies:
+                        metrics = metrics_service.get_latest_metrics_for_strategy(strategy.id)
+                        strategy.latest_metrics = metrics
+
+                    # Get recent executions
+                    executions = []
+                    for strategy in strategies:
+                        strategy_executions = db_service.get_executions_by_strategy(strategy.name)
+                        executions.extend(strategy_executions)
+
+                    # Sort executions by timestamp (newest first) and take top 10
+                    executions.sort(key=lambda x: x.execution_timestamp, reverse=True)
+                    recent_executions = executions[:10]
+
+                    # Calculate total stats
+                    total_profit = sum(s.net_profit for s in strategies)
+                    total_trades = sum(s.trade_count for s in strategies)
+
+                    # Calculate overall win rate
+                    win_count = sum(m.win_count for s in strategies if (m := getattr(s, "latest_metrics", None)))
+                    loss_count = sum(m.loss_count for s in strategies if (m := getattr(s, "latest_metrics", None)))
+                    overall_win_rate = (
+                        (win_count / (win_count + loss_count) * 100) if (win_count + loss_count) > 0 else 0
+                    )
+
+                    # Get statistics
+                    stats = get_dashboard_stats(db_service)
+
+                return templates.TemplateResponse(
+                    f"pages/{path}.html",
+                    {
+                        "request": request,
+                        "strategies": strategies,
+                        "recent_executions": recent_executions,
+                        "total_profit": total_profit,
+                        "total_trades": total_trades,
+                        "overall_win_rate": overall_win_rate,
+                        "stats": stats,
+                    },
+                )
+            # For executions route, we need to pass pagination info
+            elif path == "executions":
+                with DatabaseService() as db_service:
+                    executions = get_recent_executions(db_service, limit=20)
+                    return templates.TemplateResponse(
+                        f"pages/{path}.html",
+                        {
+                            "request": request,
+                            "executions": executions,
+                            "total_pages": 1,
+                            "page": 1,
+                            "per_page": 20,
+                            "total_executions": len(executions),
+                        },
+                    )
+            else:
+                # For other pages, just render the template
+                return templates.TemplateResponse(f"pages/{path}.html", {"request": request})
+        else:
+            return templates.TemplateResponse(
+                "errors/404.html",
+                {"request": request, "path": path, "message": f"The page '{path}' you're looking for was not found."},
+                status_code=404,
+            )
+    except Exception as e:
+        logger.error(f"Error handling unknown path '{path}': {e}")
+        return templates.TemplateResponse(
+            "errors/error.html", {"request": request, "error_message": f"Error: {str(e)}"}
+        )
+
+
+from src.arbirich.web.controllers.mock_data_provider import mock_provider
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Display the main dashboard with trading data."""
     # Use the DatabaseService to get data
-    with DatabaseService() as db_service:
-        # Get recent trade opportunities from the database - limit to 5 for dashboard
-        opportunities = get_recent_opportunities(db_service, limit=5)
+    try:
+        with DatabaseService() as db:
+            try:
+                # Get recent trade opportunities from the database - limit to 5 for dashboard
+                opportunities = get_recent_opportunities(db, limit=5)
+            except Exception as e:
+                logger.warning(f"Error getting opportunities, using mock data: {e}")
+                opportunities = mock_provider.get_opportunities(5)
 
-        # Get recent executions - limit to 5 for dashboard
-        executions = get_recent_executions(db_service, limit=5)
+            try:
+                # Get recent executions - limit to 5 for dashboard
+                executions = get_recent_executions(db, limit=5)
+            except Exception as e:
+                logger.warning(f"Error getting executions, using mock data: {e}")
+                executions = mock_provider.get_executions(5)
 
-        # Get strategy leaderboard
-        strategies = get_strategy_leaderboard(db_service)
+            try:
+                # Get strategy leaderboard
+                strategies = get_strategy_leaderboard(db)
+            except Exception as e:
+                logger.warning(f"Error getting strategies, using mock data: {e}")
+                strategies = mock_provider.get_strategies()
 
-        # Calculate statistics
-        stats = get_dashboard_stats(db_service)
+            try:
+                # Calculate statistics
+                stats = get_dashboard_stats(db)
+            except Exception as e:
+                logger.warning(f"Error getting stats, using mock data: {e}")
+                stats = mock_provider.get_dashboard_stats()
 
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "opportunities": opportunities,
-            "executions": executions,
-            "strategies": strategies,
-            "stats": stats,
-        },
-    )
+        return templates.TemplateResponse(
+            "pages/dashboard.html",
+            {
+                "request": request,
+                "opportunities": opportunities,
+                "executions": executions,
+                "strategies": strategies,
+                "stats": stats,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error rendering dashboard: {e}")
+        # Fall back to using all mock data
+        return templates.TemplateResponse(
+            "pages/dashboard.html",
+            {
+                "request": request,
+                "opportunities": mock_provider.get_opportunities(5),
+                "executions": mock_provider.get_executions(5),
+                "strategies": mock_provider.get_strategies(),
+                "stats": mock_provider.get_dashboard_stats(),
+            },
+        )
 
 
 @router.get("/opportunities", response_class=HTMLResponse)
@@ -57,7 +195,7 @@ async def opportunities_list(request: Request):
         # Show more on the dedicated page
         opportunities = get_recent_opportunities(db_service, limit=50)
 
-    return templates.TemplateResponse("opportunities.html", {"request": request, "opportunities": opportunities})
+    return templates.TemplateResponse("pages/opportunities.html", {"request": request, "opportunities": opportunities})
 
 
 @router.get("/executions", response_class=HTMLResponse)
@@ -67,7 +205,7 @@ async def executions_list(request: Request):
         # Show more on the dedicated page
         executions = get_recent_executions(db_service, limit=50)
 
-    return templates.TemplateResponse("executions.html", {"request": request, "executions": executions})
+    return templates.TemplateResponse("pages/executions.html", {"request": request, "executions": executions})
 
 
 @router.get("/strategies", response_class=HTMLResponse)
@@ -76,33 +214,107 @@ async def strategies_list(request: Request):
     with DatabaseService() as db_service:
         strategies = get_strategy_leaderboard(db_service)
 
-    return templates.TemplateResponse("strategies.html", {"request": request, "strategies": strategies})
+    return templates.TemplateResponse("pages/strategies.html", {"request": request, "strategies": strategies})
 
 
 @router.get("/strategy/{strategy_name}", response_class=HTMLResponse)
-async def strategy_detail(request: Request, strategy_name: str):
-    """Display detailed information for a specific strategy."""
-    with DatabaseService() as db_service:
-        # Get the strategy details
-        strategies = get_strategy_leaderboard(db_service)
-        strategy = next((s for s in strategies if s["name"] == strategy_name), None)
+async def strategy_detail(request: Request, strategy_name: str, db: DatabaseService = Depends(get_db)):
+    """Strategy detail page."""
+    try:
+        logger.info(f"Looking up strategy: {strategy_name}")
+
+        # Get strategy by name
+        strategies = db.get_all_strategies()
+        strategy = next((s for s in strategies if s.name == strategy_name), None)
 
         if not strategy:
-            # Handle case where strategy doesn't exist
+            logger.warning(f"Strategy not found: {strategy_name}")
             return templates.TemplateResponse(
-                "error.html", {"request": request, "error": f"Strategy '{strategy_name}' not found"}
+                "errors/error.html", {"request": request, "error_message": f"Strategy {strategy_name} not found"}
             )
 
-        # Get strategy-specific opportunities
-        opportunities = get_strategy_opportunities(db_service, strategy_name, limit=10)
+        # Process additional_info if it's a string
+        if hasattr(strategy, "additional_info") and isinstance(strategy.additional_info, str):
+            try:
+                strategy.additional_info = json.loads(strategy.additional_info)
+            except (json.JSONDecodeError, TypeError):
+                # If it can't be parsed as JSON, set to empty dict
+                strategy.additional_info = {}
+        elif not hasattr(strategy, "additional_info") or strategy.additional_info is None:
+            strategy.additional_info = {}
 
-        # Get strategy-specific executions
-        executions = get_strategy_executions(db_service, strategy_name, limit=10)
+        # Get recent executions
+        raw_executions = db.get_executions_by_strategy(strategy_name)
 
-    return templates.TemplateResponse(
-        "strategy.html",
-        {"request": request, "strategy": strategy, "opportunities": opportunities, "executions": executions},
-    )
+        # Process executions to include calculated fields and correct format
+        executions = []
+        for execution in raw_executions:
+            # Convert timestamp to datetime
+            if isinstance(execution.execution_timestamp, (int, float)):
+                execution_time = datetime.fromtimestamp(execution.execution_timestamp)
+            else:
+                execution_time = execution.execution_timestamp
+
+            # Calculate profit here instead of relying on an actual_profit attribute
+            profit = (execution.executed_sell_price - execution.executed_buy_price) * execution.volume
+
+            # Create a dictionary with all needed attributes
+            exec_dict = {
+                "id": execution.id,
+                "pair": execution.pair,
+                "buy_exchange": execution.buy_exchange,
+                "sell_exchange": execution.sell_exchange,
+                "executed_buy_price": execution.executed_buy_price,
+                "executed_sell_price": execution.executed_sell_price,
+                "volume": execution.volume,
+                "spread": execution.spread,
+                "execution_timestamp": execution_time,
+                "profit": profit,  # Add calculated profit
+            }
+
+            executions.append(exec_dict)
+
+        # Sort and limit
+        executions = sorted(executions, key=lambda e: e["execution_timestamp"], reverse=True)[:10]
+
+        # Get metrics if available - handle possible errors with relationships
+        metrics = None
+        try:
+            from arbirich.services.strategy_metrics_service import StrategyMetricsService
+
+            metrics_service = StrategyMetricsService(db)
+            metrics = metrics_service.get_latest_metrics_for_strategy(strategy.id)
+
+            # Safely access related metrics - avoid loading relationships that might error
+            if metrics:
+                # Don't access metrics.trading_pair_metrics or metrics.exchange_metrics here
+                # We'll pass just the basic metrics to the template
+                pass
+        except Exception as metrics_error:
+            logger.error(f"Error loading metrics: {str(metrics_error)}", exc_info=True)
+            # Continue without metrics
+
+        return templates.TemplateResponse(
+            "pages/strategy.html",
+            {"request": request, "strategy": strategy, "executions": executions, "metrics": metrics},
+        )
+    except Exception as e:
+        logger.error(f"Error in strategy_detail: {str(e)}", exc_info=True)
+        return templates.TemplateResponse(
+            "errors/error.html", {"request": request, "error_message": f"Error loading strategy: {str(e)}"}
+        )
+
+
+@router.get("/setup", response_class=HTMLResponse)
+async def setup(request: Request):
+    """Display the setup page for configuration."""
+    return templates.TemplateResponse("pages/setup.html", {"request": request})
+
+
+@router.get("/monitor", response_class=HTMLResponse)
+async def monitor(request: Request):
+    """Display the monitoring page for real-time system status."""
+    return templates.TemplateResponse("pages/monitor.html", {"request": request})
 
 
 # Helper functions to work with the DatabaseService

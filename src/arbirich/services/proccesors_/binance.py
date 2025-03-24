@@ -5,7 +5,7 @@ import logging
 import requests
 import websockets
 
-from src.arbirich.config.config import EXCHANGE_CONFIGS
+from src.arbirich.config.config import ALL_EXCHANGES
 from src.arbirich.services.exchange_processors.base_processor import (
     BaseOrderBookProcessor,
     OrderBookGapException,
@@ -24,7 +24,7 @@ class BinanceOrderBookProcessor(BaseOrderBookProcessor):
         use_rest_snapshot: bool,
     ):
         # Using snapshot mode in this example.
-        cfg = EXCHANGE_CONFIGS.get(exchange)
+        cfg = ALL_EXCHANGES.get(exchange)
         self.ws_url = cfg["ws"]["ws_url"]
         self.snapshot_url = cfg["ws"]["snapshot_url"]
         self.subscribe_message = cfg["ws"]["subscription_message"](product)
