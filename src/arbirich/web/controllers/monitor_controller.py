@@ -5,14 +5,13 @@ Monitor Controller - Renders and handles system monitoring views.
 import logging
 import platform
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
 
 import psutil
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from arbirich.services.trading_service import trading_service
+from arbirich.core.trading_service import TradingService
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.redis.redis_service import RedisService
 
@@ -90,6 +89,7 @@ async def get_processes():
     """
     try:
         # Get trading service components
+        trading_service = TradingService()
         trading_status = await trading_service.get_status()
 
         # Format as a list of processes
@@ -198,7 +198,7 @@ async def get_recent_logs(count: int = 20):
                 message = "Failed to connect to Crypto.com API"
             else:  # SUCCESS
                 if i % 2 == 0:
-                    message = f"Found arbitrage opportunity BTC/USDT (Binance->Bybit)"
+                    message = "Found arbitrage opportunity BTC/USDT (Binance->Bybit)"
                 else:
                     message = f"Executed trade #{10000 + i}"
 

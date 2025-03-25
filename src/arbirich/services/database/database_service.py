@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -75,6 +75,19 @@ class DatabaseService:
         if self._session is None:
             self._session = self.Session()
         return self._session
+
+    def close(self):
+        """
+        Close the database connection and release resources.
+        """
+        try:
+            if hasattr(self, "session"):
+                self.session.close()
+            if hasattr(self, "engine"):
+                self.engine.dispose()
+            logger.debug("Database connection closed")
+        except Exception as e:
+            logger.error(f"Error closing database connection: {e}")
 
     # ---- Exchange operations ----
     def create_exchange(self, exchange: Exchange) -> Exchange:
@@ -380,6 +393,61 @@ class DatabaseService:
             self.logger.error(f"Error getting strategy by name {name}: {e}")
             raise
 
+    def get_strategy_by_id(self, strategy_id: int) -> Optional[Strategy]:
+        """
+        Get a strategy by its ID.
+
+        This is an alias for the get_strategy method for consistency
+        with other methods that work with strategy by ID.
+
+        Args:
+            strategy_id: ID of the strategy to retrieve
+
+        Returns:
+            Strategy object if found, None otherwise
+        """
+        return self.get_strategy(strategy_id)
+
+    def update_strategy_status(self, strategy_id: int, is_active: bool) -> bool:
+        """Update strategy status by ID."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(
+                    strategies.update()
+                    .where(strategies.c.id == strategy_id)
+                    .values(is_active=is_active)
+                    .returning(strategies.c.id)
+                )
+                updated_id = result.scalar()
+                return updated_id is not None
+        except Exception as e:
+            logger.error(f"Error updating strategy status for ID {strategy_id}: {e}")
+            return False
+
+    def update_strategy_status_by_name(self, strategy_name: str, is_active: bool) -> bool:
+        """Update strategy status by name."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(
+                    strategies.update()
+                    .where(strategies.c.name == strategy_name)
+                    .values(is_active=is_active)
+                    .returning(strategies.c.id)
+                )
+                updated_id = result.scalar()
+                return updated_id is not None
+        except Exception as e:
+            logger.error(f"Error updating strategy status for '{strategy_name}': {e}")
+            return False
+
+    def activate_strategy_by_name(self, strategy_name: str) -> bool:
+        """Activate a strategy by name."""
+        return self.update_strategy_status_by_name(strategy_name, True)
+
+    def deactivate_strategy_by_name(self, strategy_name: str) -> bool:
+        """Deactivate a strategy by name."""
+        return self.update_strategy_status_by_name(strategy_name, False)
+
     def get_all_strategies(self) -> List[Strategy]:
         with self.engine.begin() as conn:
             result = conn.execute(strategies.select())
@@ -563,6 +631,43 @@ class DatabaseService:
                 opportunities.append(opportunity)
             return opportunities
 
+    def get_recent_opportunities(self, count: int = 10, strategy_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get most recent trade opportunities from the database.
+
+        Args:
+            count: Maximum number of opportunities to return
+            strategy_name: Optional strategy name to filter opportunities
+
+        Returns:
+            List of trade opportunities as dictionaries
+        """
+        try:
+            query = (
+                trade_opportunities.select().order_by(trade_opportunities.c.opportunity_timestamp.desc()).limit(count)
+            )
+
+            # Add strategy filter if provided
+            if strategy_name:
+                query = query.where(trade_opportunities.c.strategy == strategy_name)
+
+            with self.engine.begin() as conn:
+                result = conn.execute(query)
+                opportunities = []
+
+                for row in result:
+                    opportunity = {
+                        **row._asdict(),
+                        "opportunity_timestamp": row.opportunity_timestamp.timestamp(),
+                        "id": str(row.id),
+                    }
+                    opportunities.append(opportunity)
+
+                return opportunities
+        except Exception as e:
+            logger.error(f"Error fetching recent opportunities: {e}")
+            return []
+
     # ---- TradeExecution operations ----
     def create_trade_execution(self, execution: TradeExecution) -> TradeExecution:
         try:
@@ -619,6 +724,42 @@ class DatabaseService:
                 )
                 executions.append(execution)
             return executions
+
+    def get_recent_executions(self, count: int = 10, strategy_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get most recent trade executions from the database.
+
+        Args:
+            count: Maximum number of executions to return
+            strategy_name: Optional strategy name to filter executions
+
+        Returns:
+            List of trade executions as dictionaries
+        """
+        try:
+            query = trade_executions.select().order_by(trade_executions.c.execution_timestamp.desc()).limit(count)
+
+            # Add strategy filter if provided
+            if strategy_name:
+                query = query.where(trade_executions.c.strategy == strategy_name)
+
+            with self.engine.begin() as conn:
+                result = conn.execute(query)
+                executions = []
+
+                for row in result:
+                    execution = {
+                        **row._asdict(),
+                        "execution_timestamp": row.execution_timestamp.timestamp(),
+                        "id": str(row.id),
+                        "opportunity_id": str(row.opportunity_id) if row.opportunity_id else None,
+                    }
+                    executions.append(execution)
+
+                return executions
+        except Exception as e:
+            logger.error(f"Error fetching recent executions: {e}")
+            return []
 
     # ---- Strategy Metrics operations ----
     def create_strategy_metrics(self, metrics):

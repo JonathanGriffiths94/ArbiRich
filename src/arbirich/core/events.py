@@ -10,14 +10,12 @@ import subprocess
 import threading
 import time
 
+from arbirich.core.trading_service import TradingService
 from arbirich.services.database.prefill_database import prefill_database
 from src.arbirich.services.channel_maintenance import get_channel_maintenance_service
-from src.arbirich.services.trading_service import FlowManagerCompatibility, trading_service
 
 logger = logging.getLogger(__name__)
 
-# Create compatibility wrapper for backward compatibility
-flow_manager = FlowManagerCompatibility(trading_service)
 # Flag to track if shutdown is in progress
 _shutdown_in_progress = False
 
@@ -153,6 +151,7 @@ async def startup_event() -> None:
 
     # Initialize and start the trading service
     try:
+        trading_service = TradingService()
         # Only initialize if not already initialized
         if not hasattr(trading_service, "_initialized") or not trading_service._initialized:
             logger.info("Initializing trading service...")

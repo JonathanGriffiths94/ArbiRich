@@ -12,10 +12,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 # Import the unified API router
-from src.arbirich.api.uni_router import main_router
+from arbirich.api.router import main_router
+from arbirich.core.trading_service import TradingService
 from src.arbirich.core.events import shutdown_event, startup_event
 from src.arbirich.services.database.database_service import DatabaseService
-from src.arbirich.services.trading_service import trading_service
 from src.arbirich.utils.banner import display_banner
 
 # Import existing web controllers and routes for backward compatibility
@@ -61,6 +61,8 @@ async def lifespan(app: FastAPI):
 
         # Initialize trading service
         try:
+            trading_service = TradingService()
+            app.state.trading_service = trading_service
             logger.info("Initializing trading service...")
             await trading_service.initialize(db)
             logger.info("Trading service initialized successfully")

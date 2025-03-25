@@ -138,59 +138,48 @@ def db_sink(item):
                             logger.error(f"Error updating strategy stats: {e}")
 
                         try:
-                            db.update_strategy_stats(
-                                strategy_name=execution.strategy,
-                                profit=total_value if total_value > 0 else 0,
-                                loss=abs(total_value) if total_value < 0 else 0,
-                                trade_count=1,
+                            from src.arbirich.services.metrics.strategy_metrics_service import (
+                                StrategyMetricsService,
                             )
-                            logger.info(f"Updated strategy stats for {execution.strategy}")
 
-                            try:
-                                from src.arbirich.services.metrics.strategy_metrics_service import (
-                                    StrategyMetricsService,
+                            # Get the strategy ID
+                            strategy = db.get_strategy_by_name(execution.strategy)
+                            if strategy:
+                                # Create metrics service
+                                metrics_service = StrategyMetricsService(db_service=db)
+
+                                # Calculate daily metrics
+                                now = datetime.now()
+                                day_start = datetime(now.year, now.month, now.day)
+
+                                metrics = metrics_service.calculate_strategy_metrics(
+                                    session=db.session,
+                                    strategy_id=strategy.id,
+                                    period_start=day_start,
+                                    period_end=now,
                                 )
 
-                                # Get the strategy ID
-                                strategy = db.get_strategy_by_name(execution.strategy)
-                                if strategy:
-                                    # Create metrics service
-                                    metrics_service = StrategyMetricsService(db_service=db)
+                                if metrics:
+                                    logger.info(f"Updated daily metrics for strategy {strategy.name}")
 
-                                    # Calculate daily metrics
-                                    now = datetime.now()
-                                    day_start = datetime(now.year, now.month, now.day)
+                                # Optionally calculate weekly metrics too
+                                week_start = now - timedelta(days=now.weekday())
+                                week_start = datetime(week_start.year, week_start.month, week_start.day)
 
-                                    metrics = metrics_service.calculate_strategy_metrics(
-                                        session=db.session,
-                                        strategy_id=strategy.id,
-                                        period_start=day_start,
-                                        period_end=now,
-                                    )
+                                weekly_metrics = metrics_service.calculate_strategy_metrics(
+                                    session=db.session,
+                                    strategy_id=strategy.id,
+                                    period_start=week_start,
+                                    period_end=now,
+                                )
 
-                                    if metrics:
-                                        logger.info(f"Updated daily metrics for strategy {strategy.name}")
-
-                                    # Optionally calculate weekly metrics too
-                                    week_start = now - timedelta(days=now.weekday())
-                                    week_start = datetime(week_start.year, week_start.month, week_start.day)
-
-                                    weekly_metrics = metrics_service.calculate_strategy_metrics(
-                                        session=db.session,
-                                        strategy_id=strategy.id,
-                                        period_start=week_start,
-                                        period_end=now,
-                                    )
-
-                                    if weekly_metrics:
-                                        logger.info(f"Updated weekly metrics for strategy {strategy.name}")
-                                else:
-                                    logger.warning(
-                                        f"Strategy {execution.strategy} not found, skipping metrics calculation"
-                                    )
-                            except Exception as metrics_error:
-                                logger.error(f"Error calculating strategy metrics: {metrics_error}")
-                                # Don't fail the whole function if metrics calculation fails
+                                if weekly_metrics:
+                                    logger.info(f"Updated weekly metrics for strategy {strategy.name}")
+                            else:
+                                logger.warning(f"Strategy {execution.strategy} not found, skipping metrics calculation")
+                        except Exception as metrics_error:
+                            logger.error(f"Error calculating strategy metrics: {metrics_error}")
+                            # Don't fail the whole function if metrics calculation fails
                         except Exception as e:
                             # Log but don't fail the entire function
                             logger.error(f"Error updating strategy stats: {e}")
@@ -222,9 +211,10 @@ def db_sink(item):
 def check_opportunity_exists(db, opportunity_id: str) -> bool:
     """Check if an opportunity with the given ID exists in the database"""
     try:
-        query = select(trade_opportunities.c.id).where(trade_opportunities.c.id == uuid.UUID(opportunity_id))
-        result = db.engine.connect().execute(query).first()
-        return result is not None
+        with db.engine.begin() as conn:
+            query = select(trade_opportunities.c.id).where(trade_opportunities.c.id == uuid.UUID(opportunity_id))
+            result = conn.execute(query).first()
+            return result is not None
     except Exception as e:
         logger.error(f"Error checking opportunity existence: {e}")
         return False

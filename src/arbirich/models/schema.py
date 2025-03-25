@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -13,7 +12,6 @@ from sqlalchemy import (
     Numeric,
     String,
     Table,
-    Text,
     UniqueConstraint,
     func,
     text,

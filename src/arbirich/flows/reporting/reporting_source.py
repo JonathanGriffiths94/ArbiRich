@@ -12,9 +12,9 @@ logger.setLevel(logging.INFO)
 redis_client = RedisService()
 
 
-class RedisDatabasePartition(StatefulSourcePartition):
+class RedisReportingPartition(StatefulSourcePartition):
     def __init__(self, channel, stop_event=None):
-        logger.info(f"Initializing RedisDatabasePartition for channel: {channel}")
+        logger.info(f"Initializing RedisReportingPartition for channel: {channel}")
         self.channel = channel
         self.pubsub = redis_client.client.pubsub(ignore_subscribe_messages=True)
         self.pubsub.subscribe(channel)
@@ -53,7 +53,7 @@ class RedisDatabasePartition(StatefulSourcePartition):
 
         # Periodic logging to show we're alive
         if current_time > self._next_log_time:
-            logger.debug(f"Database partition for {self.channel} is active and waiting for messages")
+            logger.debug(f"Reporting partition for {self.channel} is active and waiting for messages")
             self._next_log_time = current_time + 300  # Log every 5 minutes
 
         if not self._running:
@@ -87,7 +87,7 @@ class RedisDatabasePartition(StatefulSourcePartition):
             return []
 
     def snapshot(self) -> None:
-        logger.debug(f"Snapshot requested for RedisDatabasePartition {self.channel} (returning None)")
+        logger.debug(f"Snapshot requested for RedisReportingPartition {self.channel} (returning None)")
         return None
 
     def __del__(self):
@@ -99,18 +99,18 @@ class RedisDatabasePartition(StatefulSourcePartition):
             logger.error(f"Error closing pubsub: {e}")
 
 
-class RedisDatabaseSource(FixedPartitionedSource):
+class RedisReportingSource(FixedPartitionedSource):
     def __init__(self, channels, stop_event=None):
         self.channels = channels
         self.stop_event = stop_event
 
     def list_parts(self):
         parts = self.channels
-        logger.info(f"Database source partitions: {parts}")
+        logger.info(f"Reporting source partitions: {parts}")
         return parts
 
     def build_part(self, step_id, for_key, _resume_state):
-        logger.info(f"Building database partition for channel: {for_key}")
+        logger.info(f"Building reporting partition for channel: {for_key}")
         if "trade_executions" in for_key:
             logger.info(f"*** This is an EXECUTION channel: {for_key} ***")
-        return RedisDatabasePartition(for_key, stop_event=self.stop_event)
+        return RedisReportingPartition(for_key, stop_event=self.stop_event)
