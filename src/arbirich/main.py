@@ -84,6 +84,17 @@ async def lifespan(app: FastAPI):
             logger.error(f"Error during startup event: {e}", exc_info=True)
             # Continue despite startup errors
 
+        # Display welcome banner right before yielding control
+        try:
+            from src.arbirich.utils.banner import display_banner
+
+            welcome_message = "ArbiRich server is ready! API endpoints available at /api\nAccess the web interface at http://localhost:8080"
+            display_banner(
+                extra_info=welcome_message, console_only=True
+            )  # Use console_only to prevent duplicate logging
+        except Exception as e:
+            logger.error(f"Error displaying welcome banner: {e}", exc_info=True)
+
         logger.info("Application startup complete - yielding control to FastAPI")
         yield
         logger.info("FastAPI shutdown initiated")
@@ -166,6 +177,15 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Error closing database connection: {e}")
 
         logger.info("Application shutdown complete")
+
+        # Display shutdown banner after all shutdown processes are complete
+        try:
+            from src.arbirich.utils.banner import display_banner
+
+            shutdown_message = "ArbiRich server has been successfully stopped.\nThank you for using ArbiRich!"
+            display_banner(extra_info=shutdown_message, console_only=True, separator_style="equals")
+        except Exception as e:
+            logger.error(f"Error displaying shutdown banner: {e}")
 
 
 def make_app() -> FastAPI:
