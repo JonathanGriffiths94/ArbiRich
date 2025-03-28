@@ -1,10 +1,35 @@
-# app/services/trading_system.py
 import asyncio
 import logging
+import threading
+
+# Singleton instance and lock
+_trading_service_instance = None
+_instance_lock = threading.RLock()
+
+
+def get_trading_service():
+    """Get or create the singleton TradingService instance"""
+    global _trading_service_instance
+    with _instance_lock:
+        if _trading_service_instance is None:
+            _trading_service_instance = TradingService()
+        return _trading_service_instance
 
 
 class TradingService:
+    def __new__(cls):
+        """Ensure only one instance exists"""
+        global _trading_service_instance
+        with _instance_lock:
+            if _trading_service_instance is None:
+                _trading_service_instance = super(TradingService, cls).__new__(cls)
+            return _trading_service_instance
+
     def __init__(self):
+        # Only initialize once
+        if hasattr(self, "logger"):
+            return
+
         self.logger = logging.getLogger(__name__)
         self.components = {
             "ingestion": {"active": False, "task": None},
@@ -34,15 +59,15 @@ class TradingService:
             try:
                 self.logger.info("Loading strategies from database")
                 # Try using async fetch_all if available
-                if hasattr(db, "fetch_all") and callable(db.fetch_all):
-                    if asyncio.iscoroutinefunction(db.fetch_all):
-                        strategies = await db.fetch_all("SELECT * FROM strategies")
+                if hasattr(self.db, "fetch_all") and callable(self.db.fetch_all):  # <-- THIS LINE CHANGED
+                    if asyncio.iscoroutinefunction(self.db.fetch_all):
+                        strategies = await self.db.fetch_all("SELECT * FROM strategies")
                     else:
-                        strategies = db.fetch_all("SELECT * FROM strategies")
+                        strategies = self.db.fetch_all("SELECT * FROM strategies")
                 # Fallback to direct query using DatabaseService
-                elif hasattr(db, "engine"):
-                    with db.engine.connect() as conn:
-                        result = conn.execute(db.tables.strategies.select())
+                elif hasattr(self.db, "engine"):  # <-- THIS LINE CHANGED
+                    with self.db.engine.connect() as conn:
+                        result = conn.execute(self.db.tables.strategies.select())
                         strategies = [dict(row._mapping) for row in result]
                 else:
                     # Final fallback - just get active strategies from config
@@ -95,49 +120,149 @@ class TradingService:
         return status
 
     async def start_all(self, activate_strategies=False):
-        """
-        Start all system components.
+        """Start all system components"""
+        try:
+            self.logger.info("Starting all system components")
 
-        Args:
-            activate_strategies: Whether to activate all strategies in the database
-        """
-        self.logger.info("Starting all system components")
+            # If requested, activate strategies in database
+            if activate_strategies:
+                self.logger.info("Activating all strategies in database")
+                try:
+                    from src.arbirich.services.database.database_service import DatabaseService
 
-        # If requested, activate strategies in database
-        if activate_strategies:
-            self.logger.info("Activating all strategies in database")
-            try:
-                from src.arbirich.services.database.database_service import DatabaseService
+                    with DatabaseService() as db:
+                        # Get all strategy IDs
+                        with db.engine.connect() as conn:
+                            import sqlalchemy as sa
 
-                with DatabaseService() as db:
-                    # Get all strategy IDs
-                    with db.engine.connect() as conn:
-                        import sqlalchemy as sa
+                            result = conn.execute(sa.text("UPDATE strategies SET is_active = TRUE"))
+                            self.logger.info(f"Activated {result.rowcount} strategies in database")
+                except Exception as e:
+                    self.logger.error(f"Failed to activate strategies: {e}")
 
-                        result = conn.execute(sa.text("UPDATE strategies SET is_active = TRUE"))
-                        self.logger.info(f"Activated {result.rowcount} strategies in database")
-            except Exception as e:
-                self.logger.error(f"Failed to activate strategies: {e}")
+            await self.start_component("reporting")
+            await self.start_component("execution")
+            await self.start_component("arbitrage")
+            await self.start_component("ingestion")
 
-        # Start components in the correct order
-        await self.start_component("reporting")
-        await self.start_component("ingestion")
-        await self.start_component("arbitrage")
-        await self.start_component("execution")
-
-        self.logger.info("All system components started")
+            self.logger.info("All system components started")
+            return True  # Explicitly return True to indicate success
+        except Exception as e:
+            self.logger.error(f"Error starting all components: {e}")
+            return False  # Return False if there was an error
 
     async def stop_all(self):
-        """Stop all system components"""
+        """Stop all system components with extra cleanup"""
         self.logger.info("Stopping all system components")
 
-        # Stop in reverse order
-        await self.stop_component("execution")
-        await self.stop_component("arbitrage")
-        await self.stop_component("ingestion")
-        await self.stop_component("reporting")
+        # Set system-wide shutdown flag
+        try:
+            from src.arbirich.core.system_state import mark_system_shutdown
+
+            mark_system_shutdown(True)
+            self.logger.info("System-wide shutdown flag set")
+        except Exception as e:
+            self.logger.error(f"Error setting system shutdown flag: {e}")
+
+        # Then shutdown all processors
+        try:
+            from src.arbirich.services.exchange_processors.registry import shutdown_all_processors
+
+            shutdown_all_processors()
+            self.logger.info("All exchange processors signaled to stop")
+        except Exception as e:
+            self.logger.error(f"Error signaling exchange processors to stop: {e}")
+
+        # Add a small delay to allow processors to notice the shutdown
+        await asyncio.sleep(0.5)
+
+        # Signal shutdown early to prevent new publishes
+        try:
+            from src.arbirich.flows.ingestion.ingestion_sink import mark_shutdown_started
+
+            mark_shutdown_started()
+        except Exception as e:
+            self.logger.error(f"Error marking ingestion sink as shutting down: {e}")
+
+        # 1. Stop components in the correct order
+        for component in ["ingestion", "arbitrage", "execution", "reporting"]:
+            try:
+                await self.stop_component(component)
+                self.logger.info(f"Stopped {component} component")
+            except Exception as e:
+                self.logger.error(f"Error stopping {component}: {e}")
+
+        # 2. Give components time to completely finish their work
+        self.logger.info("Waiting for components to finish cleanup...")
+        await asyncio.sleep(2.5)
+
+        # 3. Clean up any orphaned processes
+        self._kill_orphaned_processes()
+
+        # 4. Finally, close all Redis connections
+        from src.arbirich.services.redis.redis_service import RedisService
+
+        RedisService.close_all_connections()
 
         self.logger.info("All system components stopped")
+        return True
+
+    async def restart_all_components(self):
+        """Restart all trading components with clean state"""
+        self.logger.info("Restarting all trading components with clean state...")
+
+        # First stop everything
+        await self.stop_all()
+
+        # Reset processor states
+        from src.arbirich.flows.ingestion.ingestion_source import reset_processor_states
+
+        reset_processor_states()
+
+        # Reset system state
+        from src.arbirich.core.system_state import mark_system_shutdown, reset_notification_state
+
+        mark_system_shutdown(False)
+        reset_notification_state()
+
+        self.logger.info("Refreshing trading service state from database...")
+        # Clear existing strategy data
+        self.strategies = {}
+        # Re-initialize (will reload strategies from DB)
+        await self.initialize()
+
+        # Clear global flow manager registry
+        from src.arbirich.flows.common.flow_manager import _active_flow_managers, _flow_managers_lock
+
+        with _flow_managers_lock:
+            self.logger.info(f"Clearing {len(_active_flow_managers)} active flow managers")
+            _active_flow_managers.clear()
+
+        # Reset Redis connections
+        from src.arbirich.services.redis.redis_service import reset_redis_pool
+
+        reset_redis_pool()
+        self.logger.info("Redis connection pools reset")
+
+        # Reset the channel maintenance service
+        from arbirich.utils.channel_maintenance import reset_channel_maintenance_service
+
+        reset_channel_maintenance_service()
+
+        # Reset the background subscriber
+        from arbirich.utils.background_subscriber import reset as reset_background_subscriber
+
+        reset_background_subscriber()
+
+        # Wait a moment to ensure clean state
+        await asyncio.sleep(1)
+
+        # Now start everything fresh
+        self.logger.info("Starting all components with fresh state...")
+        await self.start_all()
+        self.logger.info("All components restarted successfully")
+
+        return {"status": "restarted", "components": list(self.components.keys())}
 
     async def start_component(self, component_name):
         """Start a specific component"""
@@ -176,18 +301,36 @@ class TradingService:
 
         # Cancel the component task if it's running
         if component["task"] and not component["task"].done():
+            # Log more details for debugging
+            self.logger.info(f"Cancelling task for component {component_name}")
+
+            # Force cleanup based on component type
+            if component_name == "reporting":
+                from arbirich.flows.reporting.reporting_flow import stop_reporting_flow_async
+
+                try:
+                    await stop_reporting_flow_async()
+                    self.logger.info("Reporting flow stopped via dedicated function")
+                except Exception as e:
+                    self.logger.error(f"Error stopping reporting flow: {e}")
+
+            # Then cancel the task
             component["task"].cancel()
             try:
-                await component["task"]
+                # Wait with timeout for the task to cancel
+                await asyncio.wait_for(asyncio.shield(component["task"]), timeout=3.0)
+            except asyncio.TimeoutError:
+                self.logger.warning(f"Timeout waiting for {component_name} to stop, forcing cleanup")
             except asyncio.CancelledError:
-                # This is expected when canceling a task
-                pass
+                self.logger.info(f"Task for {component_name} cancelled successfully")
             except Exception as e:
                 self.logger.error(f"Error while stopping {component_name}: {e}")
 
+        # Always mark as inactive, even if there were errors
         component["active"] = False
         component["task"] = None
 
+        self.logger.info(f"Component {component_name} marked as inactive")
         return {"status": "stopped"}
 
     async def start_strategy(self, strategy_id):
@@ -208,7 +351,26 @@ class TradingService:
         strategy["task"] = asyncio.create_task(self._run_strategy(strategy_id))
         strategy["active"] = True
 
-        return {"status": "started"}
+        # After starting the strategy, verify its subscriptions
+        subscription_verified = await self.verify_strategy_subscriptions(strategy["name"])
+
+        if not subscription_verified:
+            self.logger.warning(f"Strategy {strategy['name']} started but subscriptions could not be verified")
+
+        # Refresh subscriptions if verification failed
+        if not subscription_verified:
+            self.logger.info(f"Attempting to refresh subscriptions for {strategy['name']}")
+            # Trigger a restart of the specific flows for this strategy
+            await asyncio.gather(self._restart_arbitrage_flow(), self._restart_execution_flow())
+
+            # Verify again
+            subscription_verified = await self.verify_strategy_subscriptions(strategy["name"], timeout=10)
+            if subscription_verified:
+                self.logger.info(f"Successfully refreshed subscriptions for {strategy['name']}")
+            else:
+                self.logger.error(f"Failed to establish subscriptions for {strategy['name']} after refresh")
+
+        return True
 
     async def stop_strategy(self, strategy_id):
         """Stop a specific strategy"""
@@ -237,91 +399,179 @@ class TradingService:
 
         return {"status": "stopped"}
 
-    # Background task implementations
+    async def verify_strategy_subscriptions(self, strategy_name, timeout=30):
+        """
+        Verify that a strategy is properly subscribed to its required channels.
+
+        Args:
+            strategy_name: Name of the strategy to verify
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            True if subscriptions are verified, False otherwise
+        """
+        from src.arbirich.config.config import get_strategy_config
+        from src.arbirich.utils.channel_diagnostics import get_channel_subscribers
+
+        self.logger.info(f"Verifying subscriptions for strategy: {strategy_name}")
+
+        # Get the strategy config to determine which pairs it needs
+        strategy_config = get_strategy_config(strategy_name)
+        if not strategy_config:
+            self.logger.error(f"Strategy config not found for {strategy_name}")
+            return False
+
+        # Get the exchanges and pairs this strategy needs
+        exchanges = strategy_config.get("exchanges", [])
+        pairs = strategy_config.get("pairs", [])
+
+        # Calculate the expected channels
+        expected_channels = []
+        for exchange in exchanges:
+            for base, quote in pairs:
+                pair_symbol = f"{base}-{quote}"
+                expected_channels.append(f"{exchange}:{pair_symbol}")
+
+        self.logger.info(f"Expected channels for {strategy_name}: {expected_channels}")
+
+        # Poll until we see subscriptions or timeout
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            # Get current subscribers
+            channel_subscribers = get_channel_subscribers()
+
+            # Check if all expected channels have subscribers
+            all_subscribed = True
+            missing_channels = []
+
+            for channel in expected_channels:
+                if channel not in channel_subscribers or channel_subscribers[channel] == 0:
+                    all_subscribed = False
+                    missing_channels.append(channel)
+
+            if all_subscribed:
+                self.logger.info(f"All channels for {strategy_name} have subscribers")
+                return True
+
+            self.logger.warning(f"Still waiting for subscriptions to {missing_channels}")
+            await asyncio.sleep(1.0)
+
+        self.logger.error(f"Timeout waiting for {strategy_name} subscriptions. Missing: {missing_channels}")
+        return False
+
     async def _run_ingestion(self):
         """Run the ingestion process"""
         self.logger.info("Ingestion process started")
         try:
-            # Get active exchanges and pairs from database
-            from src.arbirich.services.database.database_service import DatabaseService
+            # Import here to avoid circular imports
+            from arbirich.flows.ingestion.ingestion_flow import run_ingestion_flow
+            from src.arbirich.config.config import EXCHANGES, PAIRS, get_strategy_config
 
+            # Get exchanges and pairs for all active strategies
             exchanges_and_pairs = {}
 
-            try:
-                with DatabaseService() as db:
-                    # Get active exchanges and pairs
-                    exchanges = db.get_active_exchanges()
-                    pairs = db.get_active_pairs()
+            # First, get active strategies
+            active_strategies = []
+            for sid, strategy in self.strategies.items():
+                if strategy.get("active", False):
+                    active_strategies.append(strategy["name"])
 
-                    # Build exchange_pairs mapping
-                    for exchange in exchanges:
-                        exchange_name = exchange.name if hasattr(exchange, "name") else exchange.get("name")
-                        if not exchange_name:
-                            continue
+            self.logger.info(f"Finding exchanges and pairs for active strategies: {active_strategies}")
 
-                        exchanges_and_pairs[exchange_name] = []
+            # For each active strategy, get the exchanges and pairs from config
+            for strategy_name in active_strategies:
+                # Get strategy config
+                try:
+                    strategy_config = get_strategy_config(strategy_name)
+                    if not strategy_config:
+                        self.logger.warning(f"No config found for strategy {strategy_name}")
+                        continue
 
-                        for pair in pairs:
-                            pair_symbol = pair.symbol if hasattr(pair, "symbol") else pair.get("symbol")
-                            if not pair_symbol:
-                                continue
+                    # Extract exchanges and pairs from config
+                    strategy_exchanges = strategy_config.get("exchanges", [])
+                    strategy_pairs = strategy_config.get("pairs", [])
 
-                            exchanges_and_pairs[exchange_name].append(pair_symbol)
+                    # Use consistent format for all exchanges
+                    for exchange in strategy_exchanges:
+                        if exchange not in exchanges_and_pairs:
+                            exchanges_and_pairs[exchange] = []
 
-                # Start ingestion with the configured exchanges and pairs
-                self.logger.info(f"Starting ingestion pipeline with {len(exchanges_and_pairs)} exchanges...")
-                self.logger.info(f"Exchanges and pairs: {exchanges_and_pairs}")
+                        # Format pairs with consistent base-quote format
+                        for base, quote in strategy_pairs:
+                            # Always use the consistent format with hyphen
+                            formatted_pair = f"{base}-{quote}"
+                            if formatted_pair not in exchanges_and_pairs[exchange]:
+                                exchanges_and_pairs[exchange].append(formatted_pair)
 
-                # Import here to avoid circular imports
-                from arbirich.flows.ingestion.ingestion_flow import run_ingestion_flow
+                        self.logger.info(
+                            f"Added exchanges and pairs for strategy {strategy_name}: {exchange} with pairs {exchanges_and_pairs[exchange]}"
+                        )
+                except Exception as e:
+                    self.logger.error(f"Error loading config for strategy {strategy_name}: {e}")
 
-                await run_ingestion_flow(exchanges_and_pairs)
+            # If no exchanges found from active strategies, use defaults
+            if not exchanges_and_pairs:
+                self.logger.warning("No exchanges found from active strategies, using defaults")
 
-            except Exception as e:
-                self.logger.error(f"Error setting up ingestion configuration: {e}", exc_info=True)
-                # Fall back to config
-                from src.arbirich.config.config import EXCHANGES, PAIRS
-
-                # Create exchange_pairs mapping from config
-                fallback_exchanges_pairs = {}
+                # Use consistent format for all exchanges
                 for exchange_name in EXCHANGES.keys():
-                    fallback_exchanges_pairs[exchange_name] = []
+                    exchanges_and_pairs[exchange_name] = []
+                    # Format each pair with consistent base-quote format
                     for base, quote in PAIRS:
-                        fallback_exchanges_pairs[exchange_name].append(f"{base}-{quote}")
+                        formatted_pair = f"{base}-{quote}"
+                        exchanges_and_pairs[exchange_name].append(formatted_pair)
 
-                self.logger.info(f"Using fallback configuration: {fallback_exchanges_pairs}")
+            # Start the ingestion pipeline
+            self.logger.info(f"Starting ingestion pipeline with {len(exchanges_and_pairs)} exchanges...")
+            self.logger.info(f"Exchanges and pairs: {exchanges_and_pairs}")
 
-                # Import here to avoid circular imports
-                from arbirich.flows.ingestion.ingestion_flow import run_ingestion_flow
+            # Run the ingestion flow with the gathered exchanges and pairs
+            await run_ingestion_flow(exchanges_and_pairs=exchanges_and_pairs)
 
-                await run_ingestion_flow(fallback_exchanges_pairs)
-
-        except asyncio.CancelledError:
-            self.logger.info("Ingestion process stopped")
-            raise
         except Exception as e:
             self.logger.error(f"Error in ingestion process: {e}", exc_info=True)
             # Sleep briefly to avoid rapid restart loop
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
 
     async def _run_arbitrage(self):
         """Run the arbitrage process"""
         self.logger.info("Arbitrage process started")
         try:
+            # Reload strategies from the database to get current active status
+            self.logger.info("Reloading strategies from database")
+            try:
+                # Check if we have a valid database connection
+                if self.db is None:
+                    self.logger.warning("Database connection not initialized, creating new connection")
+                    from src.arbirich.services.database.database_service import DatabaseService
+
+                    self.db = DatabaseService()
+
+                # Get fresh strategy data from database
+                with self.db.engine.connect() as conn:
+                    result = conn.execute(self.db.tables.strategies.select())
+                    strategies = [dict(row._mapping) for row in result]
+
+                    # Update in-memory strategy data
+                    for db_strategy in strategies:
+                        strategy_id = db_strategy.get("id")
+                        if strategy_id in self.strategies:
+                            self.strategies[strategy_id]["active"] = db_strategy.get("is_active", False)
+                            self.logger.info(
+                                f"Strategy {self.strategies[strategy_id]['name']} active status: {self.strategies[strategy_id]['active']}"
+                            )
+            except Exception as e:
+                self.logger.error(f"Error reloading strategies: {e}")
+
             # Launch arbitrage pipelines for all active strategies
             from arbirich.flows.arbitrage.arbitrage_flow import run_arbitrage_flow
-            from src.arbirich.config.config import STRATEGIES
 
             # Find active strategies
             active_strategies = []
-            for strategy_name, strategy_config in STRATEGIES.items():
-                # Check if strategy is active in our loaded strategies list
-                strategy_id = None
-                for sid, strategy in self.strategies.items():
-                    if strategy["name"] == strategy_name and strategy["active"]:
-                        strategy_id = sid
-                        active_strategies.append({"id": sid, "name": strategy_name})
-                        break
+            for sid, strategy in self.strategies.items():
+                if strategy.get("active", False):
+                    active_strategies.append({"id": sid, "name": strategy["name"]})
+                    self.logger.info(f"Found active strategy: {strategy['name']} with ID {sid}")
 
             if not active_strategies:
                 self.logger.warning("No active strategies found for arbitrage process")
@@ -368,20 +618,37 @@ class TradingService:
         """Run the execution process"""
         self.logger.info("Execution process started")
         try:
+            # Ensure database connection is available
+            if self.db is None:
+                self.logger.warning("Database connection not initialized, creating new connection")
+                from src.arbirich.services.database.database_service import DatabaseService
+
+                self.db = DatabaseService()
+
+            # Check for fresh strategy data
+            try:
+                with self.db.engine.connect() as conn:
+                    result = conn.execute(self.db.tables.strategies.select())
+                    strategies = [dict(row._mapping) for row in result]
+                    self.logger.info(f"Loaded {len(strategies)} strategies from database")
+                    # Update in-memory strategy data
+                    for db_strategy in strategies:
+                        strategy_id = db_strategy.get("id")
+                        if strategy_id in self.strategies:
+                            self.strategies[strategy_id]["active"] = db_strategy.get("is_active", False)
+            except Exception as e:
+                self.logger.error(f"Error updating strategies: {e}")
+
             # Launch execution pipelines for all active strategies
             from arbirich.flows.execution.execution_flow import run_execution_flow
-            from src.arbirich.config.config import STRATEGIES
 
+            self.logger.info(f"STRATEGIES: {self.strategies}")
             # Find active strategies
             active_strategies = []
-            for strategy_name, strategy_config in STRATEGIES.items():
-                # Check if strategy is active in our loaded strategies list
-                strategy_id = None
-                for sid, strategy in self.strategies.items():
-                    if strategy["name"] == strategy_name and strategy["active"]:
-                        strategy_id = sid
-                        active_strategies.append({"id": sid, "name": strategy_name})
-                        break
+            for sid, strategy in self.strategies.items():
+                if strategy.get("active", False):
+                    active_strategies.append({"id": sid, "name": strategy["name"]})
+                    self.logger.info(f"Found active strategy: {strategy['name']} with ID {sid}")
 
             if not active_strategies:
                 self.logger.warning("No active strategies found for execution process")
@@ -495,3 +762,40 @@ class TradingService:
             # Sleep briefly to avoid rapid restart loop
             await asyncio.sleep(5)
             raise  # Re-raise to trigger restart
+
+    def _kill_orphaned_processes(self):
+        """Kill any orphaned bytewax processes that didn't shut down properly"""
+        try:
+            import os
+            import signal
+            import subprocess
+
+            self.logger.info("Checking for orphaned bytewax processes")
+
+            # Find all Python processes running bytewax
+            result = subprocess.run(["ps", "-ef"], capture_output=True, text=True)
+            killed_count = 0
+
+            for line in result.stdout.splitlines():
+                # Look for python processes that contain both "bytewax" and "arbirich"
+                if "python" in line and "bytewax" in line and "arbirich" in line:
+                    parts = line.split()
+                    if len(parts) > 1:
+                        try:
+                            pid = int(parts[1])
+                            # Don't kill our own process or parent processes
+                            if pid != os.getpid() and pid != os.getppid():
+                                self.logger.info(f"Killing orphaned bytewax process: {pid}")
+                                # Use SIGKILL for guaranteed termination
+                                os.kill(pid, signal.SIGKILL)
+                                killed_count += 1
+                        except (ValueError, ProcessLookupError) as e:
+                            self.logger.error(f"Failed to parse or kill process from line: {line}, error: {e}")
+
+            if killed_count > 0:
+                self.logger.warning(f"Killed {killed_count} orphaned bytewax processes")
+            else:
+                self.logger.info("No orphaned bytewax processes found")
+
+        except Exception as e:
+            self.logger.error(f"Error checking for orphaned processes: {e}", exc_info=True)

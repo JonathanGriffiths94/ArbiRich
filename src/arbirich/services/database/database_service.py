@@ -210,6 +210,35 @@ class DatabaseService:
             result = conn.execute(exchanges.delete().where(exchanges.c.id == exchange_id))
             return result.rowcount > 0
 
+    def set_exchange_active(self, exchange: str, active: bool):
+        """Set the active status of an exchange."""
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    sa.text("UPDATE exchanges SET is_active = :active WHERE name = :exchange"),
+                    {"active": active, "exchange": exchange},
+                )
+        except Exception as e:
+            logger.error(f"Error setting exchange '{exchange}' active status to {active}: {e}")
+
+    def is_exchange_in_use(self, exchange: str) -> bool:
+        """Check if an exchange is in use by any active strategy."""
+        try:
+            with self.engine.begin() as conn:
+                result = conn.execute(
+                    sa.text(
+                        """
+                        SELECT COUNT(*) FROM strategies
+                        WHERE :exchange = ANY(exchanges) AND is_active = TRUE
+                        """
+                    ),
+                    {"exchange": exchange},
+                )
+                return result.scalar() > 0
+        except Exception as e:
+            logger.error(f"Error checking if exchange '{exchange}' is in use: {e}")
+            return False
+
     # ---- Pair operations ----
     def create_pair(self, pair: Pair) -> Pair:
         """Create a pair with proper symbol handling."""
@@ -231,6 +260,9 @@ class DatabaseService:
                     "symbol": pair.symbol,
                     "is_active": pair.is_active,
                 }
+
+            # Remove the 'id' field if it exists, as it should be auto-generated
+            pair_data.pop("id", None)
 
             with self.engine.begin() as conn:
                 # Important: Include symbol in the values dictionary
@@ -330,6 +362,51 @@ class DatabaseService:
                 return result.rowcount > 0
         except Exception as e:
             logger.error(f"Error deactivating pair {pair_id}: {e}")
+            return False
+
+    def set_pair_active(self, pair: tuple, active: bool):
+        """
+        Set the active status of a trading pair.
+
+        Args:
+            pair: A tuple containing (base_currency, quote_currency).
+            active: Boolean indicating whether the pair should be active.
+        """
+        try:
+            symbol = "-".join(pair)  # Construct the symbol dynamically
+            with self.engine.begin() as conn:
+                conn.execute(
+                    sa.text("UPDATE pairs SET is_active = :active WHERE symbol = :symbol"),
+                    {"active": active, "symbol": symbol},
+                )
+        except Exception as e:
+            logger.error(f"Error setting pair '{pair}' active status to {active}: {e}")
+
+    def is_pair_in_use(self, pair: tuple) -> bool:
+        """
+        Check if a trading pair is in use by any active strategy.
+
+        Args:
+            pair: A tuple containing (base_currency, quote_currency).
+
+        Returns:
+            True if the pair is in use, False otherwise.
+        """
+        try:
+            symbol = "-".join(pair)  # Construct the symbol dynamically
+            with self.engine.begin() as conn:
+                result = conn.execute(
+                    sa.text(
+                        """
+                        SELECT COUNT(*) FROM strategies
+                        WHERE :symbol = ANY(pairs) AND is_active = TRUE
+                        """
+                    ),
+                    {"symbol": symbol},
+                )
+                return result.scalar() > 0
+        except Exception as e:
+            logger.error(f"Error checking if pair '{pair}' is in use: {e}")
             return False
 
     # ---- Strategy operations ----
@@ -844,3 +921,32 @@ class DatabaseService:
         except Exception as e:
             self.session.rollback()
             raise e
+
+
+def cleanup_db_connections():
+    """
+    Cleanup any open database connections.
+    This is called during application shutdown.
+    """
+    import sqlalchemy
+
+    logger = logging.getLogger(__name__)
+    try:
+        # Dispose of the engine's connection pool
+        db_instance = DatabaseService()
+        logger.info("Disposing of database engine connections")
+
+        if hasattr(db_instance, "engine") and db_instance.engine:
+            db_instance.engine.dispose()
+            logger.info("Database engine connections disposed")
+
+        # Check for SQLAlchemy's global engine registry
+        if hasattr(sqlalchemy, "_registries"):
+            for registry in sqlalchemy._registries:
+                if hasattr(registry, "dispose_all"):
+                    logger.info("Disposing of all engines in registry")
+                    registry.dispose_all()
+
+        logger.info("Database connections cleanup completed")
+    except Exception as e:
+        logger.error(f"Error cleaning up database connections: {e}")

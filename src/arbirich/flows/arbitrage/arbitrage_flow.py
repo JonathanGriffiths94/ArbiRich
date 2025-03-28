@@ -1,22 +1,23 @@
-import asyncio
 import logging
+import signal
+import sys
 import time
 
 from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
-from bytewax.run import cli_main
 
 from src.arbirich.flows.arbitrage.arbitrage_process import (
     detect_arbitrage,
     key_by_asset,
-    update_asset_state,  # Keep this import for backward compatibility
+    update_asset_state,
 )
 from src.arbirich.flows.arbitrage.arbitrage_sink import (
     debounce_opportunity,
     publish_trade_opportunity,
 )
 from src.arbirich.flows.arbitrage.arbitrage_source import use_redis_opportunity_source
+from src.arbirich.flows.common.flow_manager import BytewaxFlowManager
 from src.arbirich.services.redis.redis_service import RedisService
 from src.arbirich.utils.strategy_manager import StrategyManager
 
@@ -25,15 +26,23 @@ logger.setLevel(logging.INFO)
 
 redis_client = RedisService()
 
+# Create the flow manager for arbitrage
+flow_manager = BytewaxFlowManager.get_or_create("arbitrage")
 
-def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=True):
-    """
-    Build the arbitrage flow for a specific strategy.
+# Store the current configuration
+_current_strategy_name = None
+_current_debug_mode = False
 
-    Parameters:
-        strategy_name: The name of the strategy to use for trade opportunities
-        debug_mode: Whether to log outputs (True) or discard them (False)
+
+def build_arbitrage_flow():
     """
+    Build the arbitrage flow for the current strategy.
+    """
+    global _current_strategy_name, _current_debug_mode
+
+    strategy_name = _current_strategy_name or "arbitrage"
+    debug_mode = _current_debug_mode
+
     logger.info(f"Building arbitrage flow for strategy: {strategy_name}...")
     flow = Dataflow(f"arbitrage-{strategy_name}")  # Include strategy name in flow name
 
@@ -45,8 +54,13 @@ def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=True):
     pairs = StrategyManager.get_pairs_for_strategy(strategy_name)
     logger.info(f"Using trading pairs for {strategy_name}: {pairs}")
 
-    # Add Redis opportunity source to the flow
-    input_stream = use_redis_opportunity_source(flow, "redis_input", exchange_channels, pairs)
+    input_stream = use_redis_opportunity_source(
+        flow,
+        "redis_input",
+        exchange_channels,
+        pairs,
+        stop_event=flow_manager.stop_event,
+    )
 
     # Wrap key_by_asset with error handling
     def safe_key_by_asset(record):
@@ -130,39 +144,40 @@ def build_arbitrage_flow(strategy_name="arbitrage", debug_mode=True):
     return flow
 
 
+# Set the build_flow method on the manager
+flow_manager.build_flow = build_arbitrage_flow
+
+
 async def run_arbitrage_flow(strategy_name="arbitrage", debug_mode=False):
     """
-    Run the arbitrage flow for a specific strategy.
+    Run the arbitrage flow for a specific strategy using the flow manager.
 
     Parameters:
         strategy_name: The name of the strategy to use
         debug_mode: Whether to log outputs (True) or discard them (False)
     """
-    try:
-        logger.info(f"Starting arbitrage pipeline with strategy {strategy_name} (debug={debug_mode})...")
-        flow = build_arbitrage_flow(strategy_name, debug_mode)
+    global _current_strategy_name, _current_debug_mode
 
-        logger.info(f"Running arbitrage flow for strategy {strategy_name} in a separate thread.")
-        execution_task = asyncio.create_task(
-            asyncio.to_thread(cli_main, flow, workers_per_process=1), name=f"arbitrage-flow-{strategy_name}"
-        )
+    # Update the configuration
+    _current_strategy_name = strategy_name
+    _current_debug_mode = debug_mode
 
-        # Allow interruption to propagate
-        try:
-            await execution_task
-        except asyncio.CancelledError:
-            logger.info(f"Arbitrage task for strategy {strategy_name} cancelled")
-            raise
-        logger.info(f"Arbitrage flow for strategy {strategy_name} has finished running.")
-    except asyncio.CancelledError:
-        logger.info(f"Arbitrage flow for strategy {strategy_name} cancelled")
-        raise
-    except Exception as e:
-        logger.exception(f"Error in arbitrage flow for strategy {strategy_name}: {e}")
-    finally:
-        logger.info(f"Arbitrage flow for strategy {strategy_name} shutdown")
-        # Note: Don't close Redis client here as it might be shared among multiple flows
-        # Only close in the parent manager
+    logger.info(f"Starting arbitrage pipeline with strategy {strategy_name} (debug={debug_mode})...")
+
+    # Run the flow using the manager
+    return await flow_manager.run_flow()
+
+
+def stop_arbitrage_flow():
+    """Signal the arbitrage flow to stop synchronously"""
+    # Don't close redis_client here as it might be shared
+    return flow_manager.stop_flow()
+
+
+async def stop_arbitrage_flow_async():
+    """Signal the arbitrage flow to stop asynchronously"""
+    # Don't close redis_client here as it might be shared
+    return await flow_manager.stop_flow_async()
 
 
 # For CLI usage
@@ -184,5 +199,23 @@ if __name__ == "__main__":
 
         strategy_name = next(iter(STRATEGIES.keys()))
 
+    # Set current configuration
+    _current_strategy_name = strategy_name
+    _current_debug_mode = True
+
     logger.info(f"Running arbitrage flow for strategy: {strategy_name}")
-    asyncio.run(run_arbitrage_flow(strategy_name, debug_mode=True))
+
+    # Setup signal handlers for better shutdown
+    def handle_exit_signal(sig, frame):
+        logger.info(f"Received signal {sig}, initiating shutdown...")
+        stop_arbitrage_flow()
+        # Give a moment for cleanup
+        time.sleep(1)
+        sys.exit(0)
+
+    # Register signal handlers
+    signal.signal(signal.SIGINT, handle_exit_signal)
+    signal.signal(signal.SIGTERM, handle_exit_signal)
+
+    # Run the flow using the manager
+    flow_manager.run_flow_with_direct_api()

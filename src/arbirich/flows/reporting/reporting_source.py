@@ -1,34 +1,139 @@
 import json
 import logging
+import threading
 import time
+import weakref
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from src.arbirich.services.redis.redis_service import RedisService
+from src.arbirich.core.system_state import is_system_shutting_down
+from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = RedisService()
+# Track active partitions using a WeakSet to avoid memory leaks
+_active_partitions = weakref.WeakSet()
+_partition_lock = threading.RLock()
+
+# Global shared Redis client
+_shared_redis_client = None
+
+
+def reset_shared_redis_client():
+    """
+    Reset the shared Redis client for the reporting module.
+    """
+    global _shared_redis_client
+    if _shared_redis_client:
+        try:
+            _shared_redis_client.close()
+            _shared_redis_client = None
+            logger.info("Shared Redis client for reporting module reset successfully")
+        except Exception as e:
+            logger.error(f"Error resetting shared Redis client for reporting module: {e}")
+
+
+def terminate_all_partitions():
+    """Terminate all active reporting partitions."""
+    with _partition_lock:
+        partition_count = len(_active_partitions)
+        logger.info(f"Terminating {partition_count} active reporting partitions")
+
+        for partition in list(_active_partitions):
+            try:
+                if hasattr(partition, "pubsub") and partition.pubsub:
+                    try:
+                        partition.pubsub.unsubscribe()
+                        partition.pubsub.close()
+                    except Exception as e:
+                        logger.error(f"Error closing pubsub for partition: {e}")
+
+                # Mark as not running
+                if hasattr(partition, "_running"):
+                    partition._running = False
+
+                # Remove from active set
+                _active_partitions.remove(partition)
+
+                logger.info(f"Terminated reporting partition for channel: {getattr(partition, 'channel', 'unknown')}")
+            except Exception as e:
+                logger.error(f"Error terminating reporting partition: {e}")
+
+        _active_partitions.clear()
+        logger.info("All reporting partitions terminated")
 
 
 class RedisReportingPartition(StatefulSourcePartition):
-    def __init__(self, channel, stop_event=None):
-        logger.info(f"Initializing RedisReportingPartition for channel: {channel}")
+    def __init__(self, channel, stop_event=None, strategy_name=None):
         self.channel = channel
-        self.pubsub = redis_client.client.pubsub(ignore_subscribe_messages=True)
-        self.pubsub.subscribe(channel)
-        logger.info(f"Subscribed to Redis channel: {channel}")
-        self._running = True
-        self._last_activity = time.time()
-        self._next_log_time = time.time() + 60  # First log after 60 seconds
-        self._stop_event = stop_event
+        self.strategy_name = strategy_name
+        self.stop_event = stop_event
 
-    def next_batch(self) -> list:
-        # Check for stop event first
-        if self._stop_event and self._stop_event.is_set():
-            logger.debug(f"Stop event detected for channel {self.channel}, returning empty batch")
+        # Initialize timing attributes
+        self._last_activity = time.time()
+        self._next_log_time = time.time() + 300  # First log after 5 minutes
+
+        # Explicitly check if this channel already has an active partition
+        existing_channel = False
+        with _partition_lock:
+            for partition in _active_partitions:
+                if hasattr(partition, "channel") and partition.channel == channel:
+                    existing_channel = True
+                    break
+
+        if existing_channel:
+            # If a partition for this channel already exists, mark as stopped immediately
+            logger.warning(f"Duplicate partition creation for {channel}, marking as inactive")
             self._running = False
+        else:
+            # Normal initialization
+            self._running = True
+            self.redis_client = get_shared_redis_client()
+            self.pubsub = self.redis_client.client.pubsub()
+            self.pubsub.subscribe(self.channel)
+            logger.info(f"Subscribed to Redis channel: {channel}")
+
+            # Add to global registry
+            with _partition_lock:
+                _active_partitions.add(self)
+
+    def next_batch(self):
+        # Check for system shutdown at the very beginning
+        if is_system_shutting_down():
+            if self._running:  # Only log once when transitioning from running to stopped
+                logger.info(f"System shutting down, stopping partition for {self.channel}")
+                try:
+                    # Clean up Redis resources
+                    self.pubsub.unsubscribe()
+                    self.pubsub.close()
+                    logger.info(f"Unsubscribed from {self.channel} due to system shutdown")
+                except Exception as e:
+                    logger.error(f"Error closing Redis connection during shutdown: {e}")
+                self._running = False
+            return []
+
+        # Standard check if we're already not running
+        if not self._running:
+            return []
+
+        # Check for stop condition
+        if self.stop_event and self.stop_event.is_set():
+            # Only log once per partition
+            logger.info(f"Partition for {self.channel} marked as not running, stopping")
+            self._running = False
+
+            try:
+                # Clean up Redis resources
+                self.pubsub.unsubscribe()
+                self.pubsub.close()
+            except Exception as e:
+                logger.error(f"Error closing Redis connection: {e}")
+
+            # Remove from registry
+            with _partition_lock:
+                if self in _active_partitions:
+                    _active_partitions.remove(self)
             return []
 
         current_time = time.time()
@@ -39,12 +144,12 @@ class RedisReportingPartition(StatefulSourcePartition):
             self._last_activity = current_time
 
             # Check Redis connection
-            if not redis_client.is_healthy():
+            if not self.redis_client.is_healthy():
                 logger.warning(f"Redis connection appears unhealthy for channel: {self.channel}")
                 # Attempt to reconnect
                 try:
                     self.pubsub.close()
-                    self.pubsub = redis_client.client.pubsub(ignore_subscribe_messages=True)
+                    self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
                     self.pubsub.subscribe(self.channel)
                     logger.info(f"Resubscribed to Redis channel: {self.channel}")
                 except Exception as e:
@@ -55,10 +160,6 @@ class RedisReportingPartition(StatefulSourcePartition):
         if current_time > self._next_log_time:
             logger.debug(f"Reporting partition for {self.channel} is active and waiting for messages")
             self._next_log_time = current_time + 300  # Log every 5 minutes
-
-        if not self._running:
-            logger.info(f"Partition for {self.channel} marked as not running, stopping")
-            return []
 
         try:
             # Get message from Redis

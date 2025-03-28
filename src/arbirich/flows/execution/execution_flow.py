@@ -1,11 +1,13 @@
-import asyncio
 import logging
+import signal
+import sys
+import time
 
 from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
-from bytewax.run import cli_main
 
+from src.arbirich.flows.common.flow_manager import BytewaxFlowManager
 from src.arbirich.flows.execution.execution_sink import execute_trade
 from src.arbirich.flows.execution.execution_source import RedisExecutionSource
 from src.arbirich.services.redis.redis_service import RedisService
@@ -15,21 +17,27 @@ logger.setLevel(logging.INFO)
 
 redis_client = RedisService()
 
+# Create the flow manager for execution
+flow_manager = BytewaxFlowManager.get_or_create("execution")
 
-def build_flow(strategy_name=None):
+# Store the current strategy_name configuration
+_current_strategy_name = None
+
+
+def build_execution_flow():
     """
     Build the execution flow.
     This flow uses a custom Redis source that yields trade opportunities,
     applies the execute_trade operator, and outputs the result.
-
-    Parameters:
-        strategy_name: Optional strategy name to filter opportunities
     """
-    logger.info(f"Building execution flow for strategy: {strategy_name or 'all'}")
-    flow = Dataflow("execution")
+    global _current_strategy_name
+    strategy_name = _current_strategy_name
 
-    # Create a RedisExecutionSource with the strategy_name
-    source = RedisExecutionSource(strategy_name=strategy_name)
+    logger.info(f"Building execution flow for strategy: {strategy_name or 'all'}")
+    flow = Dataflow("execution_flow")
+
+    # Create a RedisExecutionSource with the strategy_name and stop_event
+    source = RedisExecutionSource(strategy_name=strategy_name, stop_event=flow_manager.stop_event)
     stream = op.input("redis_input", flow, source)
     logger.debug("Input stream created from RedisExecutionSource.")
 
@@ -45,6 +53,10 @@ def build_flow(strategy_name=None):
     return flow
 
 
+# Set the build_flow method on the manager
+flow_manager.build_flow = build_execution_flow
+
+
 async def run_execution_flow(strategy_name=None):
     """
     Run the execution flow for a specific strategy or all strategies.
@@ -52,41 +64,38 @@ async def run_execution_flow(strategy_name=None):
     Parameters:
         strategy_name: Optional strategy name to filter opportunities
     """
+    global _current_strategy_name
+
+    # Update the configuration if provided
+    if strategy_name:
+        _current_strategy_name = strategy_name
+
+    logger.info(f"Starting execution pipeline for strategy: {_current_strategy_name or 'all'}...")
+
+    # Run the flow using the manager
+    return await flow_manager.run_flow()
+
+
+def stop_execution_flow():
+    """Signal the execution flow to stop synchronously"""
+    # Ensure redis client gets closed
     try:
-        logger.info(f"Starting execution pipeline for strategy: {strategy_name or 'all'}...")
-        flow = build_flow(strategy_name)
-
-        logger.info("Running cli_main in a separate thread.")
-        execution_task = asyncio.create_task(asyncio.to_thread(cli_main, flow, workers_per_process=1))
-
-        # Allow interruption to propagate
-        try:
-            await execution_task
-        except asyncio.CancelledError:
-            logger.info("Execution task cancelled")
-            raise
-        logger.info("cli_main has finished running.")
-    except asyncio.CancelledError:
-        logger.info("Execution task cancelled")
-        raise
-    finally:
-        logger.info("Execution flow shutdown")
         redis_client.close()
+    except Exception as e:
+        logger.error(f"Error closing Redis client: {e}")
+
+    return flow_manager.stop_flow()
 
 
-# Expose the flow for CLI usage.
-flow = build_flow()
+async def stop_execution_flow_async():
+    """Signal the execution flow to stop asynchronously"""
+    logger.info("Stopping execution flow asynchronously...")
+    await flow_manager.stop_flow_async()
+    logger.info("Execution flow stopped")
 
-# if __name__ == "__main__":
-#     import sys
 
-#     # Allow specifying a strategy name via command line
-#     strategy_name = sys.argv[1] if len(sys.argv) > 1 else None
-#     asyncio.run(run_execution_flow(strategy_name))
-
+# For CLI usage
 if __name__ == "__main__":
-    import sys
-
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,
@@ -102,5 +111,22 @@ if __name__ == "__main__":
 
         strategy_name = next(iter(STRATEGIES.keys()))
 
-    logger.info(f"Running arbitrage flow for strategy: {strategy_name}")
-    asyncio.run(run_execution_flow(strategy_name))
+    # Set the current strategy configuration
+    _current_strategy_name = strategy_name
+
+    logger.info(f"Running execution flow for strategy: {strategy_name}")
+
+    # Setup signal handlers for better shutdown
+    def handle_exit_signal(sig, frame):
+        logger.info(f"Received signal {sig}, initiating shutdown...")
+        stop_execution_flow()
+        # Give a moment for cleanup
+        time.sleep(1)
+        sys.exit(0)
+
+    # Register signal handlers
+    signal.signal(signal.SIGINT, handle_exit_signal)
+    signal.signal(signal.SIGTERM, handle_exit_signal)
+
+    # Run the flow using the manager
+    flow_manager.run_flow_with_direct_api()

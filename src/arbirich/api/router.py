@@ -14,8 +14,8 @@ import psycopg2
 import redis
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 
-from arbirich.core.trading_service import TradingService
 from src.arbirich.config.config import get_all_strategy_names, get_strategy_config
+from src.arbirich.core.trading_service import get_trading_service
 from src.arbirich.models.models import Strategy
 from src.arbirich.models.router_models import (
     ChartData,
@@ -27,6 +27,7 @@ from src.arbirich.models.router_models import (
 )
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.redis.redis_service import RedisService
+from src.arbirich.utils.channel_diagnostics import log_channel_diagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ trading_router = APIRouter(prefix="/trading", tags=["trading"])
 strategies_router = APIRouter(prefix="/strategies", tags=["strategies"])
 dashboard_router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 market_router = APIRouter(prefix="/market", tags=["market"])
+pairs_router = APIRouter(prefix="/pairs", tags=["pairs"])
+exchanges_router = APIRouter(prefix="/exchanges", tags=["exchanges"])
 
 
 def get_db():
@@ -85,7 +88,7 @@ async def get_status():
     """Get the current status of the ArbiRich API."""
     try:
         # Get trading system status
-        trading_service = TradingService()
+        trading_service = get_trading_service()
         trading_status = await trading_service.get_status()
 
         # Count active strategies
@@ -97,7 +100,7 @@ async def get_status():
 
         # Get component statuses
         components = {
-            "database": "active" if trading_status.get("database", False) else "inactive",
+            "reporting": "active" if trading_status.get("reporting", False) else "inactive",
             "ingestion": "active" if trading_status.get("ingestion", False) else "inactive",
             "arbitrage": "active" if trading_status.get("arbitrage", False) else "inactive",
             "execution": "active" if trading_status.get("execution", False) else "inactive",
@@ -164,12 +167,24 @@ async def health_check():
     return status
 
 
+@status_router.get("/channels")
+async def get_channel_status():
+    """Get diagnostic information about Redis channels and subscribers."""
+    try:
+        # Run diagnostics and return the result
+        return log_channel_diagnostics()
+    except Exception as e:
+        logger.error(f"Error getting channel diagnostics: {e}")
+        raise HTTPException(status_code=500, detail="Error getting channel diagnostics")
+
+
 # -------------------- TRADING ENDPOINTS --------------------
 
 
 @trading_router.get("/status")
 async def get_trading_status():
     """Get the current status of the trading system"""
+    trading_service = get_trading_service()
     status = await trading_service.get_status()
     return status
 
@@ -178,7 +193,8 @@ async def get_trading_status():
 async def start_trading():
     """Start all trading components with activation"""
     try:
-        result = await trading_service.start_all(activate_entities=True)
+        trading_service = get_trading_service()
+        result = await trading_service.start_all(activate_strategies=False)
         return TradingStatusResponse(
             success=result,
             message="Trading system started successfully" if result else "Failed to start trading system",
@@ -194,47 +210,44 @@ async def start_trading():
 async def stop_trading():
     """Stop all trading components"""
     try:
-        await trading_service.stop_all()
-        return TradingStatusResponse(success=True, message="Trading system stopped successfully")
+        logger.info("Attempting to stop all trading components via router")
+
+        # Import the process diagnostics first to log the current state - but only log once
+        try:
+            from src.arbirich.utils.process_diagnostics import log_process_diagnostics
+
+            # Add flag to prevent duplicate logging
+            log_process_diagnostics(deduplicate=True)
+        except Exception as e:
+            logger.error(f"Error running process diagnostics: {e}")
+
+        # Call the new phased shutdown with a timeout
+        from src.arbirich.core.shutdown_manager import execute_phased_shutdown
+
+        success = await execute_phased_shutdown(emergency_timeout=30)
+
+        logger.info("Successfully stopped all trading components via router")
+        return TradingStatusResponse(
+            success=success,
+            message="Trading system stopped successfully" if success else "Trading system shutdown had issues",
+        )
     except Exception as e:
-        logger.error(f"Error stopping trading system: {e}")
+        logger.error(f"Error stopping trading system via router: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to stop trading: {str(e)}"
         )
 
 
-@trading_router.post("/components/{component_name}/start", response_model=TradingStatusResponse)
-async def start_component(component_name: str):
-    """Start a specific component (ingestion, arbitrage, execution, database)"""
+@trading_router.post("/restart", response_model=Dict[str, Any])
+async def restart_trading():
+    """Restart all trading components with clean state."""
     try:
-        result = await trading_service.start_component(component_name)
-        return TradingStatusResponse(
-            success=True, message=f"Component {component_name} started successfully", data=result
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        trading_service = get_trading_service()
+        result = await trading_service.restart_all_components()
+        return result
     except Exception as e:
-        logger.error(f"Error starting component {component_name}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to start component: {str(e)}"
-        )
-
-
-@trading_router.post("/components/{component_name}/stop", response_model=TradingStatusResponse)
-async def stop_component(component_name: str):
-    """Stop a specific component (ingestion, arbitrage, execution, database)"""
-    try:
-        result = await trading_service.stop_component(component_name)
-        return TradingStatusResponse(
-            success=True, message=f"Component {component_name} stopped successfully", data=result
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error stopping component {component_name}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to stop component: {str(e)}"
-        )
+        logger.error(f"Error restarting trading components: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to restart trading components: {str(e)}")
 
 
 # -------------------- STRATEGY ENDPOINTS --------------------
@@ -250,6 +263,7 @@ async def get_strategies(services: Tuple[DatabaseService, RedisService] = Depend
     strategies = []
 
     # Get strategy status from trading service
+    trading_service = get_trading_service()
     trading_status = await trading_service.get_status()
     strategy_statuses = trading_status.get("strategies", {})
 
@@ -327,6 +341,7 @@ async def start_strategy(strategy_name: str, services: Tuple[DatabaseService, Re
         db_service.update_strategy_status_by_name(strategy_name, is_active=True)
 
         # Start the strategy in trading service
+        trading_service = get_trading_service()
         result = await trading_service.start_strategy(strategy_name)
 
         # Record metric in Redis
@@ -361,6 +376,7 @@ async def stop_strategy(strategy_name: str, services: Tuple[DatabaseService, Red
         db_service.update_strategy_status_by_name(strategy_name, is_active=False)
 
         # Stop the strategy in trading service
+        trading_service = get_trading_service()
         result = await trading_service.stop_strategy(strategy_name)
 
         # Record metric in Redis
@@ -386,11 +402,23 @@ async def activate_strategy(
     strategy_name: str = Path(..., description="The name of the strategy to activate"),
     db: DatabaseService = Depends(get_db),
 ):
-    """Activate a strategy in the database."""
+    """Activate a strategy in the database and update relevant exchanges and pairs."""
     try:
         success = db.activate_strategy_by_name(strategy_name)
         if not success:
             raise HTTPException(status_code=404, detail=f"Strategy '{strategy_name}' not found")
+
+        # Update exchanges and pairs to active
+        strategy_config = get_strategy_config(strategy_name)
+        exchanges = strategy_config.get("exchanges", [])
+        pairs = strategy_config.get("pairs", [])
+
+        for exchange in exchanges:
+            db.set_exchange_active(exchange, True)
+
+        for pair in pairs:
+            db.set_pair_active(pair, True)
+
         return {"status": "success", "message": f"Strategy '{strategy_name}' activated successfully"}
     except HTTPException:
         raise
@@ -404,11 +432,25 @@ async def deactivate_strategy(
     strategy_name: str = Path(..., description="The name of the strategy to deactivate"),
     db: DatabaseService = Depends(get_db),
 ):
-    """Deactivate a strategy in the database."""
+    """Deactivate a strategy in the database and update relevant exchanges and pairs."""
     try:
         success = db.deactivate_strategy_by_name(strategy_name)
         if not success:
             raise HTTPException(status_code=404, detail=f"Strategy '{strategy_name}' not found")
+
+        # Update exchanges and pairs to inactive if no other strategies are using them
+        strategy_config = get_strategy_config(strategy_name)
+        exchanges = strategy_config.get("exchanges", [])
+        pairs = strategy_config.get("pairs", [])
+
+        for exchange in exchanges:
+            if not db.is_exchange_in_use(exchange):
+                db.set_exchange_active(exchange, False)
+
+        for pair in pairs:
+            if not db.is_pair_in_use(pair):
+                db.set_pair_active(pair, False)
+
         return {"status": "success", "message": f"Strategy '{strategy_name}' deactivated successfully"}
     except HTTPException:
         raise
@@ -651,6 +693,128 @@ async def get_metrics(
     return metrics
 
 
+# -------------------- PAIRS ENDPOINTS --------------------
+
+
+@pairs_router.get("/", response_model=List[Dict[str, Any]])
+async def get_pairs(db: DatabaseService = Depends(get_db)):
+    """Get all trading pairs."""
+    try:
+        pairs = db.get_all_pairs()
+        return [pair.model_dump() for pair in pairs]
+    except Exception as e:
+        logger.error(f"Error fetching pairs: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve pairs")
+
+
+@pairs_router.get("/{symbol}", response_model=Dict[str, Any])
+async def get_pair(symbol: str, db: DatabaseService = Depends(get_db)):
+    """Get details of a specific trading pair."""
+    try:
+        pair = db.get_pair_by_symbol(symbol)
+        if not pair:
+            raise HTTPException(status_code=404, detail=f"Pair '{symbol}' not found")
+        return pair.model_dump()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching pair '{symbol}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve pair")
+
+
+@pairs_router.put("/{symbol}/activate")
+async def activate_pair(symbol: str, db: DatabaseService = Depends(get_db)):
+    """Activate a trading pair."""
+    try:
+        pair = db.get_pair_by_symbol(symbol)
+        if not pair:
+            raise HTTPException(status_code=404, detail=f"Pair '{symbol}' not found")
+        db.set_pair_active((pair.base_currency, pair.quote_currency), True)
+        return {"status": "success", "message": f"Pair '{symbol}' activated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error activating pair '{symbol}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to activate pair")
+
+
+@pairs_router.put("/{symbol}/deactivate")
+async def deactivate_pair(symbol: str, db: DatabaseService = Depends(get_db)):
+    """Deactivate a trading pair."""
+    try:
+        pair = db.get_pair_by_symbol(symbol)
+        if not pair:
+            raise HTTPException(status_code=404, detail=f"Pair '{symbol}' not found")
+        db.set_pair_active((pair.base_currency, pair.quote_currency), False)
+        return {"status": "success", "message": f"Pair '{symbol}' deactivated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deactivating pair '{symbol}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to deactivate pair")
+
+
+# -------------------- EXCHANGES ENDPOINTS --------------------
+
+
+@exchanges_router.get("/", response_model=List[Dict[str, Any]])
+async def get_exchanges(db: DatabaseService = Depends(get_db)):
+    """Get all exchanges."""
+    try:
+        exchanges = db.get_all_exchanges()
+        return [exchange.model_dump() for exchange in exchanges]
+    except Exception as e:
+        logger.error(f"Error fetching exchanges: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve exchanges")
+
+
+@exchanges_router.get("/{name}", response_model=Dict[str, Any])
+async def get_exchange(name: str, db: DatabaseService = Depends(get_db)):
+    """Get details of a specific exchange."""
+    try:
+        exchange = db.get_exchange_by_name(name)
+        if not exchange:
+            raise HTTPException(status_code=404, detail=f"Exchange '{name}' not found")
+        return exchange.model_dump()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching exchange '{name}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve exchange")
+
+
+@exchanges_router.put("/{name}/activate")
+async def activate_exchange(name: str, db: DatabaseService = Depends(get_db)):
+    """Activate an exchange."""
+    try:
+        exchange = db.get_exchange_by_name(name)
+        if not exchange:
+            raise HTTPException(status_code=404, detail=f"Exchange '{name}' not found")
+        db.set_exchange_active(name, True)
+        return {"status": "success", "message": f"Exchange '{name}' activated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error activating exchange '{name}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to activate exchange")
+
+
+@exchanges_router.put("/{name}/deactivate")
+async def deactivate_exchange(name: str, db: DatabaseService = Depends(get_db)):
+    """Deactivate an exchange."""
+    try:
+        exchange = db.get_exchange_by_name(name)
+        if not exchange:
+            raise HTTPException(status_code=404, detail=f"Exchange '{name}' not found")
+        db.set_exchange_active(name, False)
+        return {"status": "success", "message": f"Exchange '{name}' deactivated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deactivating exchange '{name}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to deactivate exchange")
+
+
 # -------------------- ROUTER REGISTRATION --------------------
 
 # Register all sub-routers with the main router
@@ -659,6 +823,8 @@ main_router.include_router(trading_router)
 main_router.include_router(strategies_router)
 main_router.include_router(dashboard_router)
 main_router.include_router(market_router)
+main_router.include_router(pairs_router)
+main_router.include_router(exchanges_router)
 
 
 # Root endpoint

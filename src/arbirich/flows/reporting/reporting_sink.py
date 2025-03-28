@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
+from src.arbirich.core.system_state import is_system_shutting_down
 from src.arbirich.models.models import TradeExecution, TradeOpportunity
 from src.arbirich.models.schema import trade_opportunities
 from src.arbirich.services.database.database_service import DatabaseService
@@ -20,12 +21,22 @@ db_service = DatabaseService()
 
 def db_sink(item):
     """Process item and save to database"""
+    # Very first thing - check system shutdown state
+    if is_system_shutting_down():
+        logger.info("System is shutting down - skipping message processing")
+        return {"processed": False, "reason": "system_shutting_down"}
+
     try:
         logger.info(f"DB_SINK RECEIVED: {type(item)}, Channel info: {getattr(item, 'channel', 'Unknown')}")
 
         if not item:
             logger.debug("Received empty item, skipping")
             return {}
+
+        # Check shutdown state first - don't process new messages during shutdown
+        if is_system_shutting_down():
+            logger.info("System is shutting down - skipping message processing")
+            return {"processed": False, "reason": "system_shutting_down"}
 
         # Parse the data based on its type
         data = None

@@ -1,12 +1,14 @@
-import asyncio
 import logging
+import signal
+import sys
+import time
 from typing import Dict, List
 
 from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
-from bytewax.run import cli_main
 
+from src.arbirich.flows.common.flow_manager import BytewaxFlowManager
 from src.arbirich.flows.ingestion.ingestion_process import process_order_book
 from src.arbirich.flows.ingestion.ingestion_sink import publish_order_book
 from src.arbirich.flows.ingestion.ingestion_source import MultiExchangeSource
@@ -51,18 +53,34 @@ def get_processor_class(exchange):
         return DefaultOrderBookProcessor
 
 
-def build_ingestion_flow(exchanges_and_pairs: Dict[str, List[str]]):
-    """
-    Build the ingestion flow for processing order book data from multiple exchanges.
+# Create the flow manager for ingestion
+flow_manager = BytewaxFlowManager("ingestion")
 
-    Parameters:
-        exchanges_and_pairs: Dict mapping exchange names to lists of asset pairs
-    """
-    logger.info(f"Building ingestion flow with exchanges: {exchanges_and_pairs}")
-    flow = Dataflow("ingestion")
+# Store the current exchanges_and_pairs configuration
+_current_exchanges_and_pairs = None
+
+
+def build_ingestion_flow():
+    """Build the ingestion flow using current configuration"""
+    global _current_exchanges_and_pairs
+
+    if not _current_exchanges_and_pairs:
+        # Use default configuration if none was provided
+        from src.arbirich.config.config import EXCHANGES, PAIRS
+
+        exchanges_and_pairs = {}
+        for exchange in EXCHANGES:
+            exchanges_and_pairs[exchange] = []
+            for base, quote in PAIRS:
+                exchanges_and_pairs[exchange].append(f"{base}-{quote}")
+
+        _current_exchanges_and_pairs = exchanges_and_pairs
+
+    logger.info(f"Building ingestion flow with exchanges: {_current_exchanges_and_pairs}")
+    flow = Dataflow("ingestion_flow")
 
     # Create the multi-exchange source
-    source = MultiExchangeSource(exchanges_and_pairs, get_processor_class)
+    source = MultiExchangeSource(_current_exchanges_and_pairs, get_processor_class, stop_event=flow_manager.stop_event)
 
     # Create the input stream
     input_stream = op.input("exchange_input", flow, source)
@@ -128,44 +146,51 @@ def build_ingestion_flow(exchanges_and_pairs: Dict[str, List[str]]):
     return flow
 
 
-async def run_ingestion_flow(exchanges_and_pairs: Dict[str, List[str]]):
+# Set the build_flow method on the manager
+flow_manager.build_flow = build_ingestion_flow
+
+
+async def run_ingestion_flow(exchanges_and_pairs: Dict[str, List[str]] = None):
     """
     Run the ingestion flow asynchronously.
 
     Parameters:
         exchanges_and_pairs: Dict mapping exchange names to lists of asset pairs
     """
+    global _current_exchanges_and_pairs
+
+    # Update the configuration if provided
+    if exchanges_and_pairs:
+        _current_exchanges_and_pairs = exchanges_and_pairs
+
     logger.info("Starting ingestion pipeline...")
-    logger.info(f"Exchanges and assets: {exchanges_and_pairs}")
+    logger.info(f"Exchanges and assets: {_current_exchanges_and_pairs}")
 
+    # Run the flow using the manager
+    return await flow_manager.run_flow()
+
+
+def stop_ingestion_flow():
+    """Signal the ingestion flow to stop synchronously"""
+    # Ensure redis client gets closed
     try:
-        # Build and run the ingestion flow
-        logger.info(f"Building ingestion flow with exchanges: {exchanges_and_pairs}")
-
-        flow = build_ingestion_flow(exchanges_and_pairs)
-
-        logger.info("Ingestion flow built successfully")
-        logger.info("Running cli_main in a separate thread.")
-
-        execution_task = asyncio.create_task(
-            asyncio.to_thread(cli_main, flow, workers_per_process=1), name="ingestion-flow"
-        )
-
-        # Allow interruption to propagate
-        try:
-            await execution_task
-        except asyncio.CancelledError:
-            logger.info("Ingestion task cancelled")
-            raise
-        logger.info("Ingestion flow has finished running.")
-    except asyncio.CancelledError:
-        logger.info("Ingestion flow cancelled")
-        raise
+        _redis_client.close()
     except Exception as e:
-        logger.error(f"Error in ingestion flow: {e}", exc_info=True)
-    finally:
-        logger.info("Ingestion flow shutdown")
-        # Note: Don't close Redis client here as it might be shared among multiple flows
+        logger.error(f"Error closing Redis client: {e}")
+
+    return flow_manager.stop_flow()
+
+
+async def stop_ingestion_flow_async():
+    """Signal the ingestion flow to stop asynchronously"""
+    logger.info("Stopping ingestion flow asynchronously...")
+    try:
+        _redis_client.close()
+    except Exception as e:
+        logger.error(f"Error closing Redis client: {e}")
+
+    await flow_manager.stop_flow_async()
+    logger.info("Ingestion flow stopped")
 
 
 # For CLI usage
@@ -185,5 +210,20 @@ if __name__ == "__main__":
         for base, quote in PAIRS:
             exchange_pairs[exchange].append(f"{base}-{quote}")
 
-    # Run ingestion flow
-    asyncio.run(run_ingestion_flow(exchange_pairs))
+    # Set the current configuration
+    _current_exchanges_and_pairs = exchange_pairs
+
+    # Setup signal handlers for better shutdown
+    def handle_exit_signal(sig, frame):
+        logger.info(f"Received signal {sig}, initiating shutdown...")
+        stop_ingestion_flow()
+        # Give a moment for cleanup
+        time.sleep(1)
+        sys.exit(0)
+
+    # Register signal handlers
+    signal.signal(signal.SIGINT, handle_exit_signal)
+    signal.signal(signal.SIGTERM, handle_exit_signal)
+
+    # Run the flow using the manager
+    flow_manager.run_flow_with_direct_api()

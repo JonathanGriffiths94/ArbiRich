@@ -11,14 +11,11 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-# Import the unified API router
 from arbirich.api.router import main_router
-from arbirich.core.trading_service import TradingService
 from src.arbirich.core.events import shutdown_event, startup_event
+from src.arbirich.core.trading_service import TradingService
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.utils.banner import display_banner
-
-# Import existing web controllers and routes for backward compatibility
 from src.arbirich.web.controllers.dashboard_controller import router as dashboard_controller_router
 from src.arbirich.web.controllers.exchange_controller import router as exchange_router
 from src.arbirich.web.controllers.monitor_controller import router as monitor_router
@@ -30,8 +27,6 @@ from src.arbirich.web.routes.strategy_routes import router as strategy_router
 from src.arbirich.web.websockets import websocket_broadcast_task
 
 logger = logging.getLogger(__name__)
-
-# Add more detailed debugging to identify startup failures
 
 
 @asynccontextmanager
@@ -94,40 +89,83 @@ async def lifespan(app: FastAPI):
         logger.info("FastAPI shutdown initiated")
     except Exception as e:
         logger.critical(f"Fatal error during application startup: {e}", exc_info=True)
-        # Allow the shutdown process to continue
     finally:
         logger.info("Shutting down application services...")
 
         # Cancel WebSocket broadcast task
         if hasattr(app.state, "broadcast_task") and app.state.broadcast_task:
+            logger.info("Cancelling WebSocket broadcast task...")
             app.state.broadcast_task.cancel()
             try:
-                await app.state.broadcast_task
+                await asyncio.wait_for(app.state.broadcast_task, timeout=5.0)
             except asyncio.CancelledError:
-                pass
+                logger.info("WebSocket broadcast task cancelled successfully")
+            except asyncio.TimeoutError:
+                logger.warning("WebSocket broadcast task did not cancel within timeout")
+            except Exception as e:
+                logger.error(f"Error cancelling WebSocket broadcast task: {e}")
 
-        # Cancel database prefill task if it's still running
-        if hasattr(app.state, "prefill_task") and app.state.prefill_task:
-            if not app.state.prefill_task.done():
-                app.state.prefill_task.cancel()
-                try:
-                    await app.state.prefill_task
-                except asyncio.CancelledError:
-                    pass
+        # Set system-wide shutdown flag immediately (moved from shutdown_event)
+        try:
+            from src.arbirich.core.system_state import mark_system_shutdown
 
-        # Shutdown trading service
-        await trading_service.stop_all()
+            mark_system_shutdown(True)
+            logger.info("System-wide shutdown flag set")
+        except Exception as e:
+            logger.error(f"Error setting system shutdown flag: {e}")
 
-        # Close database connection if it has a close method
-        if hasattr(app.state, "db"):
-            # Use __exit__ method instead of close directly
+        # Disable processor startup to prevent new processors during shutdown
+        try:
+            from src.arbirich.flows.ingestion.ingestion_source import disable_processor_startup
+
+            disable_processor_startup()
+            logger.info("Processor startup disabled")
+        except Exception as e:
+            logger.error(f"Error disabling processor startup: {e}")
+
+        # Shutdown exchange processors before trading service
+        try:
+            from src.arbirich.services.exchange_processors.registry import shutdown_all_processors
+
+            shutdown_all_processors()
+            logger.info("Exchange processors shutdown initiated")
+            # Brief pause to allow processors to notice shutdown flag
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.error(f"Error stopping exchange processors: {e}")
+
+        # Now shutdown trading service with timeout
+        if hasattr(app.state, "trading_service") and app.state.trading_service:
+            logger.info("Stopping trading service with timeout")
             try:
+                await asyncio.wait_for(app.state.trading_service.stop_all(), timeout=5.0)
+                logger.info("Trading service stopped successfully")
+            except asyncio.TimeoutError:
+                logger.error("Trading service shutdown timed out")
+            except Exception as e:
+                logger.error(f"Error shutting down trading service: {e}")
+
+        # Now run the main shutdown event for remaining cleanup
+        try:
+            logger.info("Running application shutdown event...")
+            # Use a timeout to prevent hanging during shutdown
+            await asyncio.wait_for(shutdown_event(), timeout=10.0)
+            logger.info("Application shutdown event completed")
+        except asyncio.TimeoutError:
+            logger.error("Shutdown event timed out after 10 seconds")
+        except Exception as e:
+            logger.error(f"Error during shutdown event: {e}")
+
+        # Close database connection as the last step
+        if hasattr(app.state, "db") and app.state.db:
+            try:
+                logger.info("Closing database connection")
                 app.state.db.__exit__(None, None, None)
+                logger.info("Database connection closed")
             except Exception as e:
                 logger.error(f"Error closing database connection: {e}")
 
-        # Run regular shutdown tasks
-        await shutdown_event()
+        logger.info("Application shutdown complete")
 
 
 def make_app() -> FastAPI:
@@ -175,29 +213,6 @@ def make_app() -> FastAPI:
     # Include unified API router
     api_app.include_router(main_router)
 
-    # Include legacy routers for backward compatibility
-    # These can be gradually migrated to the unified API
-    try:
-        # Fix imports to use src prefix instead of arbirich
-        from src.arbirich.api.status import router as status_router
-
-        # Use our main_router directly since we already imported it
-        api_router = main_router
-
-        # Include with lower precedence so unified routes take priority
-        api_app.include_router(status_router)
-
-        # Import dashboard API if available
-        try:
-            from src.arbirich.api.dashboard_api import router as dashboard_api_router
-
-            api_app.include_router(dashboard_api_router, prefix="/dashboard")
-        except ImportError:
-            logger.warning("Dashboard API router not available")
-
-    except ImportError as e:
-        logger.warning(f"Some legacy API routers not available: {e}")
-
     # Mount the API router at /api
     app.mount("/api", api_app)
 
@@ -234,7 +249,7 @@ def make_app() -> FastAPI:
         )
 
     # Mount static files
-    static_dir = os.path.join(os.path.dirname(__file__), "./src/arbirich/web/static")
+    static_dir = os.path.join(os.path.dirname(__file__), "./web/static")
     if os.path.isdir(static_dir):
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
     else:
@@ -245,7 +260,7 @@ def make_app() -> FastAPI:
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     # Configure templates if needed
-    templates_dir = os.path.join(os.path.dirname(__file__), "./src/arbirich/web/templates")
+    templates_dir = os.path.join(os.path.dirname(__file__), "./web/templates")
     if os.path.isdir(templates_dir):
         templates = Jinja2Templates(directory=templates_dir)
         app.state.templates = templates

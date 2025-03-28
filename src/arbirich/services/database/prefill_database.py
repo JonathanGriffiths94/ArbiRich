@@ -27,15 +27,15 @@ from src.arbirich.config.config import (
     ALL_EXCHANGES,
     ALL_PAIRS,
     ALL_STRATEGIES,
+    PAIRS,
     STRATEGIES,
     get_all_exchange_names,
-    get_all_pair_symbols,
     get_all_strategy_names,
 )
+from src.arbirich.models.models import Pair  # Import the Pair model
 from src.arbirich.services.database.database_service import DatabaseService
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Try to load environment variables
@@ -148,7 +148,7 @@ def create_strategies(db_service, activate=False, smart_activate=False):
 
             # Make sure pairs are explicitly included
             pairs = config.get("pairs", [])
-
+            logger.info(f"Strategy {strategy_name} uses pairs: {pairs}")
             # Convert pair tuples to list format for better JSON storage
             if pairs and isinstance(pairs[0], tuple):
                 formatted_pairs = []
@@ -381,249 +381,67 @@ def create_exchanges(db_service, activate=False, smart_activate=False):
 
 
 def create_pairs(db_service, activate=False, smart_activate=False):
-    """
-    Create trading pairs from the exchange_config file.
-
-    Args:
-        db_service: Database service instance
-        activate: Whether to activate all entities
-        smart_activate: Whether to only activate pairs used by active strategies
-
-    Returns:
-        List of created pairs
-    """
-    logger.info("Creating trading pairs...")
-    created_pairs = []
-
-    # Get list of pairs to activate if using smart activation
+    """Create or update trading pairs in the database"""
     active_pairs = set()
-    if smart_activate:
-        _, active_pairs, _ = get_active_strategy_dependencies()  # Unpack 3 values, discarding exchanges and strategies
 
-    for pair_symbol in get_all_pair_symbols():
-        config = ALL_PAIRS.get(pair_symbol, {})
-        if not config:
-            logger.warning(f"No configuration found for pair: {pair_symbol}")
-            continue
+    # Get active pairs from strategies if using smart activation
+    if smart_activate:
+        _, active_pairs, _ = get_active_strategy_dependencies()
+        logger.info(f"Smart activation enabled for pairs: {active_pairs}")
+
+    # Track created/updated pairs
+    created_count = 0
+    updated_count = 0
+
+    # Use PAIRS list instead of ALL_PAIRS.keys()
+    for base_currency, quote_currency in PAIRS:
+        # Construct the symbol
+        symbol = f"{base_currency}-{quote_currency}"
+
+        # Get full configuration data
+        pair_config = ALL_PAIRS.get(symbol.upper(), {})
+        if not pair_config:
+            # Create basic config if not found
+            pair_config = {
+                "base_currency": base_currency,
+                "quote_currency": quote_currency,
+            }
 
         # Determine if this pair should be activated
-        should_activate = activate or (smart_activate and pair_symbol in active_pairs)
+        should_activate = activate or (smart_activate and symbol in active_pairs)
 
         try:
-            # First check if pair already exists
-            existing = db_service.get_pair_by_symbol(pair_symbol)
+            # Check if pair already exists
+            existing = db_service.get_pair_by_symbol(symbol)
 
             if existing:
-                logger.info(f"Pair already exists: {pair_symbol}, updating...")
-
-                # Update existing pair (don't try to modify the ID)
-                with db_service.engine.begin() as conn:
-                    # Prepare data for update
-                    update_data = {
-                        "base_currency": config.get("base_currency"),
-                        "quote_currency": config.get("quote_currency"),
-                        "is_active": should_activate,
-                    }
-
-                    # Execute the update
-                    update_stmt = sa.text(
-                        """
-                    UPDATE pairs
-                    SET 
-                        base_currency = :base_currency,
-                        quote_currency = :quote_currency,
-                        is_active = :is_active
-                    WHERE symbol = :symbol
-                    RETURNING id, symbol, base_currency, quote_currency, is_active
-                    """
-                    )
-
-                    result = conn.execute(update_stmt, {**update_data, "symbol": pair_symbol})
-
-                    updated = result.first()
-                    if updated:
-                        logger.info(f"Updated pair: {updated.symbol}, active: {updated.is_active}")
-                        # Create a simple dict for the response
-                        created_pairs.append(
-                            {"id": updated.id, "symbol": updated.symbol, "is_active": updated.is_active}
-                        )
+                # Update existing pair
+                pair = Pair(
+                    id=existing.id,
+                    base_currency=base_currency,
+                    quote_currency=quote_currency,
+                    symbol=symbol,
+                    is_active=should_activate,
+                )
+                db_service.update_pair(pair)
+                updated_count += 1
+                logger.info(f"Updated pair: {symbol} (Active: {should_activate})")
             else:
-                # Create new pair, without specifying the id
-                with db_service.engine.begin() as conn:
-                    # Prepare data for insert
-                    insert_data = {
-                        "base_currency": config.get("base_currency"),
-                        "quote_currency": config.get("quote_currency"),
-                        "symbol": pair_symbol,
-                        "is_active": should_activate,
-                    }
-
-                    # Execute the insert without including id in the values
-                    insert_stmt = sa.text(
-                        """
-                    INSERT INTO pairs
-                    (base_currency, quote_currency, symbol, is_active)
-                    VALUES
-                    (:base_currency, :quote_currency, :symbol, :is_active)
-                    RETURNING id, symbol, base_currency, quote_currency, is_active
-                    """
-                    )
-
-                    result = conn.execute(insert_stmt, insert_data)
-
-                    created = result.first()
-                    if created:
-                        logger.info(f"Created pair: {created.symbol}, active: {created.is_active}")
-                        # Create a simple dict for the response
-                        created_pairs.append(
-                            {"id": created.id, "symbol": created.symbol, "is_active": created.is_active}
-                        )
-
+                # Create new pair
+                pair = Pair(
+                    base_currency=base_currency,
+                    quote_currency=quote_currency,
+                    symbol=symbol,
+                    is_active=should_activate,
+                )
+                db_service.create_pair(pair)
+                created_count += 1
+                logger.info(f"Created pair: {symbol} (Active: {should_activate})")
         except Exception as e:
-            logger.error(f"Error creating/updating pair {pair_symbol}: {e}")
+            logger.error(f"Error creating/updating pair {symbol}: {e}")
 
-    logger.info(f"Created/updated {len(created_pairs)} pairs")
-    return created_pairs
-
-
-# def create_strategies(db_service, activate=False):
-#     """
-#     Create strategies from the exchange_config file.
-
-#     Args:
-#         db_service: Database service instance
-#         activate: Whether to activate the entities
-
-#     Returns:
-#         List of created strategies
-#     """
-#     logger.info("Creating strategies...")
-#     created_strategies = []
-
-#     for strategy_name in get_all_strategy_names():
-#         config = ALL_STRATEGIES.get(strategy_name, {})
-#         if not config:
-#             logger.warning(f"No configuration found for strategy: {strategy_name}")
-#             continue
-
-#         try:
-#             # Create additional_info from config
-#             additional_info = {}
-#             if "additional_info" in config:
-#                 additional_info.update(config.get("additional_info", {}))
-
-#             # Ensure exchanges and pairs are properly stored in additional_info
-#             # This is critical for the strategy to function correctly
-#             additional_info["type"] = config.get("type", "basic")
-
-#             # Make sure exchanges are explicitly included
-#             exchanges = config.get("exchanges", [])
-#             additional_info["exchanges"] = exchanges
-#             logger.info(f"Strategy {strategy_name} uses exchanges: {exchanges}")
-
-#             # Make sure pairs are explicitly included
-#             pairs = config.get("pairs", [])
-
-#             # Convert pair tuples to list format for better JSON storage
-#             if pairs and isinstance(pairs[0], tuple):
-#                 formatted_pairs = []
-#                 for pair in pairs:
-#                     if len(pair) == 2:
-#                         formatted_pairs.append(list(pair))
-#                 additional_info["pairs"] = formatted_pairs
-#                 logger.info(f"Strategy {strategy_name} uses pairs: {formatted_pairs}")
-#             else:
-#                 additional_info["pairs"] = pairs
-#                 logger.info(f"Strategy {strategy_name} uses pairs: {pairs}")
-
-#             # Add any strategy-specific parameters to additional_info
-#             for param in ["min_depth", "min_volume", "max_slippage", "execution_delay"]:
-#                 if param in config:
-#                     additional_info[param] = config.get(param)
-
-#             # First check if strategy already exists
-#             existing = db_service.get_strategy_by_name(strategy_name)
-
-#             if existing:
-#                 logger.info(f"Strategy already exists: {strategy_name}, updating...")
-
-#                 # Update existing strategy (don't try to modify the ID)
-#                 with db_service.engine.begin() as conn:
-#                     # Prepare data for update
-#                     update_data = {
-#                         "starting_capital": config.get("starting_capital"),
-#                         "min_spread": config.get("min_spread"),
-#                         "additional_info": json.dumps(additional_info),
-#                         "is_active": activate,
-#                     }
-
-#                     # Execute the update without type casts
-#                     update_stmt = sa.text(
-#                         """
-#                     UPDATE strategies
-#                     SET
-#                         starting_capital = :starting_capital,
-#                         min_spread = :min_spread,
-#                         additional_info = :additional_info,
-#                         is_active = :is_active
-#                     WHERE name = :name
-#                     RETURNING id, name, starting_capital, min_spread, is_active
-#                     """
-#                     )
-
-#                     result = conn.execute(update_stmt, {**update_data, "name": strategy_name})
-
-#                     updated = result.first()
-#                     if updated:
-#                         logger.info(f"Updated strategy: {updated.name}, active: {updated.is_active}")
-#                         # Create a simple dict for the response
-#                         created_strategies.append(
-#                             {"id": updated.id, "name": updated.name, "is_active": updated.is_active}
-#                         )
-#             else:
-#                 # Create new strategy, without specifying the id
-#                 with db_service.engine.begin() as conn:
-#                     # Prepare data for insert
-#                     insert_data = {
-#                         "name": strategy_name,
-#                         "starting_capital": config.get("starting_capital"),
-#                         "min_spread": config.get("min_spread"),
-#                         "additional_info": json.dumps(additional_info),
-#                         "is_active": activate,
-#                         "total_profit": 0,
-#                         "total_loss": 0,
-#                         "net_profit": 0,
-#                         "trade_count": 0,
-#                     }
-
-#                     # Execute the insert without type casts
-#                     insert_stmt = sa.text(
-#                         """
-#                     INSERT INTO strategies
-#                     (name, starting_capital, min_spread, additional_info, is_active,
-#                      total_profit, total_loss, net_profit, trade_count)
-#                     VALUES
-#                     (:name, :starting_capital, :min_spread, :additional_info,
-#                      :is_active, :total_profit, :total_loss, :net_profit, :trade_count)
-#                     RETURNING id, name, starting_capital, min_spread, is_active
-#                     """
-#                     )
-
-#                     result = conn.execute(insert_stmt, insert_data)
-
-#                     created = result.first()
-#                     if created:
-#                         logger.info(f"Created strategy: {created.name}, active: {created.is_active}")
-#                         # Create a simple dict for the response
-#                         created_strategies.append(
-#                             {"id": created.id, "name": created.name, "is_active": created.is_active}
-#                         )
-
-#         except Exception as e:
-#             logger.error(f"Error creating/updating strategy {strategy_name}: {e}")
-
-#     logger.info(f"Created/updated {len(created_strategies)} strategies")
-#     return created_strategies
+    logger.info(f"Created {created_count} pairs, updated {updated_count} pairs")
+    return created_count + updated_count
 
 
 def prefill_database(activate=False, smart_activate=False):
@@ -669,7 +487,7 @@ def prefill_database(activate=False, smart_activate=False):
                 # Final summary
                 logger.info("Database prefill complete!")
                 logger.info(f"Created/updated {len(exchanges)} exchanges")
-                logger.info(f"Created/updated {len(pairs)} trading pairs")
+                logger.info(f"Created/updated {pairs} trading pairs")
                 logger.info(f"Created/updated {len(strategies)} strategies")
 
                 if activate:

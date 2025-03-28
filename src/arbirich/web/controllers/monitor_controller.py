@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from arbirich.core.trading_service import TradingService
+from src.arbirich.core.trading_service import get_trading_service
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.redis.redis_service import RedisService
 
@@ -89,7 +89,7 @@ async def get_processes():
     """
     try:
         # Get trading service components
-        trading_service = TradingService()
+        trading_service = get_trading_service()
         trading_status = await trading_service.get_status()
 
         # Format as a list of processes

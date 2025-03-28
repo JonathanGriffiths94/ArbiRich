@@ -36,7 +36,7 @@ ALL_EXCHANGES = {
         "delimiter": "",
         "withdrawal_fee": {"BTC": 0.0005, "ETH": 0.01, "USDT": 1.0},
         "api_response_time": 100,
-        "mapping": {"USDT": "USDT"},
+        "mapping": {},
         "additional_info": {"connection_count": 1},
     },
     "cryptocom": {
@@ -48,21 +48,21 @@ ALL_EXCHANGES = {
         "delimiter": "_",
         "withdrawal_fee": {"BTC": 0.0004, "ETH": 0.008, "USDT": 1.0},
         "api_response_time": 200,
-        "mapping": {"USDT": "USDT"},
+        "mapping": {},
         "additional_info": {"connection_count": 1},
     },
-    "binance": {
-        "name": "binance",
-        "api_rate_limit": 1200,
-        "trade_fees": 0.001,
-        "rest_url": "https://api.binance.com",
-        "ws_url": "wss://stream.binance.com:9443/ws",
-        "delimiter": "",
-        "withdrawal_fee": {"BTC": 0.0005, "ETH": 0.005, "USDT": 1.0},
-        "api_response_time": 50,
-        "mapping": {"USDT": "USDT"},
-        "additional_info": {"connection_count": 2},
-    },
+    # "binance": {
+    #     "name": "binance",
+    #     "api_rate_limit": 1200,
+    #     "trade_fees": 0.001,
+    #     "rest_url": "https://api.binance.com",
+    #     "ws_url": "wss://stream.binance.com:9443/ws",
+    #     "delimiter": "",
+    #     "withdrawal_fee": {"BTC": 0.0005, "ETH": 0.005, "USDT": 1.0},
+    #     "api_response_time": 50,
+    #     "mapping": {"USDT": "USDT"},
+    #     "additional_info": {"connection_count": 2},
+    # },
 }
 
 # Use only active exchanges for the primary configuration
@@ -95,7 +95,7 @@ ALL_PAIRS = {
     },
 }
 
-# Active trading pairs
+# Trading pairs
 PAIRS = [
     ("BTC", "USDT"),
     ("ETH", "USDT"),
@@ -154,7 +154,6 @@ ALL_STRATEGIES = {
 STRATEGIES = {
     "basic_arbitrage": ALL_STRATEGIES["basic_arbitrage"],
     "mid_price_arbitrage": ALL_STRATEGIES["mid_price_arbitrage"],
-    "high_frequency_arbitrage": ALL_STRATEGIES["high_frequency_arbitrage"],
 }
 
 

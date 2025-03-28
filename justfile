@@ -69,10 +69,10 @@ run-bot: setup-local-db
 
 # Stop running ArbiRich application
 stop-bot:
-    bash -c "$(poetry run python -c 'import sys; from src.arbirich.tools.stop_app import stop_arbirich_processes; stop_arbirich_processes(); sys.exit(0)')"
+    bash -c "$(poetry run python -c 'import sys; from scripts.stop_app import stop_arbirich_processes; stop_arbirich_processes(); sys.exit(0)')"
 
 force-kill:
-    {{ python }} -m src.arbirich.tools.force_kill
+    {{ python }} -m scripts.force_kill
 
 # Emergency abort - kills all ArbiRich processes forcibly (LAST RESORT)
 abort:

@@ -8,27 +8,25 @@ from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
 from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
-from src.arbirich.flows.arbitrage.arbitrage_source import get_shared_redis_client
-from src.arbirich.services.redis.redis_service import RedisService
+from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified, set_stop_event
+from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Shared stop event for coordinating shutdown
-_shared_stop_event = threading.Event()
-
-
-def set_stop_event():
-    """Signal all execution partitions to stop."""
-    global _shared_stop_event
-    _shared_stop_event.set()
-    logger.debug("Stop event set for all execution partitions")
-
 
 class RedisExecutionPartition(StatefulSourcePartition):
-    def __init__(self, strategy_name=None):
+    def __init__(self, strategy_name=None, stop_event=None):
+        """
+        Initialize a Redis execution partition.
+
+        Args:
+            strategy_name: Optional filter for a specific strategy
+            stop_event: Optional threading.Event for stopping the partition
+        """
         logger.info(f"Initializing RedisExecutionPartition for strategy: {strategy_name or 'all'}")
         self.strategy_name = strategy_name
+        self.stop_event = stop_event  # Store the passed stop event
         # Use shared Redis client instead of creating a new one
         self.redis_client = get_shared_redis_client()
         self._running = True
@@ -66,9 +64,19 @@ class RedisExecutionPartition(StatefulSourcePartition):
 
     def next_batch(self) -> list:
         try:
-            # First check if stop has been requested
-            if _shared_stop_event.is_set():
-                logger.debug("Stop event detected in execution partition")
+            # Check if the system is shutting down
+            if is_system_shutting_down():
+                component_id = f"execution:{self.strategy_name or 'all'}"
+                if mark_component_notified("execution", component_id):
+                    logger.info(f"Stop event detected for {component_id}")
+                    # Clean up resources
+                    try:
+                        self.pubsub.unsubscribe()
+                        self.pubsub.close()
+                        logger.info(f"Successfully unsubscribed {component_id} from Redis channels")
+                    except Exception as e:
+                        logger.error(f"Error unsubscribing {component_id} from Redis channels: {e}")
+                self._running = False
                 return []
 
             with self._lock:
@@ -82,11 +90,12 @@ class RedisExecutionPartition(StatefulSourcePartition):
                     if not self.redis_client.is_healthy():
                         logger.warning("Redis connection appears unhealthy, reconnecting")
                         try:
-                            self.redis_client.close()
+                            self.pubsub.unsubscribe()
+                            self.pubsub.close()
                         except Exception as e:
-                            logger.warning(f"Error closing Redis connection: {e}")
+                            logger.warning(f"Error closing Redis pubsub: {e}")
 
-                        self.redis_client = RedisService()
+                        self.redis_client = get_shared_redis_client()
                         # Recreate subscriptions
                         self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
                         for channel in self.channels_to_check:
@@ -146,16 +155,80 @@ class RedisExecutionPartition(StatefulSourcePartition):
 
 
 class RedisExecutionSource(FixedPartitionedSource):
-    def __init__(self, strategy_name=None):
+    """A source that reads trade opportunities from Redis."""
+
+    def __init__(self, strategy_name=None, stop_event=None):
+        """
+        Initialize the Redis execution source.
+
+        Args:
+            strategy_name: Optional filter for a specific strategy
+            stop_event: Optional threading.Event for signaling source to stop
+        """
         self.strategy_name = strategy_name
-        logger.info(f"Created RedisExecutionSource for strategy: {strategy_name or 'all'}")
+        self.stop_event = stop_event
+        self.logger = logging.getLogger(__name__)
+        self.channel = TRADE_OPPORTUNITIES_CHANNEL
+        if strategy_name:
+            self.channel = f"{self.channel}:{strategy_name}"
+        self.logger.info(f"RedisExecutionSource initialized for channel: {self.channel}")
+
+        # Monitor the stop_event and propagate it to the system-wide shutdown flag
+        if self.stop_event:
+
+            def monitor_stop():
+                while not self.stop_event.is_set():
+                    time.sleep(0.1)
+                set_stop_event()  # Signal system-wide shutdown
+
+            monitor_thread = threading.Thread(target=monitor_stop, daemon=True)
+            monitor_thread.start()
 
     def list_parts(self):
-        # Simple single partition for execution source
-        parts = ["execution_part"]
-        logger.info(f"List of execution partitions: {parts}")
-        return parts
+        """List available partitions."""
+        return [self.channel]
 
     def build_part(self, step_id, for_key, _resume_state):
+        """Create a partition for the given key."""
         logger.info(f"Building execution partition for key: {for_key}")
-        return RedisExecutionPartition(self.strategy_name)
+        # Pass the stop_event to the partition
+        return RedisExecutionPartition(self.strategy_name, stop_event=self.stop_event)
+
+
+import logging
+
+from src.arbirich.services.redis.redis_service import RedisService
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Shared Redis client and lock
+_shared_redis_client = None
+_redis_lock = threading.Lock()
+
+
+def get_shared_redis_client():
+    """Get or create a shared Redis client for this module."""
+    global _shared_redis_client
+    with _redis_lock:
+        if _shared_redis_client is None:
+            try:
+                _shared_redis_client = RedisService()
+                logger.debug("Created new Redis client for execution source")
+            except Exception as e:
+                logger.error(f"Error creating Redis client: {e}")
+                return None
+        return _shared_redis_client
+
+
+def reset_shared_redis_client():
+    """Reset the shared Redis client for clean restarts."""
+    global _shared_redis_client
+    with _redis_lock:
+        if _shared_redis_client is not None:
+            try:
+                _shared_redis_client.close()
+                logger.info("Closed shared Redis client in execution source")
+            except Exception as e:
+                logger.warning(f"Error closing Redis client: {e}")
+            _shared_redis_client = None
