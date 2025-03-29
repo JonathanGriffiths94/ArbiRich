@@ -41,6 +41,78 @@
             border-bottom-right-radius: 0.5rem;
         }
 
+        /* Enhanced pulsing green dot animation for active trading - More intense pulsing */
+        @keyframes pulse-green {
+            0% {
+                box-shadow: 0 0 0 0 rgba(58, 190, 120, 0.8);
+                opacity: 1;
+                transform: scale(1);
+                background-color: #3abe78;
+                /* Normal green */
+            }
+
+            50% {
+                box-shadow: 0 0 0 8px rgba(58, 190, 120, 0);
+                opacity: 0.85;
+                transform: scale(1.2);
+                background-color: #2a8d58;
+                /* Darker green during pulse */
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(58, 190, 120, 0);
+                opacity: 1;
+                transform: scale(1);
+                background-color: #3abe78;
+                /* Back to normal green */
+            }
+        }
+
+        .pulse-green {
+            animation: pulse-green 1.5s infinite;
+            /* Faster animation */
+            position: relative;
+            transition: background-color 0.3s ease;
+        }
+
+        /* Add a second pulsing element for double pulse effect */
+        .pulse-green:after {
+            content: '';
+            position: absolute;
+            top: -3px;
+            left: -3px;
+            right: -3px;
+            bottom: -3px;
+            border-radius: 50%;
+            background: rgba(58, 190, 120, 0.3);
+            z-index: -1;
+            animation: pulse-green-outer 1.5s infinite 0.3s;
+            /* Offset timing */
+        }
+
+        @keyframes pulse-green-outer {
+            0% {
+                opacity: 0.5;
+                transform: scale(1);
+                background: rgba(42, 141, 88, 0.3);
+                /* Darker green */
+            }
+
+            50% {
+                opacity: 0;
+                transform: scale(1.5);
+                background: rgba(42, 141, 88, 0.1);
+                /* Fading darker green */
+            }
+
+            100% {
+                opacity: 0.5;
+                transform: scale(1);
+                background: rgba(58, 190, 120, 0.3);
+                /* Back to normal green */
+            }
+        }
+
         /* ...existing styles... */
     </style>
 
@@ -159,6 +231,75 @@
             overflow-x: auto;
             background-color: #121a17;
             border-radius: 0.5rem;
+        }
+
+        /* Pulsing green dot animation for active trading */
+        @keyframes pulse-green {
+            0% {
+                box-shadow: 0 0 0 0 rgba(58, 190, 120, 0.8);
+                opacity: 1;
+                transform: scale(1);
+                background-color: #3abe78;
+                /* Normal green */
+            }
+
+            50% {
+                box-shadow: 0 0 0 8px rgba(58, 190, 120, 0);
+                opacity: 0.85;
+                transform: scale(1.2);
+                background-color: #2a8d58;
+                /* Darker green during pulse */
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(58, 190, 120, 0);
+                opacity: 1;
+                transform: scale(1);
+                background-color: #3abe78;
+                /* Back to normal green */
+            }
+        }
+
+        .pulse-green {
+            animation: pulse-green 1.5s infinite;
+            position: relative;
+            transition: background-color 0.3s ease;
+        }
+
+        @keyframes pulse-green-outer {
+            0% {
+                opacity: 0.5;
+                transform: scale(1);
+                background: rgba(42, 141, 88, 0.3);
+                /* Darker green */
+            }
+
+            50% {
+                opacity: 0;
+                transform: scale(1.5);
+                background: rgba(42, 141, 88, 0.1);
+                /* Fading darker green */
+            }
+
+            100% {
+                opacity: 0.5;
+                transform: scale(1);
+                background: rgba(58, 190, 120, 0.3);
+                /* Back to normal green */
+            }
+        }
+
+        .pulse-green:after {
+            content: '';
+            position: absolute;
+            top: -3px;
+            left: -3px;
+            right: -3px;
+            bottom: -3px;
+            border-radius: 50%;
+            background: rgba(58, 190, 120, 0.3);
+            z-index: -1;
+            animation: pulse-green-outer 1.5s infinite 0.3s;
         }
     </style>
 
@@ -280,6 +421,190 @@
             // Check trading status on page load and then every 30 seconds
             checkTradingStatus();
             setInterval(checkTradingStatus, 30000); // Update every 30 seconds
+
+            // Setup trading status indicator - Modified to add pulsing animation
+            function updateTradingStatusIndicator() {
+                fetch('/api/trading/status')
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        const isActive = data.overall === true || data.status === 'operational';
+
+                        // Update trading status indicator
+                        const statusDot = document.getElementById('system-trading-dot');
+                        const statusText = document.getElementById('system-trading-text');
+                        const statusLabel = document.getElementById('system-trading-label');
+
+                        // Update button states based on system status
+                        document.getElementById('start-trading-btn').disabled = isActive;
+                        document.getElementById('stop-trading-btn').disabled = !isActive;
+
+                        if (isActive) {
+                            statusDot.className = 'h-3 w-3 rounded-full bg-profit-green mr-2 pulse-green';
+                            statusText.className = 'text-sm font-medium text-profit-green';
+                            statusText.textContent = 'Trading Active';
+                            statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green';
+                            statusLabel.textContent = 'ACTIVE';
+                        } else {
+                            statusDot.className = 'h-3 w-3 rounded-full bg-gray-500 mr-2';
+                            statusText.className = 'text-sm font-medium';
+                            statusText.textContent = 'Trading Inactive';
+                            statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400';
+                            statusLabel.textContent = 'STOPPED';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching trading status:', error);
+                        // Show error state
+                        const statusDot = document.getElementById('system-trading-dot');
+                        const statusText = document.getElementById('system-trading-text');
+                        const statusLabel = document.getElementById('system-trading-label');
+
+                        statusDot.className = 'h-3 w-3 rounded-full bg-loss-red mr-2';
+                        statusText.className = 'text-sm font-medium text-loss-red';
+                        statusText.textContent = 'Status Error';
+                        statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-red-900 text-loss-red';
+                        statusLabel.textContent = 'ERROR';
+                    });
+            }
+
+            // Setup stop trading button
+            const stopTradingBtn = document.getElementById('stop-trading-btn');
+            stopTradingBtn.addEventListener('click', function () {
+                if (confirm('Are you sure you want to stop all trading activities?')) {
+                    fetch('/api/trading/stop', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            console.log('Trading stopped:', data);
+                            updateTradingStatusIndicator();
+                            showNotification('Trading stopped successfully', 'success');
+                        })
+                        .catch(error => {
+                            console.error('Error stopping trading:', error);
+                            showNotification('Failed to stop trading: ' + error.message, 'error');
+                        });
+                }
+            });
+
+            // Setup killswitch button
+            const killswitchBtn = document.getElementById('killswitch-btn');
+            killswitchBtn.addEventListener('click', function () {
+                if (confirm('⚠️ EMERGENCY KILLSWITCH ⚠️\n\nThis will immediately halt ALL system operations! Are you absolutely sure?')) {
+                    fetch('/api/trading/stop', {  // Using the same endpoint with a specific header
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Emergency-Shutdown': 'true'
+                        }
+                    })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            console.log('Emergency shutdown activated:', data);
+                            updateTradingStatusIndicator();
+                            showNotification('EMERGENCY SHUTDOWN ACTIVATED', 'error');
+                        })
+                        .catch(error => {
+                            console.error('Error in emergency shutdown:', error);
+                            showNotification('Failed to execute emergency shutdown: ' + error.message, 'error');
+                        });
+                }
+            });
+
+            // Setup start trading button
+            const startTradingBtn = document.getElementById('start-trading-btn');
+            startTradingBtn.addEventListener('click', function () {
+                fetch('/api/trading/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Trading started:', data);
+                        updateTradingStatusIndicator();
+                        showNotification('Trading started successfully', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error starting trading:', error);
+                        showNotification('Failed to start trading: ' + error.message, 'error');
+                    });
+            });
+
+            // Setup restart trading button
+            const restartTradingBtn = document.getElementById('restart-trading-btn');
+            restartTradingBtn.addEventListener('click', function () {
+                if (confirm('Are you sure you want to restart the trading system?')) {
+                    fetch('/api/trading/restart', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            console.log('Trading restarted:', data);
+                            updateTradingStatusIndicator();
+                            showNotification('Trading system restarted successfully', 'success');
+                        })
+                        .catch(error => {
+                            console.error('Error restarting trading:', error);
+                            showNotification('Failed to restart trading: ' + error.message, 'error');
+                        });
+                }
+            });
+
+            // Show notification function
+            function showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-300 ${type === 'error' ? 'bg-loss-red/90 text-white' :
+                    type === 'success' ? 'bg-profit-green/90 text-white' :
+                        'bg-dark-element text-white'
+                    }`;
+
+                notification.innerHTML = message;
+                document.body.appendChild(notification);
+
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    setTimeout(() => {
+                        document.body.removeChild(notification);
+                    }, 300);
+                }, 3000);
+            }
+
+            // Update trading status initially and then every 10 seconds
+            updateTradingStatusIndicator();
+            setInterval(updateTradingStatusIndicator, 10000);
         });
     </script>
 
@@ -303,6 +628,41 @@ $$ |  $$ |$$ |  $$ |
 \__|  \__|\__|  \__|
                 </pre>
             </a>
+        </div>
+
+        <!-- Trading Status Indicator - Add back the control buttons -->
+        <div class="px-6 pb-3">
+            <div id="trading-status-indicator" class="bg-dark-element rounded-lg p-3 border border-gray-800">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center">
+                        <span id="system-trading-dot" class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
+                        <span class="text-sm font-medium" id="system-trading-text">Trading Status</span>
+                    </div>
+                    <span id="system-trading-label"
+                        class="text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400">Unknown</span>
+                </div>
+                <!-- Re-add trading control buttons -->
+                <div class="mt-2 space-y-2">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="start-trading-btn"
+                            class="bg-dark-bg hover:bg-gray-800 text-profit-green text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-profit-green/30">
+                            <i class="fas fa-play mr-1"></i> Start
+                        </button>
+                        <button id="stop-trading-btn"
+                            class="bg-dark-bg hover:bg-gray-800 text-loss-red text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-loss-red/30">
+                            <i class="fas fa-stop mr-1"></i> Stop
+                        </button>
+                    </div>
+                    <button id="restart-trading-btn"
+                        class="bg-dark-bg hover:bg-gray-800 text-dollar-green text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center border border-dollar-green/30">
+                        <i class="fas fa-sync-alt mr-1"></i> Restart
+                    </button>
+                    <button id="killswitch-btn"
+                        class="bg-loss-red hover:bg-red-700 text-white text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center">
+                        <i class="fas fa-power-off mr-1"></i> Emergency Killswitch
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- Navigation items - with overflow scroll -->
@@ -343,7 +703,7 @@ $$ |  $$ |$$ |  $$ |
                 <a href="/exchanges"
                     class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/exchanges' %}active{% endif %}">
                     <i class="fas fa-exchange-alt w-5"></i>
-                    <span class="ml-3">Exchanges</span>
+                    <span class="ml-3">Market Pair$$</span>
                 </a>
             </nav>
         </div>
@@ -410,7 +770,7 @@ $$ |  $$ |$$ |  $$ |
         </div>
     </aside>
 
-    <!-- Mobile Navigation Bar -->
+    <!-- Mobile Navigation Bar - Fixed missing closing tag -->
     <div
         class="fixed bottom-0 left-0 right-0 bg-dark-element border-t border-gray-800 flex justify-around py-2 md:hidden z-10">
         <!-- Updated href to point to /dashboard instead of / -->
@@ -430,6 +790,13 @@ $$ |  $$ |$$ |  $$ |
             class="text-center p-2 {% if request.url.path == '/setup' %}text-dollar-green{% else %}text-gray-400{% endif %}">
             <i class="fas fa-cogs block text-lg"></i>
             <span class="text-xs mt-1">Setup</span>
+        </a>
+
+        <a href="/exchanges"
+            class="text-center p-2 {% if request.url.path == '/exchanges' %}text-dollar-green{% else %}text-gray-400{% endif %}">
+            <i class="fas fa-exchange-alt block text-lg"></i>
+            <span class="text-xs mt-1">Pairs</span>
+        </a>
     </div>
 
     <!-- Main Content -->

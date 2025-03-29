@@ -1,50 +1,33 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}ArbiRich - Strategy Setup{% endblock %}
+{% block title %}ArbiRich - System Setup{% endblock %}
 
 {% block content %}
 <div class="flex justify-between items-center mb-6">
-    <h1 class="text-3xl font-bold text-dollar-green">Strategy Setup</h1>
+    <h1 class="text-3xl font-bold text-dollar-green">System Setup</h1>
+    <!-- Trading control buttons moved under heading -->
+    <div class="flex space-x-2">
+        <button id="start-trading-btn"
+            class="bg-dark-card hover:bg-gray-700 text-profit-green py-2 px-4 rounded transition-all flex items-center border border-profit-green/30">
+            <i class="fas fa-play mr-2"></i> Start Trading
+        </button>
+        <button id="stop-trading-btn"
+            class="bg-dark-card hover:bg-gray-700 text-loss-red py-2 px-4 rounded transition-all flex items-center border border-loss-red/30">
+            <i class="fas fa-stop mr-2"></i> Stop Trading
+        </button>
+        <button id="restart-trading-btn"
+            class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-4 rounded transition-all flex items-center border border-dollar-green/30">
+            <i class="fas fa-sync-alt mr-2"></i> Restart Trading
+        </button>
+    </div>
+</div>
 
-    <!-- System Control Buttons -->
-    <div class="flex space-x-3">
-        <button id="btn-start-system"
-            class="bg-dark-element hover:bg-dark-card text-profit-green font-semibold py-2 px-4 rounded-lg border border-profit-green/30 transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
-            <span class="flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Start
-            </span>
-        </button>
-        <button id="btn-stop-system"
-            class="bg-dark-element hover:bg-dark-card text-loss-red font-semibold py-2 px-4 rounded-lg border border-loss-red/30 transition-colors duration-300">
-            <span class="flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
-                </svg>
-                Stop
-            </span>
-        </button>
-        <button id="btn-restart-system"
-            class="bg-dark-element hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300">
-            <span class="flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Restart
-            </span>
-        </button>
+<!-- System status indicator for current page -->
+<div class="bg-dark-element rounded-lg p-4 mb-6 border border-gray-800">
+    <div class="flex items-center">
+        <span id="page-system-trading-dot" class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
+        <span class="text-sm">System Status:</span>
+        <span id="page-system-trading-text" class="ml-2 font-medium text-gray-300">Checking...</span>
     </div>
 </div>
 
@@ -68,7 +51,11 @@
             <p class="text-gray-400 mt-3">Loading strategies...</p>
         </div>
 
-        <!-- Strategies will be loaded dynamically -->
+        <!-- Debug information to help diagnose loading issues -->
+        <div id="strategy-debug" class="hidden mt-4 p-3 bg-dark-element/50 rounded-lg text-xs border border-gray-700">
+            <p class="text-yellow-400 font-mono mb-2">Debug Information:</p>
+            <div id="strategy-debug-content" class="font-mono text-gray-400"></div>
+        </div>
     </div>
 </div>
 
@@ -139,8 +126,149 @@
     }
 </style>
 
+{% block scripts %}
+{{ super() }}
 <script>
+    // Reuse the existing trading control button logic but connect to the new buttons
     document.addEventListener('DOMContentLoaded', function () {
+        // Get button references
+        const startTradingBtn = document.getElementById('start-trading-btn');
+        const stopTradingBtn = document.getElementById('stop-trading-btn');
+        const restartTradingBtn = document.getElementById('restart-trading-btn');
+
+        // Initialize status indicators
+        const pageStatusDot = document.getElementById('page-system-trading-dot');
+        const pageStatusText = document.getElementById('page-system-trading-text');
+
+        // Function to update status on this page
+        function updatePageStatus(isActive) {
+            if (isActive) {
+                pageStatusDot.className = 'h-3 w-3 rounded-full bg-profit-green mr-2';
+                pageStatusText.className = 'ml-2 font-medium text-profit-green';
+                pageStatusText.textContent = 'Trading Active';
+
+                startTradingBtn.disabled = true;
+                stopTradingBtn.disabled = false;
+                startTradingBtn.classList.add('opacity-50');
+                stopTradingBtn.classList.remove('opacity-50');
+            } else {
+                pageStatusDot.className = 'h-3 w-3 rounded-full bg-gray-500 mr-2';
+                pageStatusText.className = 'ml-2 font-medium text-gray-300';
+                pageStatusText.textContent = 'Trading Inactive';
+
+                startTradingBtn.disabled = false;
+                stopTradingBtn.disabled = true;
+                startTradingBtn.classList.remove('opacity-50');
+                stopTradingBtn.classList.add('opacity-50');
+            }
+        }
+
+        // Use the existing API endpoints and functions from base.html
+        // Just need to attach event handlers to these buttons
+
+        // Periodic status check that also updates this page
+        function checkTradingStatus() {
+            fetch('/api/trading/status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const isActive = data.overall === true || data.status === 'operational';
+                    updatePageStatus(isActive);
+                })
+                .catch(error => {
+                    console.error('Error fetching trading status:', error);
+                    pageStatusDot.className = 'h-3 w-3 rounded-full bg-loss-red mr-2';
+                    pageStatusText.className = 'ml-2 font-medium text-loss-red';
+                    pageStatusText.textContent = 'Status Error';
+                });
+        }
+
+        // Check status immediately and then periodically
+        checkTradingStatus();
+        setInterval(checkTradingStatus, 10000);
+
+        // Attach event handlers - using the same API endpoints as in base.html
+        startTradingBtn.addEventListener('click', function () {
+            fetch('/api/trading/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    checkTradingStatus(); // Update status immediately
+                    showNotification('Trading started successfully', 'success');
+                })
+                .catch(error => {
+                    console.error('Error starting trading:', error);
+                    showNotification('Failed to start trading', 'error');
+                });
+        });
+
+        stopTradingBtn.addEventListener('click', function () {
+            if (confirm('Are you sure you want to stop all trading activities?')) {
+                fetch('/api/trading/stop', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        checkTradingStatus(); // Update status immediately
+                        showNotification('Trading stopped successfully', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error stopping trading:', error);
+                        showNotification('Failed to stop trading', 'error');
+                    });
+            }
+        });
+
+        restartTradingBtn.addEventListener('click', function () {
+            if (confirm('Are you sure you want to restart the trading system?')) {
+                fetch('/api/trading/restart', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        checkTradingStatus(); // Update status immediately
+                        showNotification('Trading system restarted successfully', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error restarting trading:', error);
+                        showNotification('Failed to restart trading', 'error');
+                    });
+            }
+        });
+
+        // Notification function similar to the one in base.html
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-300 ${type === 'error' ? 'bg-loss-red/90 text-white' :
+                type === 'success' ? 'bg-profit-green/90 text-white' :
+                    'bg-dark-element text-white'
+                }`;
+
+            notification.innerHTML = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+
         // System control buttons
         const btnStartSystem = document.getElementById('btn-start-system');
         const btnStopSystem = document.getElementById('btn-stop-system');
@@ -447,134 +575,290 @@
                 });
         }
 
-        // Fetch strategies from the database
+        // Fetch strategies from the database - Enhanced with better error handling
         function fetchStrategies() {
             console.log("Fetching strategies from database");
-            fetch('/api/strategies/')
+
+            // Show loading indicator
+            const container = document.getElementById('strategies-container');
+            const loadingElement = document.getElementById('strategies-loading');
+            if (loadingElement) loadingElement.classList.remove('hidden');
+
+            // Add debug output
+            let debugContent = document.getElementById('strategy-debug-content');
+            if (debugContent) {
+                debugContent.innerHTML += "• Starting strategy fetch...<br>";
+            }
+
+            // Add timeout to fetch request
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+            fetch('/api/strategies/', {
+                signal: controller.signal,
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
                 .then(response => {
+                    clearTimeout(timeoutId);
+
+                    // Log response details for debugging
+                    if (debugContent) {
+                        debugContent.innerHTML += `• Response status: ${response.status} ${response.statusText}<br>`;
+                    }
+
                     if (!response.ok) {
                         throw new Error(`Server returned ${response.status}: ${response.statusText}`);
                     }
                     return response.json();
                 })
                 .then(strategies => {
-                    logResponse('Fetched strategies', strategies);
+                    if (debugContent) {
+                        debugContent.innerHTML += `• Received data: ${strategies ? strategies.length : 0} strategies<br>`;
+                        document.getElementById('strategy-debug').classList.remove('hidden');
+                    }
+
                     renderStrategies(strategies);
                 })
                 .catch(error => {
                     console.error('Error fetching strategies:', error);
-                    showNotification('Failed to load strategies: ' + error.message, 'error');
 
-                    // Show error message in container
-                    const container = document.getElementById('strategies-container');
-                    container.innerHTML = `
+                    if (error.name === 'AbortError') {
+                        showNotification('Strategy fetch timed out. Server may be unavailable.', 'error');
+                        if (debugContent) {
+                            debugContent.innerHTML += "• Fetch timeout after 10 seconds<br>";
+                        }
+                    } else {
+                        showNotification('Failed to load strategies: ' + error.message, 'error');
+                        if (debugContent) {
+                            debugContent.innerHTML += `• Error: ${error.message}<br>`;
+                        }
+                    }
+
+                    // Show error message in container with retry button
+                    if (container) {
+                        container.innerHTML = `
                         <div class="text-center py-8">
                             <i class="fas fa-exclamation-circle text-loss-red text-3xl"></i>
-                            <p class="text-gray-400 mt-3">Failed to load strategies. Please try again later.</p>
-                            <button class="mt-4 bg-dark-element hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300" onclick="fetchStrategies()">
-                                Retry
+                            <p class="text-gray-400 mt-3">Failed to load strategies. Please try again.</p>
+                            <button class="mt-4 bg-dark-element hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300" id="retry-fetch-btn">
+                                <i class="fas fa-sync-alt mr-2"></i> Retry
+                            </button>
+                            <button class="mt-4 ml-3 bg-dark-element hover:bg-dark-card text-yellow-400 font-semibold py-2 px-4 rounded-lg border border-yellow-400/30 transition-colors duration-300" id="show-debug-btn">
+                                <i class="fas fa-bug mr-2"></i> Show Debug
                             </button>
                         </div>
+                        <div id="strategy-debug" class="mt-4 p-3 bg-dark-element/50 rounded-lg text-xs border border-gray-700">
+                            <p class="text-yellow-400 font-mono mb-2">Debug Information:</p>
+                            <div id="strategy-debug-content" class="font-mono text-gray-400">
+                                ${debugContent ? debugContent.innerHTML : '• Debug information unavailable'}
+                            </div>
+                        </div>
                     `;
+
+                        // Attach retry event handler
+                        document.getElementById('retry-fetch-btn')?.addEventListener('click', fetchStrategies);
+
+                        // Attach debug toggle handler
+                        document.getElementById('show-debug-btn')?.addEventListener('click', () => {
+                            const debug = document.getElementById('strategy-debug');
+                            if (debug) {
+                                debug.classList.toggle('hidden');
+                            }
+                        });
+                    }
+
+                    document.getElementById('strategy-debug')?.classList.remove('hidden');
+                })
+                .finally(() => {
+                    // Always add this info to help diagnose
+                    if (debugContent) {
+                        debugContent.innerHTML += "• Fetch request completed<br>";
+                        debugContent.innerHTML += `• API endpoint: /api/strategies/<br>`;
+                    }
+
+                    if (loadingElement) loadingElement.classList.add('hidden');
                 });
         }
 
-        // Render strategy cards based on database data
+        // Render strategy cards based on database data - Enhanced with error handling
         function renderStrategies(strategies) {
             const container = document.getElementById('strategies-container');
+            const debugContent = document.getElementById('strategy-debug-content');
 
-            // Clear loading message
-            container.innerHTML = '';
+            try {
+                // Clear loading message
+                container.innerHTML = '';
 
-            if (strategies.length === 0) {
+                if (!Array.isArray(strategies)) {
+                    if (debugContent) {
+                        debugContent.innerHTML += `• Invalid data format: ${typeof strategies}<br>`;
+                        debugContent.innerHTML += `• Data received: ${JSON.stringify(strategies).substring(0, 100)}...<br>`;
+                    }
+                    throw new Error('Invalid strategy data format');
+                }
+
+                if (strategies.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-8">
+                            <p class="text-gray-400">No strategies found. <a href="/strategy/new" class="text-dollar-green hover:underline">Create a strategy</a>.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Successfully got strategies - add debug information
+                if (debugContent) {
+                    debugContent.innerHTML += `• Successfully parsed ${strategies.length} strategies<br>`;
+                }
+
+                // Create a strategy card for each strategy
+                strategies.forEach(strategy => {
+                    const strategyCard = document.createElement('div');
+                    strategyCard.className = 'dashboard-card rounded-lg p-4 strategy-item';
+
+                    // Create profit indicator class based on profit value
+                    const profitClass = strategy.net_profit > 0 ? 'text-profit-green' : 'text-loss-red';
+                    const profitValue = formatCurrency(strategy.net_profit || 0);
+
+                    strategyCard.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-lg font-medium text-dollar-green mb-2">${strategy.name}</h3>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-400">Min Spread</span>
+                                        <span class="text-gray-300">${strategy.min_spread || 0}%</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-400">Trade Count</span>
+                                        <span class="text-gray-300">${strategy.trade_count || 0}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-sm text-gray-400">Net Profit</span>
+                                        <span class="${profitClass}">${profitValue}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end">
+                                <div class="flex items-center space-x-3 mb-2">
+                                    <span class="${strategy.is_active ? 'text-profit-green' : 'text-gray-400'} strategy-status">
+                                        ${strategy.is_active ? 'Active' : 'Inactive'}
+                                    </span>
+                                    <label class="switch">
+                                        <input type="checkbox" class="strategy-toggle" data-strategy="${strategy.name}" ${strategy.is_active ? 'checked' : ''}>
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <button class="text-dollar-green hover:text-money-dark text-sm edit-strategy" data-id="${strategy.id}">Edit</button>
+                            </div>
+                        </div>
+                    `;
+
+                    container.appendChild(strategyCard);
+                });
+
+                // Reattach event listeners to the newly created toggles
+                document.querySelectorAll('.strategy-toggle').forEach(toggle => {
+                    toggle.addEventListener('change', function () {
+                        const strategy = this.dataset.strategy;
+                        const isActive = this.checked;
+
+                        // Update UI immediately for better UX
+                        updateStrategyStatus(this);
+
+                        // Call API
+                        toggleStrategyApi(strategy, isActive);
+
+                        // Update "Activate All" button text
+                        updateToggleAllButton();
+                    });
+                });
+
+                // Update the toggle all button status
+                updateToggleAllButton();
+            } catch (error) {
+                console.error('Error rendering strategies:', error);
+                if (debugContent) {
+                    debugContent.innerHTML += `• Render Error: ${error.message}<br>`;
+                }
+
                 container.innerHTML = `
                     <div class="text-center py-8">
-                        <p class="text-gray-400">No strategies found.</p>
+                        <i class="fas fa-exclamation-triangle text-yellow-400 text-3xl"></i>
+                        <p class="text-gray-400 mt-3">Error rendering strategies: ${error.message}</p>
+                        <button class="mt-4 bg-dark-element hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300" id="retry-fetch-btn">
+                            <i class="fas fa-sync-alt mr-2"></i> Retry
+                        </button>
                     </div>
                 `;
-                return;
+
+                document.getElementById('retry-fetch-btn')?.addEventListener('click', fetchStrategies);
             }
-
-            // Create a strategy card for each strategy
-            strategies.forEach(strategy => {
-                const strategyCard = document.createElement('div');
-                strategyCard.className = 'dashboard-card rounded-lg p-4 strategy-item';
-
-                // Create profit indicator class based on profit value
-                const profitClass = strategy.net_profit > 0 ? 'text-profit-green' : 'text-loss-red';
-                const profitValue = formatCurrency(strategy.net_profit || 0);
-
-                strategyCard.innerHTML = `
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 class="text-lg font-medium text-dollar-green mb-2">${strategy.name}</h3>
-                            <div class="space-y-2">
-                                <div class="flex justify-between">
-                                    <span class="text-sm text-gray-400">Min Spread</span>
-                                    <span class="text-gray-300">${strategy.min_spread || 0}%</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-sm text-gray-400">Trade Count</span>
-                                    <span class="text-gray-300">${strategy.trade_count || 0}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-sm text-gray-400">Net Profit</span>
-                                    <span class="${profitClass}">${profitValue}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="flex flex-col items-end">
-                            <div class="flex items-center space-x-3 mb-2">
-                                <span class="${strategy.is_active ? 'text-profit-green' : 'text-gray-400'} strategy-status">
-                                    ${strategy.is_active ? 'Active' : 'Inactive'}
-                                </span>
-                                <label class="switch">
-                                    <input type="checkbox" class="strategy-toggle" data-strategy="${strategy.name}" ${strategy.is_active ? 'checked' : ''}>
-                                    <span class="slider round"></span>
-                                </label>
-                            </div>
-                            <button class="text-dollar-green hover:text-money-dark text-sm edit-strategy" data-id="${strategy.id}">Edit</button>
-                        </div>
-                    </div>
-                `;
-
-                container.appendChild(strategyCard);
-            });
-
-            // Reattach event listeners to the newly created toggles
-            document.querySelectorAll('.strategy-toggle').forEach(toggle => {
-                toggle.addEventListener('change', function () {
-                    const strategy = this.dataset.strategy;
-                    const isActive = this.checked;
-
-                    // Update UI immediately for better UX
-                    updateStrategyStatus(this);
-
-                    // Call API
-                    toggleStrategyApi(strategy, isActive);
-
-                    // Update "Activate All" button text
-                    updateToggleAllButton();
-                });
-            });
-
-            // Update the toggle all button status
-            updateToggleAllButton();
         }
 
-        // Format currency for display
+        // Format currency for display - Making it more robust
         function formatCurrency(amount) {
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency',
-                currency: 'USD',
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }).format(amount);
+            try {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(Number(amount));
+            } catch (e) {
+                console.error("Error formatting currency:", e);
+                return `$${amount || 0}`;
+            }
         }
 
-        // Initialize: fetch strategies after loading status
-        initializeSystemStatus();
-        fetchStrategies();
+        // Initialize with better error handling
+        document.addEventListener('DOMContentLoaded', function () {
+            try {
+                console.log("Setup page initialization started");
+
+                // Initialize system status - Add try/catch
+                try {
+                    initializeSystemStatus();
+                } catch (e) {
+                    console.error("Error initializing system status:", e);
+                    showNotification("Failed to initialize system status", "error");
+                }
+
+                // Fetch strategies - Add try/catch
+                try {
+                    fetchStrategies();
+                } catch (e) {
+                    console.error("Error fetching strategies:", e);
+                    showNotification("Failed to fetch strategies", "error");
+
+                    // Show debug information
+                    const debug = document.getElementById('strategy-debug');
+                    const debugContent = document.getElementById('strategy-debug-content');
+
+                    if (debug && debugContent) {
+                        debug.classList.remove('hidden');
+                        debugContent.innerHTML += `• Error: ${e.message}<br>`;
+                    }
+                }
+
+                // Add a manual refresh button to the strategies container
+                const container = document.getElementById('strategies-container');
+                const refreshButton = document.createElement('button');
+                refreshButton.innerHTML = '<i class="fas fa-sync-alt mr-2"></i> Refresh Strategies';
+                refreshButton.className = "fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-dark-element hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300 shadow-lg";
+                refreshButton.addEventListener('click', fetchStrategies);
+                document.body.appendChild(refreshButton);
+
+                console.log("Setup page initialization completed");
+            } catch (e) {
+                console.error("Fatal error in page initialization:", e);
+            }
+        });
+
+        // ...rest of existing code...
     });
 </script>
-{% endblock %}
+{% endblock scripts %}
+{% endblock content %}

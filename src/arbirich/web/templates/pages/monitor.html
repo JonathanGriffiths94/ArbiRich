@@ -11,6 +11,14 @@
     </div>
 </div>
 
+<!-- Live Trading Activity Chart - MOVED TO TOP -->
+<div class="dashboard-card rounded-lg shadow-md p-4 mb-6">
+    <h2 class="text-xl font-bold text-dollar-green mb-4">Live Trading Activity</h2>
+    <div style="height: 300px; position: relative;">
+        <canvas id="activityChart"></canvas>
+    </div>
+</div>
+
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
     <!-- System Status Card -->
     <div class="dashboard-card rounded-lg shadow-md p-6">
@@ -153,14 +161,6 @@
         <div class="flex justify-end mt-4">
             <a href="#" class="text-dollar-green hover:text-money-dark text-sm">View Full Logs</a>
         </div>
-    </div>
-</div>
-
-<!-- Live Trading Activity Chart -->
-<div class="dashboard-card rounded-lg shadow-md p-4 mt-6">
-    <h2 class="text-xl font-bold text-dollar-green mb-4">Live Trading Activity</h2>
-    <div style="height: 300px; position: relative;">
-        <canvas id="activityChart"></canvas>
     </div>
 </div>
 {% endblock %}

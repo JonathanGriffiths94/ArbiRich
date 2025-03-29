@@ -49,8 +49,69 @@
 <!-- Charts Section -->
 <div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
     <h2 class="text-xl font-bold text-dollar-green mb-4">Profit History</h2>
-    <div style="height: 300px; position: relative;">
+    <div style="height: 300px; position: relative;" class="profit-chart-container">
         <canvas id="profitChart"></canvas>
+    </div>
+</div>
+
+<!-- Active Strategies Section - NEW COMPONENT -->
+<div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold text-dollar-green">Active Strategies</h2>
+        <a href="/strategies" class="text-sm text-dollar-green hover:underline">Manage Strategies</a>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% set active_strategies = [] %}
+        {% for strategy in strategies %}
+        {% if strategy.is_active|default(false) %}
+        {% set _ = active_strategies.append(strategy) %}
+        {% endif %}
+        {% endfor %}
+
+        {% if active_strategies|length > 0 %}
+        {% for strategy in active_strategies %}
+        <div class="bg-dark-card rounded-lg p-4 border-l-4 border-profit-green">
+            <div class="flex justify-between items-start mb-3">
+                <h3 class="font-bold text-dollar-green">{{ strategy.name|default('Unknown') }}</h3>
+                <div class="flex flex-col items-end">
+                    <span class="text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green">Active</span>
+                    {% if strategy.is_running|default(false) %}
+                    <span class="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-400 mt-1 flex items-center">
+                        <span class="animate-pulse inline-block h-2 w-2 rounded-full bg-blue-400 mr-1"></span>
+                        Trading
+                    </span>
+                    {% else %}
+                    <span class="text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400 mt-1">Idle</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                    <span class="text-text-dim">Win Rate:</span>
+                    <span>{{ strategy.win_rate|default(0) }}%</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-text-dim">Trades:</span>
+                    <span>{{ strategy.trades|default(0) }}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-text-dim">Net Profit:</span>
+                    <span
+                        class="{% if strategy.profit|default(0) > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                        ${{ strategy.profit|default(0)|round(2) }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="col-span-full bg-dark-card rounded-lg p-6 text-center">
+            <i class="fas fa-info-circle text-text-dim text-2xl mb-3"></i>
+            <p class="text-text-dim">No active strategies found</p>
+            <a href="/strategies" class="mt-3 inline-block text-dollar-green hover:underline">Activate a strategy</a>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -67,6 +128,7 @@
                 <tr class="text-gray-400 border-b border-gray-800">
                     <th class="text-left py-2">Strategy</th>
                     <th class="text-center py-2">Status</th>
+                    <th class="text-center py-2">Running</th>
                     <th class="text-center py-2">Win Rate</th>
                     <th class="text-center py-2">Trades</th>
                     <th class="text-center py-2">Min Spread</th>
@@ -96,6 +158,19 @@
                             {% if strategy.is_active|default(false) %}bg-green-900 text-profit-green{% else %}bg-gray-800 text-gray-400{% endif %}">
                             {{ 'Active' if strategy.is_active|default(false) else 'Inactive' }}
                         </span>
+                    </td>
+                    <td class="py-3 text-center">
+                        {% if strategy.is_running|default(false) %}
+                        <span
+                            class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-blue-900 text-blue-400">
+                            <span class="animate-pulse inline-block h-2 w-2 rounded-full bg-blue-400 mr-1"></span>
+                            Trading
+                        </span>
+                        {% else %}
+                        <span class="px-2 py-1 rounded-full text-xs font-semibold bg-gray-800 text-gray-400">
+                            Idle
+                        </span>
+                        {% endif %}
                     </td>
                     <td class="py-3 text-center">{{ strategy.win_rate|default(0) }}%</td>
                     <td class="py-3 text-center">{{ strategy.trades|default(0) }}</td>
@@ -238,7 +313,7 @@
         // Setup event listeners
         setupEventListeners();
 
-        // Initialize chart
+        // Enhanced chart initialization
         initializeChart();
     });
 
@@ -299,16 +374,17 @@
             return;
         }
 
-        // Create sample data if not available from server
-        const chartLabels = window.chartLabels || Array.from({ length: 7 }, (_, i) => {
-            const date = new Date();
-            date.setDate(date.getDate() - 6 + i);
-            return date.toLocaleDateString();
-        });
-
-        const chartValues = window.chartValues || Array.from({ length: 7 }, (_, i) => Math.floor(Math.random() * 100) + 50);
+        // Get chart data from global variables or use sample data
+        const chartLabels = window.chartLabels || generateDateLabels(30);
+        const chartValues = window.chartValues || [];
 
         console.log(`Initializing profit chart with ${chartLabels.length} data points`);
+
+        // Create gradient for area fill
+        const ctx = profitChartElement.getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, 'rgba(58, 190, 120, 0.5)');
+        gradient.addColorStop(1, 'rgba(58, 190, 120, 0.0)');
 
         try {
             new Chart(profitChartElement, {
@@ -318,40 +394,113 @@
                     datasets: [{
                         label: 'Cumulative Profit',
                         data: chartValues,
-                        fill: false,
-                        borderColor: '#85BB65',  // Money green
-                        tension: 0.1
+                        fill: true,
+                        backgroundColor: gradient,
+                        borderColor: '#3abe78',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#3abe78',
+                        pointBorderColor: '#fff',
+                        pointHoverRadius: 5,
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: '#3abe78',
+                        tension: 0.3
                     }]
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            display: false
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                color: '#e0e9e5',
+                                font: {
+                                    family: "'Inter', sans-serif",
+                                }
+                            }
                         },
                         tooltip: {
+                            backgroundColor: '#29352f',
+                            titleColor: '#85bb65',
+                            bodyColor: '#e0e9e5',
+                            borderColor: '#85bb65',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: false,
                             callbacks: {
                                 label: function (context) {
                                     return '$' + context.raw.toFixed(2);
+                                },
+                                title: function (tooltipItems) {
+                                    return tooltipItems[0].label;
                                 }
                             }
                         }
                     },
                     scales: {
-                        y: {
+                        x: {
+                            grid: {
+                                display: false
+                            },
                             ticks: {
-                                callback: function (value) {
-                                    return '$' + value;
+                                color: '#8a9a94',
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: {
+                                    family: "'Inter', sans-serif",
+                                    size: 10
                                 }
                             }
+                        },
+                        y: {
+                            grid: {
+                                color: 'rgba(58, 190, 120, 0.1)',
+                                drawBorder: false
+                            },
+                            ticks: {
+                                color: '#8a9a94',
+                                callback: function (value) {
+                                    return '$' + value;
+                                },
+                                font: {
+                                    family: "'Inter', sans-serif"
+                                }
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeOutQuart'
+                    },
+                    elements: {
+                        line: {
+                            tension: 0.3
                         }
                     }
                 }
             });
-            console.log("Profit chart initialized");
+            console.log("Profit chart initialized with enhanced styling");
         } catch (e) {
             console.error("Error initializing chart:", e);
         }
+    }
+
+    // Generate sample date labels if needed
+    function generateDateLabels(count) {
+        return Array.from({ length: count }, (_, i) => {
+            const date = new Date();
+            date.setDate(date.getDate() - (count - 1) + i);
+            return date.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric'
+            });
+        });
     }
 
     // Format currency for display
