@@ -6,9 +6,9 @@
 <!-- Centered across entire page width (sidebar included) -->
 <div class="flex flex-col items-center justify-center min-h-[80vh] w-screen ml-[-16rem] md:ml-[-16rem] md:pl-[8rem]">
     <div class="text-center max-w-4xl">
-        <div class="mb-10 flex justify-center">
+        <div class="mb-10 flex justify-center ascii-logo-container">
             <pre
-                class="ascii-art inline-block text-left font-mono text-sm md:text-base lg:text-lg leading-tight text-dollar-green">
+                class="ascii-art inline-block text-left font-mono text-sm md:text-base lg:text-lg leading-tight ascii-logo">
  $$$$$$\            $$\       $$\ $$$$$$$\  $$\           $$\       
 $$  __$$\           $$ |      \__|$$  __$$\ \__|          $$ |      
 $$ /  $$ | $$$$$$\  $$$$$$$\  $$\ $$ |  $$ |$$\  $$$$$$$\ $$$$$$$\  
@@ -21,7 +21,7 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
         </div>
         <div class="flex flex-col items-center">
             <a href="/strategies"
-                class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 border-4 border-dollar-green mb-3 group money-bag-pulse">
+                class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green mb-3 group money-bag-glow">
                 <span class="text-4xl group-hover:scale-110 transition-transform">💰</span>
             </a>
         </div>
@@ -31,7 +31,7 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <!-- Strategies Card - Replaced Setup Card -->
                 <div
-                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
+                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full card-glow">
                     <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
                         <i class="fas fa-chess text-dollar-green text-2xl"></i>
                     </div>
@@ -46,7 +46,7 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
 
                 <!-- Dashboard Card -->
                 <div
-                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
+                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full card-glow">
                     <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
                         <i class="fas fa-chart-line text-dollar-green text-2xl"></i>
                     </div>
@@ -62,7 +62,7 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
 
                 <!-- Monitor Card -->
                 <div
-                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
+                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full card-glow">
                     <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
                         <i class="fas fa-desktop text-dollar-green text-2xl"></i>
                     </div>
@@ -85,57 +85,50 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
             overflow-x: hidden;
         }
 
-        /* Add pulsing animation for the money bag emoji ring */
-        @keyframes pulse-ring {
-            0% {
-                box-shadow: 0 0 0 0 rgba(133, 187, 101, 0.7);
-                border-color: rgba(133, 187, 101, 0.9);
-            }
-
-            50% {
-                box-shadow: 0 0 0 10px rgba(133, 187, 101, 0);
-                border-color: rgba(133, 187, 101, 1);
-            }
-
-            100% {
-                box-shadow: 0 0 0 0 rgba(133, 187, 101, 0);
-                border-color: rgba(133, 187, 101, 0.9);
-            }
+        /* Remove pulsing animation and replace with static glow */
+        .money-bag-glow {
+            box-shadow: 0 0 15px 2px rgba(133, 187, 101, 0.6);
+            position: relative;
+            border-color: rgba(133, 187, 101, 0.9);
+            transition: all 0.3s ease;
         }
 
-        .money-bag-pulse {
-            animation: pulse-ring 2s infinite;
+        /* Enhanced hover effect */
+        .money-bag-glow:hover {
+            box-shadow: 0 0 20px 5px rgba(133, 187, 101, 0.8);
+            border-color: #85bb65;
+            transform: scale(1.05);
+        }
+
+        /* Add static glow effect for main ASCII art logo */
+        .ascii-logo {
+            color: #85bb65;
+            text-shadow: 0 0 8px rgba(133, 187, 101, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        /* Enhanced hover effect for ASCII logo */
+        .ascii-logo-container:hover .ascii-logo {
+            color: #a0d87c;
+            text-shadow: 0 0 12px rgba(133, 187, 101, 0.7);
+            transform: scale(1.03);
+        }
+
+        /* Add enhanced glow effect for the cards with more prominent border matching the dollar-green color */
+        .card-glow {
+            box-shadow: 0 0 15px 2px rgba(133, 187, 101, 0.3);
+            transition: all 0.3s ease;
+            border: 2px solid #85bb65;
+            /* Thicker border with dollar-green color */
             position: relative;
         }
 
-        /* Second pulsing ring effect */
-        .money-bag-pulse::after {
-            content: '';
-            position: absolute;
-            top: -8px;
-            left: -8px;
-            right: -8px;
-            bottom: -8px;
-            border-radius: 50%;
-            border: 2px solid rgba(133, 187, 101, 0.3);
-            animation: pulse-ring-outer 2s infinite 0.3s;
-        }
-
-        @keyframes pulse-ring-outer {
-            0% {
-                transform: scale(0.95);
-                opacity: 0.7;
-            }
-
-            70% {
-                transform: scale(1.1);
-                opacity: 0;
-            }
-
-            100% {
-                transform: scale(0.95);
-                opacity: 0;
-            }
+        /* Enhanced hover effect for cards */
+        .card-glow:hover {
+            box-shadow: 0 0 20px 5px rgba(133, 187, 101, 0.5);
+            border-color: #a0d87c;
+            /* Slightly lighter border on hover */
+            transform: scale(1.03);
         }
     </style>
     {% endblock %}

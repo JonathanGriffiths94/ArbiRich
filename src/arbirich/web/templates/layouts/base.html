@@ -113,56 +113,22 @@
             }
         }
 
-        /* ASCII Art Logo pulsing animation - ENHANCED */
-        @keyframes pulse-logo {
-            0% {
-                opacity: 0.85;
-                color: #85bb65;
-                text-shadow: 0 0 0px rgba(133, 187, 101, 0.1);
-                transform: scale(0.98);
-            }
-
-            50% {
-                opacity: 1;
-                color: #b3e889;
-                /* Much brighter green for stronger contrast */
-                text-shadow: 0 0 8px rgba(133, 187, 101, 0.5);
-                /* Add glow effect */
-                transform: scale(1.02);
-                /* Subtle scaling */
-            }
-
-            100% {
-                opacity: 0.85;
-                color: #85bb65;
-                text-shadow: 0 0 0px rgba(133, 187, 101, 0.1);
-                transform: scale(0.98);
-            }
-        }
-
+        /* ASCII Art Logo static glow effect */
         .ascii-logo {
-            animation: pulse-logo 2.5s infinite;
-            /* Slightly faster animation cycle */
-            transition: all 0.2s ease;
             font-size: 10px;
             line-height: 1;
             margin: 0;
             display: inline-block;
-            /* Required for transform to work */
-            transform-origin: center;
-            /* Scale from center */
+            color: #85bb65;
+            text-shadow: 0 0 8px rgba(133, 187, 101, 0.4);
+            transition: all 0.3s ease;
         }
 
-        /* Add a hover effect to make it even more interactive */
+        /* Enhanced hover effect */
         .ascii-logo-container:hover .ascii-logo {
-            color: #c4f0a3;
-            /* Bright green on hover */
-            text-shadow: 0 0 10px rgba(133, 187, 101, 0.7);
-            /* Enhanced glow on hover */
-            transform: scale(1.05);
-            /* Slightly bigger on hover */
-            animation-play-state: paused;
-            /* Pause animation on hover */
+            color: #a0d87c;
+            text-shadow: 0 0 12px rgba(133, 187, 101, 0.7);
+            transform: scale(1.03);
         }
 
         /* ...existing styles... */
