@@ -42,6 +42,7 @@ dashboard_router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 market_router = APIRouter(prefix="/market", tags=["market"])
 pairs_router = APIRouter(prefix="/pairs", tags=["pairs"])
 exchanges_router = APIRouter(prefix="/exchanges", tags=["exchanges"])
+monitor_api_router = APIRouter(prefix="/monitor", tags=["monitor"])  # Add this line
 
 
 def get_db():
@@ -815,6 +816,42 @@ async def deactivate_exchange(name: str, db: DatabaseService = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to deactivate exchange")
 
 
+# -------------------- MONITOR ENDPOINTS --------------------
+
+
+# Add these monitor API endpoints
+@monitor_api_router.get("/system")
+async def get_monitor_system():
+    """Get system monitoring data."""
+    from src.arbirich.web.controllers.monitor_controller import get_system_status
+
+    return await get_system_status()
+
+
+@monitor_api_router.get("/processes")
+async def get_monitor_processes():
+    """Get process monitoring data."""
+    from src.arbirich.web.controllers.monitor_controller import get_processes
+
+    return await get_processes()
+
+
+@monitor_api_router.get("/exchanges")
+async def get_monitor_exchanges(db: DatabaseService = Depends(get_db)):
+    """Get exchange status monitoring data."""
+    from src.arbirich.web.controllers.monitor_controller import get_exchange_status
+
+    return await get_exchange_status(db)
+
+
+@monitor_api_router.get("/activity")
+async def get_monitor_activity():
+    """Get trading activity monitoring data."""
+    from src.arbirich.web.controllers.monitor_controller import get_trading_activity
+
+    return await get_trading_activity()
+
+
 # -------------------- ROUTER REGISTRATION --------------------
 
 # Register all sub-routers with the main router
@@ -825,6 +862,7 @@ main_router.include_router(dashboard_router)
 main_router.include_router(market_router)
 main_router.include_router(pairs_router)
 main_router.include_router(exchanges_router)
+main_router.include_router(monitor_api_router)  # Add this line
 
 
 # Root endpoint

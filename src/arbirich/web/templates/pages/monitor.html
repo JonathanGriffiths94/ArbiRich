@@ -166,6 +166,8 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }} <!-- This calls the parent block content first -->
+
 <script>
     // Setup the activity chart
     const ctx = document.getElementById('activityChart').getContext('2d');
@@ -259,5 +261,10 @@
 
         activityChart.update();
     }, 15000);
+</script>
+
+<!-- Additional monitor-specific scripts -->
+<script>
+    // Monitor-specific JavaScript here
 </script>
 {% endblock %}

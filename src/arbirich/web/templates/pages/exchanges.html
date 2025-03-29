@@ -169,6 +169,9 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }} <!-- This calls the parent block content first -->
+
+<!-- Additional exchange-specific scripts -->
 <script>
     // DOM Elements
     const exchangesList = document.getElementById('exchangesList');

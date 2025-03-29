@@ -11,27 +11,38 @@
     </div>
 </div>
 
-<!-- Stats Cards -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
-    <div class="dashboard-card rounded-lg shadow-md p-4">
-        <div class="text-sm text-gray-400 mb-1">Total Profit</div>
-        <div class="text-2xl font-bold text-profit-green" id="totalProfit">${{ stats.total_profit|default(0)|round(2) }}
+<!-- Stats Cards - Completely redesigned with more explicit styling -->
+<div class="stats-cards-container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <!-- Total Profit -->
+    <div class="stat-card bg-dark-element rounded-lg shadow-md p-4 flex flex-col h-28 !important">
+        <div class="text-sm font-medium text-gray-400 mb-2">Total Profit</div>
+        <div class="text-2xl font-bold text-profit-green mt-auto" id="totalProfit">
+            ${{ stats.total_profit|default(0)|round(2) }}
         </div>
     </div>
 
-    <div class="dashboard-card rounded-lg shadow-md p-4">
-        <div class="text-sm text-gray-400 mb-1">Total Trades</div>
-        <div class="text-2xl font-bold text-dollar-green" id="totalTrades">{{ stats.total_trades|default(0) }}</div>
+    <!-- Total Trades -->
+    <div class="stat-card bg-dark-element rounded-lg shadow-md p-4 flex flex-col h-28 !important">
+        <div class="text-sm font-medium text-gray-400 mb-2">Total Trades</div>
+        <div class="text-2xl font-bold text-dollar-green mt-auto" id="totalTrades">
+            {{ stats.total_trades|default(0) }}
+        </div>
     </div>
 
-    <div class="dashboard-card rounded-lg shadow-md p-4">
-        <div class="text-sm text-gray-400 mb-1">Win Rate</div>
-        <div class="text-2xl font-bold text-dollar-green" id="winRate">{{ stats.win_rate|default(0)|round(2) }}%</div>
+    <!-- Win Rate -->
+    <div class="stat-card bg-dark-element rounded-lg shadow-md p-4 flex flex-col h-28 !important">
+        <div class="text-sm font-medium text-gray-400 mb-2">Win Rate</div>
+        <div class="text-2xl font-bold text-dollar-green mt-auto" id="winRate">
+            {{ stats.win_rate|default(0)|round(2) }}%
+        </div>
     </div>
 
-    <div class="dashboard-card rounded-lg shadow-md p-4">
-        <div class="text-sm text-gray-400 mb-1">Last 24h Trades</div>
-        <div class="text-2xl font-bold text-dollar-green" id="lastDayTrades">{{ stats.executions_24h|default(0) }}</div>
+    <!-- Last 24h Trades -->
+    <div class="stat-card bg-dark-element rounded-lg shadow-md p-4 flex flex-col h-28 !important">
+        <div class="text-sm font-medium text-gray-400 mb-2">Last 24h Trades</div>
+        <div class="text-2xl font-bold text-dollar-green mt-auto" id="lastDayTrades">
+            {{ stats.executions_24h|default(0) }}
+        </div>
     </div>
 </div>
 
@@ -160,8 +171,210 @@
         </div>
     </div>
 </div>
+
+<!-- Add this near the bottom of your dashboard template -->
+<div id="debug-info" style="margin-top: 50px; display: none; border: 1px solid #ddd; padding: 15px;">
+    <h4>Diagnostic Information</h4>
+    <p><strong>Strategies loaded:</strong> {{ strategies|length }}</p>
+    <p><strong>Opportunities loaded:</strong> {{ opportunities|length }}</p>
+    <p><strong>Executions loaded:</strong> {{ executions|length }}</p>
+    <p><strong>Stats:</strong> {{ stats }}</p>
+    <!-- Safely access chart_data values -->
+    <p><strong>Chart data points:</strong>
+        {% if chart_data and chart_data.values is defined and chart_data.values is iterable %}
+        {{ chart_data.values|length }}
+        {% else %}
+        0 (chart data not properly defined)
+        {% endif %}
+    </p>
+
+    <button id="toggle-debug" class="btn btn-sm btn-outline-secondary mt-2">Show Full Data</button>
+
+    <div id="full-debug" style="display: none; margin-top: 10px;">
+        <h5>Full Strategies Data:</h5>
+        <pre>{{ strategies }}</pre>
+
+        <h5>Full Opportunities Data:</h5>
+        <pre>{{ opportunities }}</pre>
+
+        <h5>Full Executions Data:</h5>
+        <pre>{{ executions }}</pre>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/dashboard.js"></script>
+<!-- Inline dashboard.js directly in the template to fix 404 errors -->
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        console.log("Dashboard script executing from inline code");
+
+        // Initialize refresh indicator
+        const indicator = document.getElementById('refresh-indicator');
+        if (indicator) {
+            updateRefreshIndicator(indicator, 30);
+        }
+
+        // Setup auto-refresh
+        setupAutoRefresh();
+
+        // Setup event listeners
+        setupEventListeners();
+
+        // Initialize chart
+        initializeChart();
+    });
+
+    function updateRefreshIndicator(indicator, seconds) {
+        // Clear any existing content
+        indicator.innerHTML = '';
+
+        // Create the progress bar
+        const progressBar = document.createElement('div');
+        progressBar.className = 'h-2 w-16 bg-gray-800 rounded overflow-hidden';
+
+        // Create the inner progress
+        const progress = document.createElement('div');
+        progress.className = 'h-full bg-dollar-green transition-all duration-1000';
+        progress.style.width = '100%';
+
+        // Animate the progress bar to shrink
+        setTimeout(() => {
+            progress.style.width = '0%';
+            progress.style.transitionDuration = `${seconds}s`;
+            progress.style.transitionTimingFunction = 'linear';
+        }, 50);
+
+        // Add to DOM
+        progressBar.appendChild(progress);
+        indicator.appendChild(progressBar);
+    }
+
+    function setupAutoRefresh() {
+        // Auto refresh the page every 30 seconds
+        setTimeout(() => {
+            // Only refresh if user hasn't interacted with the page in the last 5 seconds
+            if ((Date.now() - window.lastInteraction || 0) > 5000) {
+                window.location.reload();
+            } else {
+                // If user recently interacted, try again in 5 seconds
+                setTimeout(() => {
+                    window.location.reload();
+                }, 5000);
+            }
+        }, 30000);
+    }
+
+    function setupEventListeners() {
+        // Track last interaction time
+        window.lastInteraction = Date.now();
+        ['click', 'keydown', 'mousemove', 'scroll'].forEach(event => {
+            document.addEventListener(event, () => {
+                window.lastInteraction = Date.now();
+            });
+        });
+    }
+
+    function initializeChart() {
+        const profitChartElement = document.getElementById('profitChart');
+        if (!profitChartElement) {
+            console.warn("Profit chart element not found");
+            return;
+        }
+
+        // Create sample data if not available from server
+        const chartLabels = window.chartLabels || Array.from({ length: 7 }, (_, i) => {
+            const date = new Date();
+            date.setDate(date.getDate() - 6 + i);
+            return date.toLocaleDateString();
+        });
+
+        const chartValues = window.chartValues || Array.from({ length: 7 }, (_, i) => Math.floor(Math.random() * 100) + 50);
+
+        console.log(`Initializing profit chart with ${chartLabels.length} data points`);
+
+        try {
+            new Chart(profitChartElement, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        label: 'Cumulative Profit',
+                        data: chartValues,
+                        fill: false,
+                        borderColor: '#85BB65',  // Money green
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    return '$' + context.raw.toFixed(2);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            ticks: {
+                                callback: function (value) {
+                                    return '$' + value;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            console.log("Profit chart initialized");
+        } catch (e) {
+            console.error("Error initializing chart:", e);
+        }
+    }
+
+    // Format currency for display
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(amount);
+    }
+
+    // Format percentage for display
+    function formatPercent(percent) {
+        return new Intl.NumberFormat('en-US', {
+            style: 'percent',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(percent / 100);
+    }
+
+    // Expose global chart data for debugging - with safer JSON serialization
+    {% if chart_data and chart_data.labels %}
+    {% if chart_data.labels is sequence %}
+    window.chartLabels = {{ chart_data.labels | tojson }};
+    {% else %}
+    window.chartLabels = [];
+    {% endif %}
+    {% else %}
+    window.chartLabels = [];
+    {% endif %}
+
+    {% if chart_data and chart_data.values %}
+    {% if chart_data.values is sequence %}
+    window.chartValues = {{ chart_data.values | tojson }};
+    {% else %}
+    window.chartValues = [];
+    {% endif %}
+    {% else %}
+    window.chartValues = [];
+    {% endif %}
+</script>
 {% endblock %}

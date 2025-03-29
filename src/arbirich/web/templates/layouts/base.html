@@ -12,8 +12,40 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js - Ensure a single consistent version is loaded -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <!-- Inline critical dashboard CSS to avoid needing the external CSS file -->
+    <style>
+        /* Critical dashboard styles */
+        .stat-card {
+            background-color: #1c2821 !important;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            height: 7rem;
+            min-height: 7rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #85bb65, #3abe78);
+            border-bottom-left-radius: 0.5rem;
+            border-bottom-right-radius: 0.5rem;
+        }
+
+        /* ...existing styles... */
+    </style>
+
+    <!-- Custom CSS - Use absolute URL to bypass any path resolution issues -->
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/dashboard.css') }}">
 
     <script>
         // Tailwind Config
@@ -130,66 +162,152 @@
         }
     </style>
 
+    <script>
+        // System status checker - moved from bottom scripts to head
+        document.addEventListener('DOMContentLoaded', function () {
+            function checkSystemStatus() {
+                fetch('/api/status/health')
+                    .then(response => {
+                        if (response.ok) {
+                            return response.json();
+                        } else {
+                            throw new Error('Failed to fetch system status');
+                        }
+                    })
+                    .then(data => {
+                        // Show status details
+                        document.getElementById('status-details').classList.remove('hidden');
+
+                        // Update overall status
+                        if (data.api === 'healthy' && data.database === 'healthy' && data.redis === 'healthy') {
+                            document.getElementById('status-message').textContent = 'All systems operational';
+                            document.getElementById('status-message').className = 'text-xs text-profit-green mt-1';
+                            document.getElementById('status-icon').className = 'fas fa-check-circle text-profit-green';
+                        } else {
+                            document.getElementById('status-message').textContent = 'System issues detected';
+                            document.getElementById('status-message').className = 'text-xs text-loss-red mt-1';
+                            document.getElementById('status-icon').className = 'fas fa-exclamation-triangle text-loss-red';
+                        }
+
+                        // Update individual components
+                        updateComponentStatus('api', data.api);
+                        updateComponentStatus('db', data.database);
+                        updateComponentStatus('redis', data.redis);
+                    })
+                    .catch(error => {
+                        console.error('Error fetching system status:', error);
+                        document.getElementById('status-message').textContent = 'Unable to fetch status';
+                        document.getElementById('status-message').className = 'text-xs text-loss-red mt-1';
+                        document.getElementById('status-icon').className = 'fas fa-question-circle text-text-dim';
+                        document.getElementById('status-details').classList.add('hidden');
+                    });
+            }
+
+            function updateComponentStatus(id, status) {
+                const element = document.getElementById(`${id}-status`);
+                if (status === 'healthy') {
+                    element.className = 'inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-900 bg-opacity-20 text-profit-green mr-1';
+                } else {
+                    element.className = 'inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-900 bg-opacity-20 text-loss-red mr-1';
+                }
+                element.textContent = id.toUpperCase();
+            }
+
+            // Check status on page load and then every 60 seconds
+            checkSystemStatus();
+            setInterval(checkSystemStatus, 60000); // Update every minute
+        });
+    </script>
+
     {% block head %}{% endblock %}
 </head>
 
 <body class="min-h-screen flex">
-    <!-- Sidebar Navigation -->
-    <aside class="w-64 border-r border-gray-800 pt-6 pb-8 overflow-y-auto hidden md:block">
-        <div class="px-6 mb-8">
-            <h1 class="text-2xl font-bold text-dollar-green">ArbiRich</h1>
-            <p class="text-xs text-text-dim">Crypto Arbitrage System</p>
+    <!-- Sidebar Navigation - Completely restructured for proper flexbox layout -->
+    <aside class="w-64 border-r border-gray-800 hidden md:flex md:flex-col h-screen">
+        <!-- Logo container -->
+        <div class="px-6 pt-6 pb-4">
+            <a href="/" class="block">
+                <pre style="font-size:10px; line-height:1; margin:0; color:#85bb65;">
+ $$$$$$\  $$$$$$$\
+$$  __$$\ $$  __$$\
+$$ /  $$ |$$ |  $$ |
+$$$$$$$$ |$$$$$$$  |
+$$  __$$ |$$  __$$<
+$$ |  $$ |$$ |  $$ |
+$$ |  $$ |$$ |  $$ |
+\__|  \__|\__|  \__|
+                </pre>
+            </a>
         </div>
 
-        <nav class="mt-6">
-            <div class="px-4 mb-2">
-                <span class="text-xs text-text-dim uppercase tracking-wider">Main</span>
-            </div>
+        <!-- Navigation items - with overflow scroll -->
+        <div class="flex-1 overflow-y-auto">
+            <nav class="pb-4">
+                <div class="px-4 mb-2">
+                    <span class="text-xs text-text-dim uppercase tracking-wider">Main</span>
+                </div>
 
-            <a href="/"
-                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/' %}active{% endif %}">
-                <i class="fas fa-chart-line w-5"></i>
-                <span class="ml-3">Dashboard</span>
-            </a>
+                <a href="/dashboard"
+                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/dashboard' %}active{% endif %}">
+                    <i class="fas fa-chart-line w-5"></i>
+                    <span class="ml-3">Dashboard</span>
+                </a>
 
-            <a href="/monitor"
-                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/monitor' %}active{% endif %}">
-                <i class="fas fa-desktop w-5"></i>
-                <span class="ml-3">System Monitor</span>
-            </a>
+                <a href="/monitor"
+                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/monitor' %}active{% endif %}">
+                    <i class="fas fa-desktop w-5"></i>
+                    <span class="ml-3">$$ystem Monitor</span>
+                </a>
 
-            <div class="px-4 mb-2 mt-6">
-                <span class="text-xs text-text-dim uppercase tracking-wider">Configuration</span>
-            </div>
+                <div class="px-4 mb-2 mt-6">
+                    <span class="text-xs text-text-dim uppercase tracking-wider">Configuration</span>
+                </div>
 
-            <a href="/setup"
-                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/setup' %}active{% endif %}">
-                <i class="fas fa-cogs w-5"></i>
-                <span class="ml-3">System Setup</span>
-            </a>
+                <a href="/setup"
+                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/setup' %}active{% endif %}">
+                    <i class="fas fa-cogs w-5"></i>
+                    <span class="ml-3">$$ystem $$etup</span>
+                </a>
 
-            <a href="/strategies"
-                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/strategies' %}active{% endif %}">
-                <i class="fas fa-chess w-5"></i>
-                <span class="ml-3">Strategies</span>
-            </a>
+                <a href="/strategies"
+                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/strategies' %}active{% endif %}">
+                    <i class="fas fa-chess w-5"></i>
+                    <span class="ml-3">$$trategies</span>
+                </a>
 
-            <a href="/exchanges"
-                class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/exchanges' %}active{% endif %}">
-                <i class="fas fa-exchange-alt w-5"></i>
-                <span class="ml-3">Exchanges</span>
-            </a>
-        </nav>
+                <a href="/exchanges"
+                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/exchanges' %}active{% endif %}">
+                    <i class="fas fa-exchange-alt w-5"></i>
+                    <span class="ml-3">Exchanges</span>
+                </a>
+            </nav>
+        </div>
 
-        <div class="px-6 mt-auto pt-8">
-            <div class="p-3 bg-dark-element rounded-lg">
+        <!-- System status card - explicitly placed at bottom -->
+        <div class="px-6 py-4 border-t border-gray-800">
+            <div id="system-status-card" class="p-3 bg-dark-element rounded-lg">
                 <div class="flex items-center">
                     <div class="mr-3">
-                        <i class="fas fa-info-circle text-dollar-green"></i>
+                        <i id="status-icon" class="fas fa-info-circle text-dollar-green"></i>
                     </div>
                     <div>
-                        <div class="text-sm font-medium">System Status</div>
-                        <div class="text-xs text-text-dim mt-1">All systems operational</div>
+                        <div class="text-sm font-medium">$$ystem $$tatus</div>
+                        <div id="status-message" class="text-xs text-text-dim mt-1">Checking status...</div>
+                        <div id="status-details" class="text-xs mt-1 hidden">
+                            <span id="api-status"
+                                class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-opacity-20 mr-1">
+                                API
+                            </span>
+                            <span id="db-status"
+                                class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-opacity-20 mr-1">
+                                DB
+                            </span>
+                            <span id="redis-status"
+                                class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-opacity-20">
+                                Redis
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -199,8 +317,9 @@
     <!-- Mobile Navigation Bar -->
     <div
         class="fixed bottom-0 left-0 right-0 bg-dark-element border-t border-gray-800 flex justify-around py-2 md:hidden z-10">
-        <a href="/"
-            class="text-center p-2 {% if request.url.path == '/' %}text-dollar-green{% else %}text-gray-400{% endif %}">
+        <!-- Updated href to point to /dashboard instead of / -->
+        <a href="/dashboard"
+            class="text-center p-2 {% if request.url.path == '/dashboard' %}text-dollar-green{% else %}text-gray-400{% endif %}">
             <i class="fas fa-chart-line block text-lg"></i>
             <span class="text-xs mt-1">Dashboard</span>
         </a>
@@ -215,7 +334,6 @@
             class="text-center p-2 {% if request.url.path == '/setup' %}text-dollar-green{% else %}text-gray-400{% endif %}">
             <i class="fas fa-cogs block text-lg"></i>
             <span class="text-xs mt-1">Setup</span>
-        </a>
     </div>
 
     <!-- Main Content -->
@@ -224,7 +342,9 @@
     </main>
 
     <!-- JavaScript -->
-    {% block scripts %}{% endblock %}
+    {% block scripts %}
+    {% block page_scripts %}{% endblock %}
+    {% endblock %}
 </body>
 
 </html>
