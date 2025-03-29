@@ -189,7 +189,7 @@
                             document.getElementById('status-icon').className = 'fas fa-exclamation-triangle text-loss-red';
                         }
 
-                        // Update individual components
+                        // Update individual components with new indicator style
                         updateComponentStatus('api', data.api);
                         updateComponentStatus('db', data.database);
                         updateComponentStatus('redis', data.redis);
@@ -205,17 +205,81 @@
 
             function updateComponentStatus(id, status) {
                 const element = document.getElementById(`${id}-status`);
+                const indicator = document.getElementById(`${id}-indicator`);
+
                 if (status === 'healthy') {
-                    element.className = 'inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-900 bg-opacity-20 text-profit-green mr-1';
+                    element.className = 'inline-flex items-center text-profit-green';
+                    indicator.className = 'h-2 w-2 rounded-full bg-profit-green mr-2';
                 } else {
-                    element.className = 'inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-900 bg-opacity-20 text-loss-red mr-1';
+                    element.className = 'inline-flex items-center text-loss-red';
+                    indicator.className = 'h-2 w-2 rounded-full bg-loss-red mr-2';
                 }
-                element.textContent = id.toUpperCase();
+
+                // Update text content based on component
+                if (id === 'api') element.textContent = 'API';
+                else if (id === 'db') element.textContent = 'Database';
+                else if (id === 'redis') element.textContent = 'Redis';
             }
 
             // Check status on page load and then every 60 seconds
             checkSystemStatus();
             setInterval(checkSystemStatus, 60000); // Update every minute
+
+            // New function to check trading system status
+            function checkTradingStatus() {
+                fetch('/api/status/')
+                    .then(response => {
+                        if (response.ok) {
+                            return response.json();
+                        } else {
+                            throw new Error('Failed to fetch trading status');
+                        }
+                    })
+                    .then(data => {
+                        // Show status details
+                        document.getElementById('trading-status-details').classList.remove('hidden');
+
+                        // Update overall status message
+                        const isOperational = data.status === 'operational';
+                        document.getElementById('trading-status-message').textContent = isOperational ?
+                            'System Operational' : 'System Degraded';
+                        document.getElementById('trading-status-message').className = isOperational ?
+                            'text-xs text-profit-green mt-1' : 'text-xs text-loss-red mt-1';
+                        document.getElementById('trading-status-icon').className = isOperational ?
+                            'fas fa-exchange-alt text-profit-green' : 'fas fa-exchange-alt text-loss-red';
+
+                        // Update individual components
+                        const components = data.components || {};
+                        updateTradingComponentStatus('reporting', components.reporting);
+                        updateTradingComponentStatus('ingestion', components.ingestion);
+                        updateTradingComponentStatus('arbitrage', components.arbitrage);
+                        updateTradingComponentStatus('execution', components.execution);
+                    })
+                    .catch(error => {
+                        console.error('Error fetching trading status:', error);
+                        document.getElementById('trading-status-message').textContent = 'Unable to fetch status';
+                        document.getElementById('trading-status-message').className = 'text-xs text-loss-red mt-1';
+                        document.getElementById('trading-status-icon').className = 'fas fa-exchange-alt text-text-dim';
+                        document.getElementById('trading-status-details').classList.add('hidden');
+                    });
+            }
+
+            function updateTradingComponentStatus(id, status) {
+                const element = document.getElementById(`${id}-status`);
+                const indicator = document.getElementById(`${id}-indicator`);
+
+                if (status === 'active') {
+                    element.className = 'inline-flex items-center text-profit-green';
+                    indicator.className = 'h-2 w-2 rounded-full bg-profit-green mr-2';
+                } else {
+                    element.className = 'inline-flex items-center text-gray-400';
+                    indicator.className = 'h-2 w-2 rounded-full bg-loss-red mr-2';
+                }
+            }
+
+            // Check trading status on page load and then every 30 seconds
+            checkTradingStatus();
+            setInterval(checkTradingStatus, 30000); // Update every 30 seconds
         });
     </script>
 
@@ -232,8 +296,8 @@
  $$$$$$\  $$$$$$$\
 $$  __$$\ $$  __$$\
 $$ /  $$ |$$ |  $$ |
-$$$$$$$$ |$$$$$$$  |
-$$  __$$ |$$  __$$<
+$$$$$$$$ |$$$$$$$ <
+$$  __$$ |$$  __$$ |
 $$ |  $$ |$$ |  $$ |
 $$ |  $$ |$$ |  $$ |
 \__|  \__|\__|  \__|
@@ -284,30 +348,62 @@ $$ |  $$ |$$ |  $$ |
             </nav>
         </div>
 
-        <!-- System status card - explicitly placed at bottom -->
+        <!-- System status cards - Trading card first now -->
         <div class="px-6 py-4 border-t border-gray-800">
+            <!-- Trading System Status Card - Now above system status -->
+            <div id="trading-status-card" class="p-3 bg-dark-element rounded-lg mb-3">
+                <div class="flex items-center mb-2">
+                    <div class="mr-3">
+                        <i id="trading-status-icon" class="fas fa-exchange-alt text-dollar-green"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm font-medium">Trading $$ystem</div>
+                        <div id="trading-status-message" class="text-xs text-text-dim mt-1">Checking status...</div>
+                    </div>
+                </div>
+                <div id="trading-status-details" class="text-xs mt-2 space-y-2">
+                    <div class="flex items-center">
+                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="reporting-indicator"></span>
+                        <span id="reporting-status" class="inline-flex items-center">Reporting</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="ingestion-indicator"></span>
+                        <span id="ingestion-status" class="inline-flex items-center">Ingestion</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="arbitrage-indicator"></span>
+                        <span id="arbitrage-status" class="inline-flex items-center">Arbitrage</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="execution-indicator"></span>
+                        <span id="execution-status" class="inline-flex items-center">Execution</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Original System Status Card - Now with same style as trading card -->
             <div id="system-status-card" class="p-3 bg-dark-element rounded-lg">
-                <div class="flex items-center">
+                <div class="flex items-center mb-2">
                     <div class="mr-3">
                         <i id="status-icon" class="fas fa-info-circle text-dollar-green"></i>
                     </div>
                     <div>
                         <div class="text-sm font-medium">$$ystem $$tatus</div>
                         <div id="status-message" class="text-xs text-text-dim mt-1">Checking status...</div>
-                        <div id="status-details" class="text-xs mt-1 hidden">
-                            <span id="api-status"
-                                class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-opacity-20 mr-1">
-                                API
-                            </span>
-                            <span id="db-status"
-                                class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-opacity-20 mr-1">
-                                DB
-                            </span>
-                            <span id="redis-status"
-                                class="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-opacity-20">
-                                Redis
-                            </span>
-                        </div>
+                    </div>
+                </div>
+                <div id="status-details" class="text-xs mt-2 space-y-2 hidden">
+                    <div class="flex items-center">
+                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="api-indicator"></span>
+                        <span id="api-status" class="inline-flex items-center">API</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="db-indicator"></span>
+                        <span id="db-status" class="inline-flex items-center">Database</span>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="redis-indicator"></span>
+                        <span id="redis-status" class="inline-flex items-center">Redis</span>
                     </div>
                 </div>
             </div>

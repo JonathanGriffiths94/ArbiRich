@@ -74,13 +74,26 @@
                 </tr>
             </thead>
             <tbody>
+                {% set highest_profit = namespace(value=-999999999, strategy="") %}
                 {% for strategy in strategies %}
-                <tr class="border-b border-gray-800 hover:bg-dark-element">
-                    <td class="py-3">{{ strategy.name|default('Unknown') }}</td>
+                {% if strategy.profit|default(0) > highest_profit.value %}
+                {% set highest_profit.value = strategy.profit|default(0) %}
+                {% set highest_profit.strategy = strategy.name|default('Unknown') %}
+                {% endif %}
+                {% endfor %}
+
+                {% for strategy in strategies %}
+                <tr class="border-b border-gray-800 hover:bg-dark-element ">
+                    <td class="py-3">
+                        {% if strategy.name == highest_profit.strategy and highest_profit.value > 0 %}
+                        <span class="text-yellow-400 mr-1" title="Highest profit strategy">🏆</span>
+                        {% endif %}
+                        {{ strategy.name|default('Unknown') }}
+                    </td>
                     <td class="py-3 text-center">
                         <span
                             class="px-2 py-1 rounded-full text-xs font-semibold 
-                              {% if strategy.is_active|default(false) %}bg-green-900 text-profit-green{% else %}bg-gray-800 text-gray-400{% endif %}">
+                            {% if strategy.is_active|default(false) %}bg-green-900 text-profit-green{% else %}bg-gray-800 text-gray-400{% endif %}">
                             {{ 'Active' if strategy.is_active|default(false) else 'Inactive' }}
                         </span>
                     </td>
@@ -113,6 +126,7 @@
                     <tr class="text-gray-400 border-b border-gray-800">
                         <th class="text-left py-2">Pair</th>
                         <th class="text-left py-2">Route</th>
+                        <th class="text-left py-2">Strategy</th>
                         <th class="text-right py-2">Spread %</th>
                         <th class="text-right py-2">Potential</th>
                     </tr>
@@ -123,6 +137,7 @@
                         <td class="py-2">{{ opp.pair|default('Unknown') }}</td>
                         <td class="py-2">{{ opp.buy_exchange|default('N/A') }} → {{ opp.sell_exchange|default('N/A') }}
                         </td>
+                        <td class="py-2">{{ opp.strategy_name|default('N/A') }}</td>
                         <td
                             class="py-2 text-right {% if opp.spread_percent|default(0) > 0.5 %}text-profit-green{% else %}text-gray-300{% endif %}">
                             {{ opp.spread_percent|default(0) }}%
@@ -148,6 +163,7 @@
                     <tr class="text-gray-400 border-b border-gray-800">
                         <th class="text-left py-2">Pair</th>
                         <th class="text-left py-2">Route</th>
+                        <th class="text-left py-2">Strategy</th>
                         <th class="text-right py-2">Time</th>
                         <th class="text-right py-2">Profit</th>
                     </tr>
@@ -158,6 +174,7 @@
                         <td class="py-2">{{ exec.pair|default('Unknown') }}</td>
                         <td class="py-2">{{ exec.buy_exchange|default('N/A') }} → {{ exec.sell_exchange|default('N/A')
                             }}</td>
+                        <td class="py-2">{{ exec.strategy_name|default('N/A') }}</td>
                         <td class="py-2 text-right">{% if exec.created_at is defined and exec.created_at %}{{
                             exec.created_at.strftime('%H:%M:%S') }}{% else %}--:--:--{% endif %}</td>
                         <td

@@ -169,102 +169,373 @@
 {{ super() }} <!-- This calls the parent block content first -->
 
 <script>
-    // Setup the activity chart
-    const ctx = document.getElementById('activityChart').getContext('2d');
+    // Global refresh tracker
+    let lastRefresh = Date.now();
+    const REFRESH_INTERVAL = 5000; // 5 seconds
 
-    // Generate some random data for the chart
-    const generateData = () => Array.from({ length: 30 }, () => Math.floor(Math.random() * 10));
+    // Initialize page on load
+    document.addEventListener('DOMContentLoaded', function () {
+        // Initialize everything
+        initializeSystemMonitor();
 
-    // Create labels for last 30 minutes
-    const labels = Array.from({ length: 30 }, (_, i) => {
-        const now = new Date();
-        now.setMinutes(now.getMinutes() - 29 + i);
-        return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        // Setup refresh indicator
+        updateRefreshIndicator(document.getElementById('refresh-indicator'), 5);
+
+        // Schedule auto-refresh
+        setInterval(refreshAllData, REFRESH_INTERVAL);
     });
 
-    // Create the chart
-    const activityChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Opportunities Found',
-                    data: generateData(),
-                    borderColor: '#85bb65',
-                    backgroundColor: 'rgba(133, 187, 101, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 2,
-                    borderWidth: 2
-                },
-                {
-                    label: 'Trades Executed',
-                    data: generateData().map(v => v * 0.3),
-                    borderColor: '#3abe78',
-                    backgroundColor: 'rgba(58, 190, 120, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    pointRadius: 2,
-                    borderWidth: 2
+    // Main function to refresh all data
+    function refreshAllData() {
+        // Update last refresh time
+        lastRefresh = Date.now();
+
+        // Refresh each component
+        fetchSystemStatus();
+        fetchProcesses();
+        fetchExchangeStatus();
+
+        // Reset refresh indicator
+        updateRefreshIndicator(document.getElementById('refresh-indicator'), 5);
+    }
+
+    // Initialize system monitoring components
+    function initializeSystemMonitor() {
+        // Set up initial data fetch
+        fetchSystemStatus();
+        fetchProcesses();
+        fetchExchangeStatus();
+        fetchLogs();
+
+        // Set up activity chart
+        setupActivityChart();
+    }
+
+    // Fetch system status (CPU, memory, disk, uptime)
+    function fetchSystemStatus() {
+        fetch('/api/monitor/system')
+            .then(response => response.json())
+            .then(data => {
+                // Update CPU usage
+                const cpuBar = document.querySelector('div:has(> span:contains("CPU Usage")) .h-2 .bg-dollar-green');
+                const cpuText = document.querySelector('div:has(> span:contains("CPU Usage")) .text-right.text-sm');
+                if (cpuBar && cpuText) {
+                    cpuBar.style.width = `${data.cpu_usage}%`;
+                    cpuText.textContent = `${data.cpu_usage}%`;
                 }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'top',
-                },
-                tooltip: {
-                    backgroundColor: '#122520',
-                    titleColor: '#85bb65',
-                    bodyColor: '#e0e9e5',
-                    borderColor: '#0d904f',
-                    borderWidth: 1
+
+                // Update Memory usage
+                const memBar = document.querySelector('div:has(> span:contains("Memory Usage")) .h-2 .bg-dollar-green');
+                const memText = document.querySelector('div:has(> span:contains("Memory Usage")) .text-right.text-sm');
+                if (memBar && memText) {
+                    memBar.style.width = `${data.memory_usage}%`;
+                    memText.textContent = `${data.memory_usage}%`;
                 }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.05)'
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false
-                    }
+
+                // Update Disk usage
+                const diskBar = document.querySelector('div:has(> span:contains("Disk Usage")) .h-2 .bg-dollar-green');
+                const diskText = document.querySelector('div:has(> span:contains("Disk Usage")) .text-right.text-sm');
+                if (diskBar && diskText) {
+                    diskBar.style.width = `${data.disk_usage}%`;
+                    diskText.textContent = `${data.disk_usage}%`;
                 }
-            },
-            animation: {
-                duration: 1000
-            }
+
+                // Update Uptime
+                const uptimeText = document.querySelector('div.space-y-4 div.flex.justify-between span.text-gray-300 + span');
+                if (uptimeText) {
+                    uptimeText.textContent = data.uptime;
+                }
+            })
+            .catch(error => {
+                console.error("Error fetching system status:", error);
+            });
+    }
+
+    // Fetch active processes
+    function fetchProcesses() {
+        fetch('/api/monitor/processes')
+            .then(response => response.json())
+            .then(data => {
+                const processContainer = document.querySelector('.dashboard-card:has(h2:contains("Active Processes")) .space-y-3');
+                if (processContainer) {
+                    // Clear existing processes
+                    processContainer.innerHTML = '';
+
+                    // Add each process
+                    data.forEach(process => {
+                        // Determine dot color based on status
+                        const dotColor = process.status === "Running" ? "bg-profit-green" : "bg-loss-red";
+
+                        const processElement = document.createElement('div');
+                        processElement.className = 'flex justify-between items-center';
+                        processElement.innerHTML = `
+                            <div class="flex items-center">
+                                <span class="h-2 w-2 rounded-full ${dotColor} mr-2"></span>
+                                <span class="text-gray-300">${process.name}</span>
+                            </div>
+                            <span class="text-xs bg-dark-element text-gray-400 px-2 py-1 rounded">PID: ${process.pid}</span>
+                        `;
+                        processContainer.appendChild(processElement);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error("Error fetching processes:", error);
+            });
+    }
+
+    // Fetch exchange status
+    function fetchExchangeStatus() {
+        fetch('/api/monitor/exchanges')
+            .then(response => response.json())
+            .then(data => {
+                const exchangeContainer = document.querySelector('.dashboard-card:has(h2:contains("Exchange Status")) .space-y-3');
+                if (exchangeContainer) {
+                    // Clear existing exchanges
+                    exchangeContainer.innerHTML = '';
+
+                    // Add each exchange
+                    data.forEach(exchange => {
+                        const statusClass = getStatusClass(exchange.status);
+
+                        const exchangeElement = document.createElement('div');
+                        exchangeElement.className = 'flex justify-between items-center';
+                        exchangeElement.innerHTML = `
+                            <span class="text-gray-300">${exchange.name}</span>
+                            <span class="${statusClass}">${exchange.status}</span>
+                        `;
+                        exchangeContainer.appendChild(exchangeElement);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error("Error fetching exchange status:", error);
+            });
+    }
+
+    // Get CSS class based on status
+    function getStatusClass(status) {
+        switch (status.toLowerCase()) {
+            case 'connected':
+                return 'px-2 py-1 rounded-full text-xs font-semibold bg-green-900 text-profit-green';
+            case 'rate limited':
+                return 'px-2 py-1 rounded-full text-xs font-semibold bg-yellow-900 text-yellow-300';
+            case 'disconnected':
+                return 'px-2 py-1 rounded-full text-xs font-semibold bg-red-900 text-loss-red';
+            default:
+                return 'px-2 py-1 rounded-full text-xs font-semibold bg-gray-800 text-gray-400';
         }
-    });
+    }
 
-    // Auto-update the chart every 15 seconds
-    setInterval(() => {
-        activityChart.data.labels.shift();
-        const now = new Date();
-        activityChart.data.labels.push(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    // Fetch system logs
+    function fetchLogs() {
+        fetch('/api/monitor/logs')
+            .then(response => response.json())
+            .then(data => {
+                const logsContainer = document.querySelector('.dashboard-card:has(h2:contains("Recent Logs")) div.h-48');
+                if (logsContainer) {
+                    // Clear existing logs
+                    logsContainer.innerHTML = '';
 
-        activityChart.data.datasets.forEach(dataset => {
-            dataset.data.shift();
-            if (dataset.label === 'Opportunities Found') {
-                dataset.data.push(Math.floor(Math.random() * 10));
-            } else {
-                dataset.data.push(Math.floor(Math.random() * 3));
+                    // Add each log entry
+                    data.forEach(log => {
+                        const logElement = document.createElement('div');
+                        logElement.className = 'text-gray-400';
+                        logElement.innerHTML = `[${log.timestamp}] <span class="text-${log.level_color}">${log.level}</span> - ${log.message}`;
+                        logsContainer.appendChild(logElement);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error("Error fetching logs:", error);
+            });
+    }
+
+    // Setup the activity chart
+    function setupActivityChart() {
+        fetch('/api/monitor/activity')
+            .then(response => response.json())
+            .then(data => {
+                // Set up chart with real data
+                const ctx = document.getElementById('activityChart').getContext('2d');
+
+                const activityChart = new Chart(ctx, {
+                    type: 'line',
+                    data: data,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                backgroundColor: '#122520',
+                                titleColor: '#85bb65',
+                                bodyColor: '#e0e9e5',
+                                borderColor: '#0d904f',
+                                borderWidth: 1
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        },
+                        animation: {
+                            duration: 1000
+                        }
+                    }
+                });
+
+                // Refresh chart every 15 seconds with new data
+                setInterval(() => {
+                    fetch('/api/monitor/activity')
+                        .then(response => response.json())
+                        .then(newData => {
+                            activityChart.data.labels = newData.labels;
+                            activityChart.data.datasets = newData.datasets;
+                            activityChart.update();
+                        })
+                        .catch(error => {
+                            console.error("Error updating activity chart:", error);
+                        });
+                }, 15000);
+            })
+            .catch(error => {
+                console.error("Error setting up activity chart:", error);
+
+                // Fall back to the previous random data method
+                setupFallbackActivityChart();
+            });
+    }
+
+    // Fallback to random data if API fails
+    function setupFallbackActivityChart() {
+        // This contains the original chart setup with random data
+        const ctx = document.getElementById('activityChart').getContext('2d');
+        const generateData = () => Array.from({ length: 30 }, () => Math.floor(Math.random() * 10));
+        const labels = Array.from({ length: 30 }, (_, i) => {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - 29 + i);
+            return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        });
+
+        // Create the chart with random data
+        const activityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Opportunities Found',
+                        data: generateData(),
+                        borderColor: '#85bb65',
+                        backgroundColor: 'rgba(133, 187, 101, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 2,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Trades Executed',
+                        data: generateData().map(v => v * 0.3),
+                        borderColor: '#3abe78',
+                        backgroundColor: 'rgba(58, 190, 120, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 2,
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        backgroundColor: '#122520',
+                        titleColor: '#85bb65',
+                        bodyColor: '#e0e9e5',
+                        borderColor: '#0d904f',
+                        borderWidth: 1
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                },
+                animation: {
+                    duration: 1000
+                }
             }
         });
 
-        activityChart.update();
-    }, 15000);
-</script>
+        // Auto-update the chart every 15 seconds with random data
+        setInterval(() => {
+            activityChart.data.labels.shift();
+            const now = new Date();
+            activityChart.data.labels.push(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
 
-<!-- Additional monitor-specific scripts -->
-<script>
-    // Monitor-specific JavaScript here
+            activityChart.data.datasets.forEach(dataset => {
+                dataset.data.shift();
+                if (dataset.label === 'Opportunities Found') {
+                    dataset.data.push(Math.floor(Math.random() * 10));
+                } else {
+                    dataset.data.push(Math.floor(Math.random() * 3));
+                }
+            });
+
+            activityChart.update();
+        }, 15000);
+    }
+
+    // Update the refresh indicator progress bar
+    function updateRefreshIndicator(indicator, seconds) {
+        if (!indicator) return;
+
+        // Clear any existing content
+        indicator.innerHTML = '';
+
+        // Create the progress bar
+        const progressBar = document.createElement('div');
+        progressBar.className = 'h-2 w-16 bg-gray-800 rounded overflow-hidden';
+
+        // Create the inner progress
+        const progress = document.createElement('div');
+        progress.className = 'h-full bg-dollar-green transition-all duration-1000';
+        progress.style.width = '100%';
+
+        // Animate the progress bar to shrink
+        setTimeout(() => {
+            progress.style.width = '0%';
+            progress.style.transitionDuration = `${seconds}s`;
+            progress.style.transitionTimingFunction = 'linear';
+        }, 50);
+
+        // Add to DOM
+        progressBar.appendChild(progress);
+        indicator.appendChild(progressBar);
+    }
 </script>
 {% endblock %}
