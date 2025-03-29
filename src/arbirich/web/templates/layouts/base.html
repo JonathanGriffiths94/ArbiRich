@@ -132,6 +132,45 @@
         }
 
         /* ...existing styles... */
+
+        /* Sticky control panel styles */
+        .control-panel {
+            position: sticky;
+            bottom: 0;
+            background-color: #121a17;
+            border-top: 1px solid #2c3a33;
+            transition: max-height 0.3s ease, opacity 0.2s ease;
+            max-height: 180px;
+            /* Adjust based on your content */
+            overflow: hidden;
+            z-index: 10;
+        }
+
+        .control-panel.collapsed {
+            max-height: 38px;
+            /* Height of just the header */
+        }
+
+        .control-panel-header {
+            padding: 8px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            background-color: #121a17;
+        }
+
+        .control-panel-content {
+            padding: 0 16px 16px;
+        }
+
+        .toggle-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .collapsed .toggle-icon {
+            transform: rotate(180deg);
+        }
     </style>
 
     <!-- Custom CSS - Use absolute URL to bypass any path resolution issues -->
@@ -702,30 +741,6 @@ $$ |  $$ |$$ |  $$ |
             </nav>
         </div>
 
-        <!-- Trading Controls - MOVED HERE, above system status cards -->
-        <div class="px-6 pb-3 border-t border-gray-800 pt-3">
-            <div class="space-y-2">
-                <div class="grid grid-cols-2 gap-2">
-                    <button id="start-trading-btn"
-                        class="bg-dark-bg hover:bg-gray-800 text-profit-green text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-profit-green/30">
-                        <i class="fas fa-play mr-1"></i> Start
-                    </button>
-                    <button id="stop-trading-btn"
-                        class="bg-dark-bg hover:bg-gray-800 text-loss-red text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-loss-red/30">
-                        <i class="fas fa-stop mr-1"></i> Stop
-                    </button>
-                </div>
-                <button id="restart-trading-btn"
-                    class="bg-dark-bg hover:bg-gray-800 text-dollar-green text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center border border-dollar-green/30">
-                    <i class="fas fa-sync-alt mr-1"></i> Restart
-                </button>
-                <button id="killswitch-btn"
-                    class="bg-loss-red hover:bg-red-700 text-white text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center">
-                    <i class="fas fa-power-off mr-1"></i> Emergency Killswitch
-                </button>
-            </div>
-        </div>
-
         <!-- System status cards - Trading card first now -->
         <div class="px-6 py-4 border-t border-gray-800">
             <!-- Trading System Status Card - Now above system status -->
@@ -786,6 +801,36 @@ $$ |  $$ |$$ |  $$ |
                 </div>
             </div>
         </div>
+
+        <!-- Trading Controls - Now at the bottom of sidebar as collapsible panel -->
+        <div id="controlPanel" class="control-panel">
+            <div id="controlPanelHeader" class="control-panel-header">
+                <span class="text-sm font-medium text-dollar-green">Trading Controls</span>
+                <i id="toggleIcon" class="fas fa-chevron-down toggle-icon text-dollar-green"></i>
+            </div>
+            <div class="control-panel-content">
+                <div class="space-y-2">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="start-trading-btn"
+                            class="bg-dark-bg hover:bg-gray-800 text-profit-green text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-profit-green/30">
+                            <i class="fas fa-play mr-1"></i> Start
+                        </button>
+                        <button id="stop-trading-btn"
+                            class="bg-dark-bg hover:bg-gray-800 text-loss-red text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-loss-red/30">
+                            <i class="fas fa-stop mr-1"></i> Stop
+                        </button>
+                    </div>
+                    <button id="restart-trading-btn"
+                        class="bg-dark-bg hover:bg-gray-800 text-dollar-green text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center border border-dollar-green/30">
+                        <i class="fas fa-sync-alt mr-1"></i> Restart
+                    </button>
+                    <button id="killswitch-btn"
+                        class="bg-loss-red hover:bg-red-700 text-white text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center">
+                        <i class="fas fa-power-off mr-1"></i> Emergency Killswitch
+                    </button>
+                </div>
+            </div>
+        </div>
     </aside>
 
     <!-- Mobile Navigation Bar - Fixed missing closing tag -->
@@ -825,6 +870,33 @@ $$ |  $$ |$$ |  $$ |
     <!-- JavaScript -->
     {% block scripts %}
     {% block page_scripts %}{% endblock %}
+    <!-- Control panel toggle functionality -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const controlPanel = document.getElementById('controlPanel');
+            const controlPanelHeader = document.getElementById('controlPanelHeader');
+            const toggleIcon = document.getElementById('toggleIcon');
+
+            // Check if we have a saved state
+            const isPanelCollapsed = localStorage.getItem('controlPanelCollapsed') === 'true';
+
+            // Set initial state
+            if (isPanelCollapsed) {
+                controlPanel.classList.add('collapsed');
+            }
+
+            // Toggle panel on header click
+            controlPanelHeader.addEventListener('click', function () {
+                controlPanel.classList.toggle('collapsed');
+
+                // Save state to localStorage
+                localStorage.setItem(
+                    'controlPanelCollapsed',
+                    controlPanel.classList.contains('collapsed')
+                );
+            });
+        });
+    </script>
     {% endblock %}
 </body>
 
