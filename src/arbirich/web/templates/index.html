@@ -20,71 +20,122 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
             </pre>
         </div>
         <div class="flex flex-col items-center">
-            <a href="/setup"
-                class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 border-4 border-dollar-green mb-3 group">
+            <a href="/strategies"
+                class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 border-4 border-dollar-green mb-3 group money-bag-pulse">
                 <span class="text-4xl group-hover:scale-110 transition-transform">💰</span>
             </a>
-            <span class="text-dollar-green font-semibold text-lg tracking-wide">$$TART</span>
+        </div>
+
+        <!-- Cards section -->
+        <div class="mt-12 w-full max-w-5xl px-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Strategies Card - Replaced Setup Card -->
+                <div
+                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
+                    <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
+                        <i class="fas fa-chess text-dollar-green text-2xl"></i>
+                    </div>
+                    <h2 class="text-lg font-bold text-dollar-green mb-3">$$trategies</h2>
+                    <p class="text-gray-400 mb-6 text-center text-sm">Create and manage trading strategies and set up
+                        trading parameters</p>
+                    <a href="/strategies"
+                        class="mt-auto bg-dark-bg hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300 w-full text-center">
+                        Manage $$trategies
+                    </a>
+                </div>
+
+                <!-- Dashboard Card -->
+                <div
+                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
+                    <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
+                        <i class="fas fa-chart-line text-dollar-green text-2xl"></i>
+                    </div>
+                    <h2 class="text-lg font-bold text-dollar-green mb-3">Dashboard</h2>
+                    <p class="text-gray-400 mb-6 text-center text-sm">View performance metrics, opportunities, and
+                        strategy
+                        results</p>
+                    <a href="/dashboard"
+                        class="mt-auto bg-dollar-green hover:bg-money-dark text-dark-bg font-bold py-2 px-4 rounded-lg transition-all duration-300 shadow-lg hover:shadow-money-green/50 border border-money-dark w-full text-center">
+                        View Dashboard
+                    </a>
+                </div>
+
+                <!-- Monitor Card -->
+                <div
+                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
+                    <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
+                        <i class="fas fa-desktop text-dollar-green text-2xl"></i>
+                    </div>
+                    <h2 class="text-lg font-bold text-dollar-green mb-3">Monitor</h2>
+                    <p class="text-gray-400 mb-6 text-center text-sm">Real-time monitoring of trades, prices, and
+                        exchange
+                        status</p>
+                    <a href="/monitor"
+                        class="mt-auto bg-dark-bg hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300 w-full text-center">
+                        Monitor $$ystem
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Cards section -->
-    <div class="mt-12 w-full max-w-5xl px-4">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <!-- Setup Card -->
-            <div
-                class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
-                <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
-                    <i class="fas fa-cogs text-dollar-green text-2xl"></i>
-                </div>
-                <h2 class="text-lg font-bold text-dollar-green mb-3">$$etup</h2>
-                <p class="text-gray-400 mb-6 text-center text-sm">Configure exchanges, strategies, and connection
-                    settings</p>
-                <a href="/setup"
-                    class="mt-auto bg-dark-bg hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300 w-full text-center">
-                    Configure
-                </a>
-            </div>
+    <!-- Add a style to hide horizontal scrollbar that might appear due to negative margin -->
+    <style>
+        body {
+            overflow-x: hidden;
+        }
 
-            <!-- Dashboard Card -->
-            <div
-                class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
-                <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
-                    <i class="fas fa-chart-line text-dollar-green text-2xl"></i>
-                </div>
-                <h2 class="text-lg font-bold text-dollar-green mb-3">Dashboard</h2>
-                <p class="text-gray-400 mb-6 text-center text-sm">View performance metrics, opportunities, and
-                    strategy
-                    results</p>
-                <a href="/dashboard"
-                    class="mt-auto bg-dollar-green hover:bg-money-dark text-dark-bg font-bold py-2 px-4 rounded-lg transition-all duration-300 shadow-lg hover:shadow-money-green/50 border border-money-dark w-full text-center">
-                    View Dashboard
-                </a>
-            </div>
+        /* Add pulsing animation for the money bag emoji ring */
+        @keyframes pulse-ring {
+            0% {
+                box-shadow: 0 0 0 0 rgba(133, 187, 101, 0.7);
+                border-color: rgba(133, 187, 101, 0.9);
+            }
 
-            <!-- Monitor Card -->
-            <div
-                class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full">
-                <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
-                    <i class="fas fa-desktop text-dollar-green text-2xl"></i>
-                </div>
-                <h2 class="text-lg font-bold text-dollar-green mb-3">Monitor</h2>
-                <p class="text-gray-400 mb-6 text-center text-sm">Real-time monitoring of trades, prices, and
-                    exchange
-                    status</p>
-                <a href="/monitor"
-                    class="mt-auto bg-dark-bg hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300 w-full text-center">
-                    Monitor $$ystem
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
+            50% {
+                box-shadow: 0 0 0 10px rgba(133, 187, 101, 0);
+                border-color: rgba(133, 187, 101, 1);
+            }
 
-<!-- Add a style to hide horizontal scrollbar that might appear due to negative margin -->
-<style>
-    body {
-        overflow-x: hidden;
-    }
-</style>
-{% endblock %}
+            100% {
+                box-shadow: 0 0 0 0 rgba(133, 187, 101, 0);
+                border-color: rgba(133, 187, 101, 0.9);
+            }
+        }
+
+        .money-bag-pulse {
+            animation: pulse-ring 2s infinite;
+            position: relative;
+        }
+
+        /* Second pulsing ring effect */
+        .money-bag-pulse::after {
+            content: '';
+            position: absolute;
+            top: -8px;
+            left: -8px;
+            right: -8px;
+            bottom: -8px;
+            border-radius: 50%;
+            border: 2px solid rgba(133, 187, 101, 0.3);
+            animation: pulse-ring-outer 2s infinite 0.3s;
+        }
+
+        @keyframes pulse-ring-outer {
+            0% {
+                transform: scale(0.95);
+                opacity: 0.7;
+            }
+
+            70% {
+                transform: scale(1.1);
+                opacity: 0;
+            }
+
+            100% {
+                transform: scale(0.95);
+                opacity: 0;
+            }
+        }
+    </style>
+    {% endblock %}

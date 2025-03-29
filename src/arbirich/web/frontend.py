@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
@@ -243,8 +243,8 @@ async def strategy_detail(request: Request, strategy_name: str, db: DatabaseServ
 
 @router.get("/setup", response_class=HTMLResponse)
 async def setup(request: Request):
-    """Display the setup page for configuration."""
-    return templates.TemplateResponse("pages/setup.html", {"request": request})
+    """Redirect setup page to strategies page."""
+    return RedirectResponse(url="/strategies", status_code=307)
 
 
 @router.get("/monitor", response_class=HTMLResponse)

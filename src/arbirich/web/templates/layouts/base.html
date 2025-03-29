@@ -113,6 +113,58 @@
             }
         }
 
+        /* ASCII Art Logo pulsing animation - ENHANCED */
+        @keyframes pulse-logo {
+            0% {
+                opacity: 0.85;
+                color: #85bb65;
+                text-shadow: 0 0 0px rgba(133, 187, 101, 0.1);
+                transform: scale(0.98);
+            }
+
+            50% {
+                opacity: 1;
+                color: #b3e889;
+                /* Much brighter green for stronger contrast */
+                text-shadow: 0 0 8px rgba(133, 187, 101, 0.5);
+                /* Add glow effect */
+                transform: scale(1.02);
+                /* Subtle scaling */
+            }
+
+            100% {
+                opacity: 0.85;
+                color: #85bb65;
+                text-shadow: 0 0 0px rgba(133, 187, 101, 0.1);
+                transform: scale(0.98);
+            }
+        }
+
+        .ascii-logo {
+            animation: pulse-logo 2.5s infinite;
+            /* Slightly faster animation cycle */
+            transition: all 0.2s ease;
+            font-size: 10px;
+            line-height: 1;
+            margin: 0;
+            display: inline-block;
+            /* Required for transform to work */
+            transform-origin: center;
+            /* Scale from center */
+        }
+
+        /* Add a hover effect to make it even more interactive */
+        .ascii-logo-container:hover .ascii-logo {
+            color: #c4f0a3;
+            /* Bright green on hover */
+            text-shadow: 0 0 10px rgba(133, 187, 101, 0.7);
+            /* Enhanced glow on hover */
+            transform: scale(1.05);
+            /* Slightly bigger on hover */
+            animation-play-state: paused;
+            /* Pause animation on hover */
+        }
+
         /* ...existing styles... */
     </style>
 
@@ -615,9 +667,9 @@
     <!-- Sidebar Navigation - Completely restructured for proper flexbox layout -->
     <aside class="w-64 border-r border-gray-800 hidden md:flex md:flex-col h-screen">
         <!-- Logo container -->
-        <div class="px-6 pt-6 pb-4">
+        <div class="px-6 pt-6 pb-4 ascii-logo-container">
             <a href="/" class="block">
-                <pre style="font-size:10px; line-height:1; margin:0; color:#85bb65;">
+                <pre class="ascii-logo">
  $$$$$$\  $$$$$$$\
 $$  __$$\ $$  __$$\
 $$ /  $$ |$$ |  $$ |
@@ -630,7 +682,7 @@ $$ |  $$ |$$ |  $$ |
             </a>
         </div>
 
-        <!-- Trading Status Indicator - Add back the control buttons -->
+        <!-- Trading Status Indicator - WITHOUT control buttons -->
         <div class="px-6 pb-3">
             <div id="trading-status-indicator" class="bg-dark-element rounded-lg p-3 border border-gray-800">
                 <div class="flex items-center justify-between mb-2">
@@ -641,27 +693,7 @@ $$ |  $$ |$$ |  $$ |
                     <span id="system-trading-label"
                         class="text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400">Unknown</span>
                 </div>
-                <!-- Re-add trading control buttons -->
-                <div class="mt-2 space-y-2">
-                    <div class="grid grid-cols-2 gap-2">
-                        <button id="start-trading-btn"
-                            class="bg-dark-bg hover:bg-gray-800 text-profit-green text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-profit-green/30">
-                            <i class="fas fa-play mr-1"></i> Start
-                        </button>
-                        <button id="stop-trading-btn"
-                            class="bg-dark-bg hover:bg-gray-800 text-loss-red text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-loss-red/30">
-                            <i class="fas fa-stop mr-1"></i> Stop
-                        </button>
-                    </div>
-                    <button id="restart-trading-btn"
-                        class="bg-dark-bg hover:bg-gray-800 text-dollar-green text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center border border-dollar-green/30">
-                        <i class="fas fa-sync-alt mr-1"></i> Restart
-                    </button>
-                    <button id="killswitch-btn"
-                        class="bg-loss-red hover:bg-red-700 text-white text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center">
-                        <i class="fas fa-power-off mr-1"></i> Emergency Killswitch
-                    </button>
-                </div>
+                <!-- Control buttons removed from here -->
             </div>
         </div>
 
@@ -688,11 +720,7 @@ $$ |  $$ |$$ |  $$ |
                     <span class="text-xs text-text-dim uppercase tracking-wider">Configuration</span>
                 </div>
 
-                <a href="/setup"
-                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/setup' %}active{% endif %}">
-                    <i class="fas fa-cogs w-5"></i>
-                    <span class="ml-3">$$ystem $$etup</span>
-                </a>
+                <!-- Removed System Setup link -->
 
                 <a href="/strategies"
                     class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/strategies' %}active{% endif %}">
@@ -703,9 +731,33 @@ $$ |  $$ |$$ |  $$ |
                 <a href="/exchanges"
                     class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/exchanges' %}active{% endif %}">
                     <i class="fas fa-exchange-alt w-5"></i>
-                    <span class="ml-3">Market Pair$$</span>
+                    <span class="ml-3">Market</span>
                 </a>
             </nav>
+        </div>
+
+        <!-- Trading Controls - MOVED HERE, above system status cards -->
+        <div class="px-6 pb-3 border-t border-gray-800 pt-3">
+            <div class="space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="start-trading-btn"
+                        class="bg-dark-bg hover:bg-gray-800 text-profit-green text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-profit-green/30">
+                        <i class="fas fa-play mr-1"></i> Start
+                    </button>
+                    <button id="stop-trading-btn"
+                        class="bg-dark-bg hover:bg-gray-800 text-loss-red text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-loss-red/30">
+                        <i class="fas fa-stop mr-1"></i> Stop
+                    </button>
+                </div>
+                <button id="restart-trading-btn"
+                    class="bg-dark-bg hover:bg-gray-800 text-dollar-green text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center border border-dollar-green/30">
+                    <i class="fas fa-sync-alt mr-1"></i> Restart
+                </button>
+                <button id="killswitch-btn"
+                    class="bg-loss-red hover:bg-red-700 text-white text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center">
+                    <i class="fas fa-power-off mr-1"></i> Emergency Killswitch
+                </button>
+            </div>
         </div>
 
         <!-- System status cards - Trading card first now -->
@@ -786,16 +838,16 @@ $$ |  $$ |$$ |  $$ |
             <span class="text-xs mt-1">Monitor</span>
         </a>
 
-        <a href="/setup"
-            class="text-center p-2 {% if request.url.path == '/setup' %}text-dollar-green{% else %}text-gray-400{% endif %}">
-            <i class="fas fa-cogs block text-lg"></i>
-            <span class="text-xs mt-1">Setup</span>
+        <a href="/strategies"
+            class="text-center p-2 {% if request.url.path == '/strategies' %}text-dollar-green{% else %}text-gray-400{% endif %}">
+            <i class="fas fa-chess block text-lg"></i>
+            <span class="text-xs mt-1">Strategies</span>
         </a>
 
         <a href="/exchanges"
             class="text-center p-2 {% if request.url.path == '/exchanges' %}text-dollar-green{% else %}text-gray-400{% endif %}">
             <i class="fas fa-exchange-alt block text-lg"></i>
-            <span class="text-xs mt-1">Pairs</span>
+            <span class="text-xs mt-1">Market</span>
         </a>
     </div>
 
