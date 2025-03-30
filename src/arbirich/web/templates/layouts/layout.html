@@ -1,109 +1,88 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ArbiRich - Crypto Arbitrage Platform</title>
-    <!-- Tailwind CSS via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'money-green': '#0d904f',
-                        'money-light': '#5cbf91',
-                        'money-dark': '#07713e',
-                        'dollar-green': '#85bb65',
-                        'dark-bg': '#0a1e14',
-                        'dark-card': '#122520',
-                        'dark-element': '#1c352d',
-                        'profit-green': '#3abe78',
-                        'loss-red': '#e55039',
-                    }
-                }
-            }
-        }
-    </script>
-    <!-- Chart.js via CDN for graphs -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="description" content="ArbiRich - Cryptocurrency arbitrage trading platform">
+    <meta name="keywords" content="crypto, trading, arbitrage, cryptocurrency, exchange">
+    <title>
+        {% block title %}
+            ArbiRich
+        {% endblock title %}
+    </title>
+    
+    <!-- Favicon -->
+    <link rel="icon" href="/static/img/favicon.ico" type="image/x-icon">
+    
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css">
+    
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="/static/css/custom.css">
-    <!-- Icon -->
+    <link rel="stylesheet" href="/static/css/styles.css">
     <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon">
-    <!-- Load sidebar.js script with defer attribute -->
-    <script src="/static/js/sidebar.js" defer></script>
+    
+    {% block styles %}
+    {% endblock styles %}
 </head>
-
-<body class="bg-dark-bg text-gray-100">
-    <!-- Header -->
-    <header class="bg-dark-element p-4 shadow-md">
-        <div class="container mx-auto flex justify-between items-center">
-            <a href="/" class="text-xl font-bold logo flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mr-2" fill="none" viewBox="0 0 24 24"
-                    stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                ArbiRich
-            </a>
-            <!-- Navigation links or other header content can go here -->
-        </div>
+<body>
+    <header>
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container">
+                <a class="navbar-brand" href="/">
+                    <img src="/static/img/logo.png" alt="ArbiRich Logo" height="30">
+                    ArbiRich
+                </a>
+                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav ml-auto">
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('frontend:dashboard') }}">
+                                <i class="fas fa-tachometer-alt"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('frontend:strategies_list') }}">
+                                <i class="fas fa-chess"></i> Strategies
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('frontend:opportunities_list') }}">
+                                <i class="fas fa-search-dollar"></i> Opportunities
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('frontend:executions_list') }}">
+                                <i class="fas fa-exchange-alt"></i> Executions
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
     </header>
 
-    <!-- Mobile menu button (only visible on small screens) -->
-    <button id="mobile-menu-button" class="mobile-menu-button" aria-label="Toggle mobile menu">
-        <div class="hamburger-icon">
-            <span></span>
-            <span></span>
-            <span></span>
-            <span></span>
-        </div>
-    </button>
+    <main class="container my-4">
+        {% block content %}
+        {% endblock content %}
+    </main>
 
-    <!-- Page layout with sidebar and content -->
-    <div class="flex h-screen pt-16">
-        <!-- Sidebar - will be controlled by JavaScript -->
-        <aside id="sidebar" class="bg-dark-element fixed top-0 left-0 h-full w-64 pt-16 shadow-lg z-30">
-            <!-- Sidebar content goes here -->
-            <nav class="px-4 py-4">
-                <ul>
-                    <li class="mb-2">
-                        <a href="/dashboard"
-                            class="sidebar-link flex items-center py-2 px-4 rounded-lg hover:bg-dark-card">
-                            <span>Dashboard</span>
-                        </a>
-                    </li>
-                    <!-- Other menu items -->
-                </ul>
-            </nav>
-        </aside>
-
-        <!-- Main content area -->
-        <div id="content-wrapper" class="flex-1 p-6 ml-64 transition-all duration-300">
-            <main class="container mx-auto">
-                <!-- Page content goes here -->
-                {% block content %}{% endblock %}
-            </main>
-        </div>
-    </div>
-
-    <!-- Footer -->
-    <footer class="bg-dark-element text-gray-400 p-4 mt-8">
-        <div class="container mx-auto text-center">
-            <p>ArbiRich Crypto Arbitrage Platform &copy; <span id="current-year"></span></p>
+    <footer class="bg-dark text-white text-center py-3 mt-5">
+        <div class="container">
+            <p>Copyright © 2023 ArbiRich. All rights reserved.</p>
         </div>
     </footer>
 
-    <!-- Common scripts -->
-    <script>
-        // Set current year in footer
-        document.getElementById('current-year').textContent = new Date().getFullYear();
-    </script>
-
-    <!-- Custom page scripts -->
-    {% block scripts %}{% endblock %}
+    <!-- Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    
+    {% block scripts %}
+    {% endblock scripts %}
 </body>
-
 </html>

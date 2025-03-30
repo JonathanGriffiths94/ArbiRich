@@ -1,0 +1,169 @@
+/* Theme variables and styling */
+
+/* Base theme variables (dark theme) */
+:root {
+    --bg-primary: #1a1e23;
+    --bg-element: #242a33;
+    --bg-card: #2d3643;
+    --text-primary: #e0e9e5;
+    --text-secondary: #a0aec0;
+    --color-accent: #85bb65;
+    --color-accent-hover: #a0d87c;
+    --color-profit: #3abe78;
+    --color-loss: #e15d5d;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --border-color: rgba(75, 85, 99, 0.5);
+    --font-primary: 'JetBrains Mono', 'Source Code Pro', 'Fira Code', monospace;
+    --font-secondary: 'Source Code Pro', 'Fira Code', monospace;
+    --font-ascii: 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
+}
+
+/* Light theme variables */
+[data-theme="light"] {
+    --bg-primary: #f5f7fa;
+    --bg-element: #ffffff;
+    --bg-card: #f0f4f8;
+    --text-primary: #2d3643;
+    --text-secondary: #64748b;
+    --color-accent: #5a9942;
+    --color-accent-hover: #6db450;
+    --color-profit: #2a8c58;
+    --color-loss: #d23b3b;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    --border-color: rgba(203, 213, 225, 0.8);
+}
+
+/* Apply theme to common elements */
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Terminal-style inputs and form elements */
+input, textarea, select, button {
+    font-family: var(--font-secondary);
+}
+
+/* Terminal-style headings */
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-primary);
+    font-weight: 600;
+}
+
+.bg-dark-bg {
+    background-color: var(--bg-primary) !important;
+}
+
+.bg-dark-element {
+    background-color: var(--bg-element) !important;
+}
+
+.bg-dark-card {
+    background-color: var(--bg-card) !important;
+}
+
+.text-dollar-green {
+    color: var(--color-accent) !important;
+}
+
+.text-profit-green {
+    color: var(--color-profit) !important;
+}
+
+.text-loss-red {
+    color: var(--color-loss) !important;
+}
+
+.text-text-dim {
+    color: var(--text-secondary) !important;
+}
+
+.border-dollar-green {
+    border-color: var(--color-accent) !important;
+}
+
+.bg-dollar-green {
+    background-color: var(--color-accent) !important;
+}
+
+/* Card styling */
+.dashboard-card, .stat-card, .card-glow {
+    background-color: var(--bg-element) !important;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 6px var(--shadow-color) !important;
+    color: var(--text-primary);
+}
+
+/* ASCII Logo theming */
+.ascii-logo {
+    font-family: var(--font-ascii);
+    color: var(--color-accent);
+    text-shadow: 0 0 8px rgba(90, 153, 66, 0.4);
+    letter-spacing: 0;
+}
+
+/* Code blocks and monospace elements */
+code, pre, .monospace {
+    font-family: var(--font-ascii);
+    letter-spacing: -0.02em;
+}
+
+/* Theme Toggle Button Styling */
+.theme-toggle {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    background-color: var(--bg-element);
+    border: 2px solid var(--color-accent);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px var(--shadow-color);
+    overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.theme-toggle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px var(--color-accent);
+    border-color: var(--color-accent-hover);
+}
+
+.theme-toggle::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, var(--color-accent-hover) 0%, transparent 70%);
+    opacity: 0;
+    transform: scale(0);
+    transition: transform 0.5s ease, opacity 0.5s ease;
+}
+
+.theme-toggle:active::after {
+    opacity: 0.3;
+    transform: scale(3);
+}
+
+/* Theme toggle icon styles */
+.theme-toggle::before {
+    content: '☀️';
+    font-size: 22px;
+    transition: transform 0.5s ease, opacity 0.3s ease;
+}
+
+[data-theme="light"] .theme-toggle::before {
+    content: '🌙';
+    font-size: 22px;
+}
+
+/* Theme transition effect */
+.theme-toggle.animating::before {
+    transform: translateY(40px);
+    opacity: 0;
+}

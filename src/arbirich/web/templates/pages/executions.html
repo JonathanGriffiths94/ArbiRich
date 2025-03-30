@@ -1,157 +1,242 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}ArbiRich - Trade Executions{% endblock %}
+{% block title %}
+    ArbiRich - Trade Executions
+{% endblock %}
 
 {% block content %}
-<div class="flex justify-between items-center mb-6">
-    <h1 class="text-3xl font-bold text-lime-green">Trade Executions</h1>
-    <a href="/"
-        class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300">
-        Back to Dashboard
-    </a>
-</div>
-
-<!-- Search/Filter Form -->
-<div class="dashboard-card rounded-lg shadow-md p-4 mb-6">
-    <form action="/executions" method="get" class="flex flex-col md:flex-row gap-4">
-        <div class="flex-1">
-            <label for="strategy" class="block text-sm font-medium text-gray-300 mb-1">Strategy</label>
-            <select id="strategy" name="strategy"
-                class="w-full bg-dark-element text-gray-200 border border-dark-element rounded-lg p-2">
-                <option value="">All Strategies</option>
-                {% for strategy in strategies %}
-                <option value="{{ strategy.name }}" {% if selected_strategy==strategy.name %}selected{% endif %}>
-                    {{ strategy.name }}
-                </option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="flex-1">
-            <label for="pair" class="block text-sm font-medium text-gray-300 mb-1">Trading Pair</label>
-            <select id="pair" name="pair"
-                class="w-full bg-dark-element text-gray-200 border border-dark-element rounded-lg p-2">
-                <option value="">All Pairs</option>
-                {% for pair in pairs %}
-                <option value="{{ pair.symbol }}" {% if selected_pair==pair.symbol %}selected{% endif %}>
-                    {{ pair.symbol }}
-                </option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="flex-1">
-            <label for="days" class="block text-sm font-medium text-gray-300 mb-1">Time Period</label>
-            <select id="days" name="days"
-                class="w-full bg-dark-element text-gray-200 border border-dark-element rounded-lg p-2">
-                <option value="1" {% if days==1 %}selected{% endif %}>Last 24 Hours</option>
-                <option value="7" {% if days==7 %}selected{% endif %}>Last 7 Days</option>
-                <option value="30" {% if days==30 %}selected{% endif %}>Last 30 Days</option>
-                <option value="90" {% if days==90 %}selected{% endif %}>Last 90 Days</option>
-                <option value="all" {% if days=='all' %}selected{% endif %}>All Time</option>
-            </select>
-        </div>
-        <div class="flex-none self-end">
-            <button type="submit"
-                class="bg-dollar-green hover:bg-money-dark text-dark-bg font-medium py-2 px-6 rounded-lg">
-                Filter
-            </button>
-        </div>
-    </form>
-</div>
-
-<!-- Executions Table -->
-<div class="dashboard-card rounded-lg shadow-md p-4">
-    <div class="overflow-x-auto">
-        <table class="w-full table-auto">
-            <thead class="bg-dark-element">
-                <tr>
-                    <th class="px-4 py-2 text-left text-dollar-green">ID</th>
-                    <th class="px-4 py-2 text-left text-dollar-green">Strategy</th>
-                    <th class="px-4 py-2 text-left text-dollar-green">Trading Pair</th>
-                    <th class="px-4 py-2 text-left text-dollar-green">Buy Exchange</th>
-                    <th class="px-4 py-2 text-left text-dollar-green">Sell Exchange</th>
-                    <th class="px-4 py-2 text-right text-dollar-green">Buy Price</th>
-                    <th class="px-4 py-2 text-right text-dollar-green">Sell Price</th>
-                    <th class="px-4 py-2 text-right text-dollar-green">Volume</th>
-                    <th class="px-4 py-2 text-right text-dollar-green">Profit</th>
-                    <th class="px-4 py-2 text-center text-dollar-green">Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for execution in executions %}
-                <tr class="border-t border-dark-element hover:bg-dark-element">
-                    <td class="px-4 py-2 font-mono text-xs">{{ execution.id[:8] }}...</td>
-                    <td class="px-4 py-2">{{ execution.strategy }}</td>
-                    <td class="px-4 py-2 font-medium">{{ execution.pair }}</td>
-                    <td class="px-4 py-2">{{ execution.buy_exchange }}</td>
-                    <td class="px-4 py-2">{{ execution.sell_exchange }}</td>
-                    <td class="px-4 py-2 text-right">${{ execution.executed_buy_price | round(4) }}</td>
-                    <td class="px-4 py-2 text-right">${{ execution.executed_sell_price | round(4) }}</td>
-                    <td class="px-4 py-2 text-right">{{ execution.volume | round(4) }}</td>
-                    <td
-                        class="px-4 py-2 text-right {% if profit_map[execution.id] > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
-                        ${{ profit_map[execution.id] | round(2) }}
-                    </td>
-                    <td class="px-4 py-2 text-center text-gray-300">
-                        {{ execution.execution_timestamp.strftime('%Y-%m-%d %H:%M') }}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-lime-green">
+            Trade Executions
+        </h1>
+        <a href="/"
+           class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300">
+            Back to Dashboard
+        </a>
     </div>
 
-    <!-- Pagination -->
-    {% if total_pages > 1 %}
-    <div class="mt-6 flex justify-center">
-        <div class="inline-flex rounded-md shadow-sm">
-            <a href="/executions?page=1&strategy={{ selected_strategy }}&pair={{ selected_pair }}&days={{ days }}"
-                class="px-4 py-2 border border-dark-element rounded-l-lg {% if page == 1 %}bg-dark-card text-gray-500 cursor-not-allowed{% else %}bg-dark-element text-gray-200 hover:bg-dark-card{% endif %}">
-                First
-            </a>
+    <!-- Search/Filter Form -->
+    <div class="dashboard-card rounded-lg shadow-md p-4 mb-6">
+        <form action="/executions"
+              method="get"
+              class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1">
+                <label for="strategy" class="block text-sm font-medium text-gray-300 mb-1">
+                    Strategy
+                </label>
+                <select id="strategy"
+                        name="strategy"
+                        class="w-full bg-dark-element text-gray-200 border border-dark-element rounded-lg p-2">
+                    <option value="">
+                        All Strategies
+                    </option>
+                    {% for strategy in strategies %}
+                        <option value="{{ strategy.name }}"
+                                {% if selected_strategy==strategy.name %}selected{% endif %}>
+                            {{ strategy.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex-1">
+                <label for="pair" class="block text-sm font-medium text-gray-300 mb-1">
+                    Trading Pair
+                </label>
+                <select id="pair"
+                        name="pair"
+                        class="w-full bg-dark-element text-gray-200 border border-dark-element rounded-lg p-2">
+                    <option value="">
+                        All Pairs
+                    </option>
+                    {% for pair in pairs %}
+                        <option value="{{ pair.symbol }}"
+                                {% if selected_pair==pair.symbol %}selected{% endif %}>
+                            {{ pair.symbol }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex-1">
+                <label for="days" class="block text-sm font-medium text-gray-300 mb-1">
+                    Time Period
+                </label>
+                <select id="days"
+                        name="days"
+                        class="w-full bg-dark-element text-gray-200 border border-dark-element rounded-lg p-2">
+                    <option value="1" {% if days==1 %}selected{% endif %}>
+                        Last 24 Hours
+                    </option>
+                    <option value="7" {% if days==7 %}selected{% endif %}>
+                        Last 7 Days
+                    </option>
+                    <option value="30" {% if days==30 %}selected{% endif %}>
+                        Last 30 Days
+                    </option>
+                    <option value="90" {% if days==90 %}selected{% endif %}>
+                        Last 90 Days
+                    </option>
+                    <option value="all" {% if days=='all' %}selected{% endif %}>
+                        All Time
+                    </option>
+                </select>
+            </div>
+            <div class="flex-none self-end">
+                <button type="submit"
+                        class="bg-dollar-green hover:bg-money-dark text-dark-bg font-medium py-2 px-6 rounded-lg">
+                    Filter
+                </button>
+            </div>
+        </form>
+    </div>
 
-            <a href="/executions?page={{ page - 1 }}&strategy={{ selected_strategy }}&pair={{ selected_pair }}&days={{ days }}"
-                class="px-4 py-2 border-t border-b border-r border-dark-element {% if page == 1 %}bg-dark-card text-gray-500 cursor-not-allowed{% else %}bg-dark-element text-gray-200 hover:bg-dark-card{% endif %}">
-                Previous
-            </a>
+    <!-- Executions Table -->
+    <div class="dashboard-card rounded-lg shadow-md p-4">
+        <div class="overflow-x-auto">
+            <table class="w-full table-auto">
+                <thead class="bg-dark-element">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-dollar-green">
+                            ID
+                        </th>
+                        <th class="px-4 py-2 text-left text-dollar-green">
+                            Strategy
+                        </th>
+                        <th class="px-4 py-2 text-left text-dollar-green">
+                            Trading Pair
+                        </th>
+                        <th class="px-4 py-2 text-left text-dollar-green">
+                            Buy Exchange
+                        </th>
+                        <th class="px-4 py-2 text-left text-dollar-green">
+                            Sell Exchange
+                        </th>
+                        <th class="px-4 py-2 text-right text-dollar-green">
+                            Buy Price
+                        </th>
+                        <th class="px-4 py-2 text-right text-dollar-green">
+                            Sell Price
+                        </th>
+                        <th class="px-4 py-2 text-right text-dollar-green">
+                            Volume
+                        </th>
+                        <th class="px-4 py-2 text-right text-dollar-green">
+                            Profit
+                        </th>
+                        <th class="px-4 py-2 text-center text-dollar-green">
+                            Date
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for execution in executions %}
+                        <tr class="border-t border-dark-element hover:bg-dark-element">
+                            <td class="px-4 py-2 font-mono text-xs">
+                                {{ execution.id[:8] }}...
+                            </td>
+                            <td class="px-4 py-2">
+                                {{ execution.strategy }}
+                            </td>
+                            <td class="px-4 py-2 font-medium">
+                                {{ execution.pair }}
+                            </td>
+                            <td class="px-4 py-2">
+                                {{ execution.buy_exchange }}
+                            </td>
+                            <td class="px-4 py-2">
+                                {{ execution.sell_exchange }}
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                                ${{ execution.executed_buy_price | round(4) }}
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                                ${{ execution.executed_sell_price | round(4) }}
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                                {{ execution.volume | round(4) }}
+                            </td>
+                            <td class="px-4 py-2 text-right {% if execution.profit | default(0) > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                                ${{ execution.profit | default(0) | round(2) }}
+                            </td>
+                            <td class="px-4 py-2 text-center text-gray-300">
+                                {% if execution.execution_timestamp is defined %}
+                                    {% if execution.execution_timestamp is not none %}
+                                        {% if execution.execution_timestamp is number %}
+                                            {{ execution.execution_timestamp | default('N/A') }}
+                                        {% else %}
+                                            {{ execution.execution_timestamp.strftime("%Y-%m-%d %H:%M") }}
+                                        {% endif %}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
 
-            <span class="px-4 py-2 border-t border-b border-dark-element bg-dark-card text-dollar-green">
-                {{ page }} of {{ total_pages }}
-            </span>
+        <!-- Pagination -->
+        {% if total_pages is defined and total_pages|default(1) > 1 %}
+            <div class="mt-6 flex justify-center">
+                <div class="inline-flex rounded-md shadow-sm">
+                    <a href="/executions?page=1&strategy={{ selected_strategy|default('') }}&pair={{ selected_pair|default('') }}&days={{ days|default('all') }}"
+                       class="px-4 py-2 border border-dark-element rounded-l-lg {% if page|default(1) == 1 %}bg-dark-card text-gray-500 cursor-not-allowed{% else %}bg-dark-element text-gray-200 hover:bg-dark-card{% endif %}">
+                        First
+                    </a>
 
-            <a href="/executions?page={{ page + 1 }}&strategy={{ selected_strategy }}&pair={{ selected_pair }}&days={{ days }}"
-                class="px-4 py-2 border-t border-b border-l border-dark-element {% if page == total_pages %}bg-dark-card text-gray-500 cursor-not-allowed{% else %}bg-dark-element text-gray-200 hover:bg-dark-card{% endif %}">
-                Next
-            </a>
+                    <a href="/executions?page={{ page|default(1) - 1 }}&strategy={{ selected_strategy|default('') }}&pair={{ selected_pair|default('') }}&days={{ days|default('all') }}"
+                       class="px-4 py-2 border-t border-b border-r border-dark-element {% if page|default(1) == 1 %}bg-dark-card text-gray-500 cursor-not-allowed{% else %}bg-dark-element text-gray-200 hover:bg-dark-card{% endif %}">
+                        Previous
+                    </a>
 
-            <a href="/executions?page={{ total_pages }}&strategy={{ selected_strategy }}&pair={{ selected_pair }}&days={{ days }}"
-                class="px-4 py-2 border border-dark-element rounded-r-lg {% if page == total_pages %}bg-dark-card text-gray-500 cursor-not-allowed{% else %}bg-dark-element text-gray-200 hover:bg-dark-card{% endif %}">
-                Last
-            </a>
+                    <span class="px-4 py-2 border-t border-b border-dark-element bg-dark-card text-dollar-green">
+                        {{ page|default(1) }} of {{ total_pages|default(1) }}
+                    </span>
+
+                    <a href="/executions?page={{ page|default(1) + 1 }}&strategy={{ selected_strategy|default('') }}&pair={{ selected_pair|default('') }}&days={{ days|default('all') }}"
+                       class="px-4 py-2 border-t border-b border-l border-dark-element {% if page|default(1) == total_pages|default(1) %}bg-dark-card text-gray-500 cursor-not-allowed{% else %}bg-dark-element text-gray-200 hover:bg-dark-card{% endif %}">
+                        Next
+                    </a>
+
+                    <a href="/executions?page={{ total_pages|default(1) }}&strategy={{ selected_strategy|default('') }}&pair={{ selected_pair|default('') }}&days={{ days|default('all') }}"
+                       class="px-4 py-2 border border-dark-element rounded-r-lg {% if page|default(1) == total_pages|default(1) %}bg-dark-card text-gray-500 cursor-not-allowed{% else %}bg-dark-element text-gray-200 hover:bg-dark-card{% endif %}">
+                        Last
+                    </a>
+                </div>
+            </div>
+        {% endif %}
+
+        <!-- Stats -->
+        <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-dark-element p-4 rounded-lg">
+                <p class="text-gray-400 text-sm">
+                    Total Executions
+                </p>
+                <p class="text-xl font-semibold">
+                    {{ total_executions|default(0) }}
+                </p>
+            </div>
+
+            <div class="bg-dark-element p-4 rounded-lg">
+                <p class="text-gray-400 text-sm">
+                    Total Profit
+                </p>
+                <p class="text-xl font-semibold {% if total_profit|default(0) > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                    ${{ total_profit|default(0)|round(2) }}
+                </p>
+            </div>
+
+            <div class="bg-dark-element p-4 rounded-lg">
+                <p class="text-gray-400 text-sm">
+                    Avg. Profit Per Trade
+                </p>
+                <p class="text-xl font-semibold {% if avg_profit|default(0) > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                    ${{ avg_profit|default(0)|round(2) }}
+                </p>
+            </div>
         </div>
     </div>
-    {% endif %}
-
-    <!-- Stats -->
-    <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="bg-dark-element p-4 rounded-lg">
-            <p class="text-gray-400 text-sm">Total Executions</p>
-            <p class="text-xl font-semibold">{{ total_executions }}</p>
-        </div>
-
-        <div class="bg-dark-element p-4 rounded-lg">
-            <p class="text-gray-400 text-sm">Total Profit</p>
-            <p
-                class="text-xl font-semibold {% if total_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
-                ${{ total_profit | round(2) }}
-            </p>
-        </div>
-
-        <div class="bg-dark-element p-4 rounded-lg">
-            <p class="text-gray-400 text-sm">Avg. Profit Per Trade</p>
-            <p class="text-xl font-semibold {% if avg_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
-                ${{ avg_profit | round(2) }}
-            </p>
-        </div>
-    </div>
-</div>
 {% endblock %}

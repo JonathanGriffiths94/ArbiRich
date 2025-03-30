@@ -1,302 +1,441 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}ArbiRich - Trading Strategies{% endblock %}
+{% block title %}
+    ArbiRich - Trading Strategies
+{% endblock %}
 
 {% block content %}
-<div class="flex justify-between items-center mb-6">
-    <h1 class="text-3xl font-bold text-dollar-green">Trading Strategies</h1>
-    <div class="flex space-x-3">
-        <button id="btn-refresh-strategies"
-            class="bg-dark-element hover:bg-dark-card text-gray-300 font-semibold py-2 px-4 rounded-lg border border-gray-700 transition-colors duration-300">
-            <i class="fas fa-sync-alt mr-2"></i> Refresh
-        </button>
-        <button id="btn-add-strategy"
-            class="bg-dollar-green hover:bg-money-dark text-dark-bg font-bold py-2 px-4 rounded-lg transition-colors duration-300">
-            <i class="fas fa-plus mr-2"></i> New Strategy
-        </button>
-    </div>
-</div>
-
-<!-- System status indicator and trading controls -->
-<div class="flex justify-between items-center bg-dark-element rounded-lg p-4 mb-6 border border-gray-800">
-    <div class="flex items-center">
-        <span id="page-system-trading-dot" class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
-        <span class="text-sm">System Status:</span>
-        <span id="page-system-trading-text" class="ml-2 font-medium text-gray-300">Checking...</span>
-    </div>
-    <div class="flex space-x-2">
-        <button id="start-trading-btn"
-            class="bg-dark-card hover:bg-gray-700 text-profit-green py-2 px-4 rounded transition-all flex items-center border border-profit-green/30">
-            <i class="fas fa-play mr-2"></i> Start Trading
-        </button>
-        <button id="stop-trading-btn"
-            class="bg-dark-card hover:bg-gray-700 text-loss-red py-2 px-4 rounded transition-all flex items-center border border-loss-red/30">
-            <i class="fas fa-stop mr-2"></i> Stop Trading
-        </button>
-        <button id="restart-trading-btn"
-            class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-4 rounded transition-all flex items-center border border-dollar-green/30">
-            <i class="fas fa-sync-alt mr-2"></i> Restart Trading
-        </button>
-    </div>
-</div>
-
-<!-- Strategy Leaderboard -->
-<div class="dashboard-card rounded-lg shadow-md p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
-        <h2 class="text-xl font-bold text-dollar-green">Strategy Leaderboard</h2>
-        <div class="text-sm text-gray-400">Top performers based on profit</div>
+        <h1 class="text-3xl font-bold text-dollar-green">
+            Trading Strategies
+        </h1>
+        <div class="flex space-x-3">
+            <!-- Add view toggle button -->
+            <button id="toggle-view-btn" class="bg-dark-element hover:bg-dark-card text-gray-300 font-semibold py-2 px-4 rounded-lg border border-gray-700 transition-colors duration-300 flex items-center">
+                <i class="fas fa-table mr-2"></i> <span id="toggle-view-text">Table View</span>
+            </button>
+            <button id="btn-refresh-strategies"
+                    class="bg-dark-element hover:bg-dark-card text-gray-300 font-semibold py-2 px-4 rounded-lg border border-gray-700 transition-colors duration-300">
+                <i class="fas fa-sync-alt mr-2"></i> Refresh
+            </button>
+            <button id="btn-add-strategy"
+                    class="bg-dollar-green hover:bg-money-dark text-dark-bg font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                <i class="fas fa-plus mr-2"></i> New Strategy
+            </button>
+        </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <!-- Top 3 strategies -->
-        {% set ranked_strategies = strategies|sort(attribute='profit', reverse=true) %}
-        {% set display_count = ranked_strategies|length if ranked_strategies|length < 3 else 3 %} {% for i in
-            range(display_count) %} {% set strategy=ranked_strategies[i] %} {% set
-            rank_class="bg-yellow-400/20 border-yellow-400" if i==0 else "bg-gray-400/20 border-gray-400" if i==1
-            else "bg-amber-700/20 border-amber-700" %} {% set rank_text="🥇 1st Place" if i==0 else "🥈 2nd Place" if
-            i==1 else "🥉 3rd Place" %} <!-- Wrap the card in an anchor tag -->
-            <a href="/strategy/{{ strategy.name }}" class="block hover:transform hover:scale-[1.02] transition-all">
-                <div class="bg-dark-card rounded-lg shadow-md p-5 border-l-4 {{ rank_class }} flex flex-col">
-                    <div class="flex justify-between items-center mb-4">
-                        <div>
-                            <span class="text-sm font-medium text-gray-400">{{ rank_text }}</span>
-                            <h3 class="text-lg font-bold text-dollar-green">{{ strategy.name }}</h3>
-                        </div>
-                        <div
-                            class="px-2 py-1 rounded text-xs font-semibold 
-                        {% if strategy.is_running %}bg-blue-900 text-blue-400 flex items-center{% else %}bg-gray-800 text-gray-400{% endif %}">
-                            {% if strategy.is_running %}
-                            <span class="animate-pulse inline-block h-2 w-2 rounded-full bg-blue-400 mr-1"></span>
-                            {% endif %}
-                            {{ 'Trading Now' if strategy.is_running else 'Active' if strategy.is_active else 'Inactive'
-                            }}
-                        </div>
-                    </div>
-                    <div class="flex justify-between text-sm mb-3">
-                        <div>
-                            <div class="text-text-dim">Win Rate</div>
-                            <div class="font-medium text-gray-300">{{ strategy.win_rate|default(0) }}%</div>
-                        </div>
-                        <div>
-                            <div class="text-text-dim">Trades</div>
-                            <div class="font-medium text-gray-300">{{ strategy.trade_count|default(0) }}</div>
-                        </div>
-                        <div>
-                            <div class="text-text-dim">Profit</div>
-                            <div
-                                class="font-medium {% if strategy.profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
-                                ${{ strategy.profit|default(0)|round(2) }}
+    <!-- System status indicator and trading controls -->
+    <div class="flex justify-between items-center bg-dark-element rounded-lg p-4 mb-6 border border-gray-800">
+        <div class="flex items-center">
+            <span id="page-system-trading-dot"
+                  class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
+            <span class="text-sm">System Status:</span>
+            <span id="page-system-trading-text" class="ml-2 font-medium text-gray-300">Checking...</span>
+        </div>
+        <div class="flex space-x-2">
+            <button id="start-trading-btn"
+                    class="bg-dark-card hover:bg-gray-700 text-profit-green py-2 px-4 rounded transition-all flex items-center border border-profit-green/30">
+                <i class="fas fa-play mr-2"></i> Start Trading
+            </button>
+            <button id="stop-trading-btn"
+                    class="bg-dark-card hover:bg-gray-700 text-loss-red py-2 px-4 rounded transition-all flex items-center border border-loss-red/30">
+                <i class="fas fa-stop mr-2"></i> Stop Trading
+            </button>
+            <button id="restart-trading-btn"
+                    class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-4 rounded transition-all flex items-center border border-dollar-green/30">
+                <i class="fas fa-sync-alt mr-2"></i> Restart Trading
+            </button>
+        </div>
+    </div>
+
+    <!-- Strategy Leaderboard - Card View (default) -->
+    <div id="card-view" class="dashboard-card rounded-lg shadow-md p-6 mb-8">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold text-dollar-green">
+                Strategy Leaderboard
+            </h2>
+            <div class="text-sm text-gray-400">
+                Top performers based on profit
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Top 3 strategies -->
+            {% set ranked_strategies = strategies|sort(attribute='profit', reverse=true) %}
+            {% set display_count = ranked_strategies|length if ranked_strategies|length < 3 else 3 %}
+            {% for i in range(display_count) %}
+                {% set strategy = ranked_strategies[i] %}
+                {% set rank_class="bg-yellow-400/20 border-yellow-400" if i==0 else "bg-gray-400/20 border-gray-400" if i==1 else "bg-amber-700/20 border-amber-700" %}
+                {% set rank_text = "🥇 1st Place" if i==0 else "🥈 2nd Place" if i==1 else "🥉 3rd Place" %}
+                <!-- Wrap the card in an anchor tag -->
+                <a href="/strategies/{{ strategy.id }}"
+                   class="block hover:transform hover:scale-[1.02] transition-all">
+                    <div class="bg-dark-card rounded-lg shadow-md p-5 border-l-4 {{ rank_class }} flex flex-col">
+                        <div class="flex justify-between items-center mb-4">
+                            <div>
+                                <span class="text-sm font-medium text-gray-400">{{ rank_text }}</span>
+                                <h3 class="text-lg font-bold text-dollar-green">
+                                    {{ strategy.name }}
+                                </h3>
+                            </div>
+                            <div class="px-2 py-1 rounded text-xs font-semibold {% if strategy.is_running %}bg-blue-900 text-blue-400 flex items-center{% else %}bg-gray-800 text-gray-400{% endif %}">
+                                {% if strategy.is_running %}
+                                    <span class="animate-pulse inline-block h-2 w-2 rounded-full bg-blue-400 mr-1"></span>
+                                {% endif %}
+                                {{ 'Trading Now' if strategy.is_running else 'Active' if strategy.is_active else 'Inactive' }}
                             </div>
                         </div>
+                        <div class="flex justify-between text-sm mb-3">
+                            <div>
+                                <div class="text-text-dim">
+                                    Win Rate
+                                </div>
+                                <div class="font-medium text-gray-300">
+                                    {{ strategy.win_rate|default(0) }}%
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-text-dim">
+                                    Trades
+                                </div>
+                                <div class="font-medium text-gray-300">
+                                    {{ strategy.trade_count|default(0) }}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-text-dim">
+                                    Profit
+                                </div>
+                                <div class="font-medium {% if strategy.profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                                    ${{ strategy.profit|default(0) |round(2) }}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-auto flex justify-between items-center">
+                            <div class="space-x-2">
+                                <a href="/strategy/{{ strategy.name }}" class="text-dollar-green hover:underline">Overview</a>
+                                <span class="text-gray-500">|</span>
+                                <a href="/strategy/{{ strategy.name }}/details" class="text-dollar-green hover:underline">Details</a>
+                                <span class="text-gray-500">|</span>
+                                <a href="/strategy/{{ strategy.name }}/metrics" class="text-dollar-green hover:underline">Metrics</a>
+                            </div>
+                            <label class="switch" onclick="event.stopPropagation()">
+                                <input type="checkbox"
+                                       class="strategy-toggle"
+                                       data-id="{{ strategy.id }}"
+                                       data-name="{{ strategy.name }}"
+                                       {% if strategy.is_active %}checked{% endif %}
+                                       onclick="event.stopPropagation()">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="mt-auto flex justify-between items-center">
-                        <span class="text-dollar-green">View Details</span>
-                        <label class="switch" onclick="event.stopPropagation()">
-                            <input type="checkbox" class="strategy-toggle" data-id="{{ strategy.id }}"
-                                data-name="{{ strategy.name }}" {% if strategy.is_active %}checked{% endif %}
-                                onclick="event.stopPropagation()">
-                            <span class="slider round"></span>
-                        </label>
-                    </div>
-                </div>
-            </a>
+                </a>
             {% endfor %}
-    </div>
-</div>
-
-<!-- Live Strategies Section -->
-<div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
-    <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-bold text-dollar-green flex items-center">
-            <span class="animate-pulse inline-block h-3 w-3 rounded-full bg-blue-400 mr-2"></span>
-            Live Trading Strategies
-        </h2>
-        <div class="text-sm text-gray-400">Actively trading now</div>
+        </div>
     </div>
 
-    {% set live_strategies = [] %}
-    {% for strategy in strategies %}
-    {% if strategy.is_active and strategy.is_running %}
-    {% set _ = live_strategies.append(strategy) %}
-    {% endif %}
-    {% endfor %}
-
-    {% if live_strategies|length > 0 %}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {% for strategy in live_strategies %}
-        <!-- Wrap in anchor tag -->
-        <a href="/strategy/{{ strategy.name }}" class="block hover:transform hover:scale-[1.02] transition-all">
-            <div class="bg-dark-card rounded-lg p-4 border-l-4 border-blue-400">
-                <div class="flex justify-between items-start mb-3">
-                    <h3 class="font-bold text-dollar-green">{{ strategy.name|default('Unknown') }}</h3>
-                    <span class="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-400 flex items-center">
-                        <span class="animate-pulse inline-block h-2 w-2 rounded-full bg-blue-400 mr-1"></span>
-                        Trading Now
-                    </span>
-                </div>
-                <div class="space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Win Rate:</span>
-                        <span>{{ strategy.win_rate|default(0) }}%</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Trades:</span>
-                        <span>{{ strategy.trade_count|default(0) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Net Profit:</span>
-                        <span
-                            class="{% if strategy.profit|default(0) > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
-                            ${{ strategy.profit|default(0)|round(2) }}
-                        </span>
-                    </div>
-                </div>
-                <div class="mt-4 flex justify-between items-center">
-                    <span class="text-dollar-green">View Details</span>
-                    <label class="switch" onclick="event.stopPropagation()">
-                        <input type="checkbox" class="strategy-toggle" data-id="{{ strategy.id }}"
-                            data-name="{{ strategy.name }}" {% if strategy.is_active %}checked{% endif %}
-                            onclick="event.stopPropagation()">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
+    <!-- Strategy Leaderboard - Table View (initially hidden) -->
+    <div id="table-view" class="dashboard-card rounded-lg shadow-md p-6 mb-8 hidden">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold text-dollar-green">
+                Strategy Leaderboard
+            </h2>
+            <div class="text-sm text-gray-400">
+                Top performers based on profit
             </div>
-        </a>
-        {% endfor %}
-    </div>
-    <div class="bg-dark-card rounded-lg p-6 text-center">
-        <i class="fas fa-info-circle text-text-dim text-2xl mb-3"></i>
-        <p class="text-text-dim">No strategies are currently live trading</p>
-    </div>
-    {% endif %}
-</div>
+        </div>
 
-<!-- Active Strategies Section -->
-<div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
-    <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-bold text-dollar-green">Active Strategies</h2>
-        <div class="text-sm text-gray-400">Ready to trade when conditions are met</div>
+        <div class="overflow-x-auto">
+            <table class="w-full table-auto">
+                <thead class="bg-dark-element">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-dollar-green">Rank</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Strategy</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Status</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Win Rate</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Trades</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Profit</th>
+                        <th class="px-4 py-2 text-center text-dollar-green">Active</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% set ranked_strategies = strategies|sort(attribute='profit', reverse=true) %}
+                    {% for strategy in ranked_strategies %}
+                        <tr class="border-t border-dark-element hover:bg-dark-element">
+                            <td class="px-4 py-3">
+                                {% if loop.index == 1 %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-400/20 text-yellow-400">🥇 1st</span>
+                                {% elif loop.index == 2 %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-400/20 text-gray-400">🥈 2nd</span>
+                                {% elif loop.index == 3 %}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-700/20 text-amber-700">🥉 3rd</span>
+                                {% else %}
+                                    <span class="text-gray-400">{{ loop.index }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3">
+                                <a href="/strategy/{{ strategy.name }}" class="font-bold text-dollar-green hover:underline">
+                                    {{ strategy.name }}
+                                </a>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {% if strategy.is_running %}bg-blue-900 text-blue-400{% elif strategy.is_active %}bg-green-900 text-profit-green{% else %}bg-gray-800 text-gray-400{% endif %}">
+                                    {% if strategy.is_running %}
+                                        <span class="animate-pulse inline-block h-2 w-2 rounded-full bg-blue-400 mr-1.5"></span>
+                                    {% endif %}
+                                    {{ 'Trading Now' if strategy.is_running else 'Active' if strategy.is_active else 'Inactive' }}
+                                </div>
+                            </td>
+                            <td class="px-4 py-3">{{ strategy.win_rate|default(0) }}%</td>
+                            <td class="px-4 py-3">{{ strategy.trade_count|default(0) }}</td>
+                            <td class="px-4 py-3 text-right {% if strategy.profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                                ${{ strategy.profit|default(0) |round(2) }}
+                            </td>
+                            <td class="px-4 py-3 text-center">
+                                <label class="switch" onclick="event.stopPropagation()">
+                                    <input type="checkbox"
+                                           class="strategy-toggle"
+                                           data-id="{{ strategy.id }}"
+                                           data-name="{{ strategy.name }}"
+                                           {% if strategy.is_active %}checked{% endif %}
+                                           onclick="event.stopPropagation()">
+                                    <span class="slider round"></span>
+                                </label>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 
-    {% set active_non_trading_strategies = [] %}
-    {% for strategy in strategies %}
-    {% if strategy.is_active and not strategy.is_running %}
-    {% set _ = active_non_trading_strategies.append(strategy) %}
-    {% endif %}
-    {% endfor %}
-
-    {% if active_non_trading_strategies|length > 0 %}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {% for strategy in active_non_trading_strategies %}
-        <!-- Wrap in anchor tag -->
-        <a href="/strategy/{{ strategy.name }}" class="block hover:transform hover:scale-[1.02] transition-all">
-            <div class="bg-dark-card rounded-lg p-4 border-l-4 border-profit-green">
-                <div class="flex justify-between items-start mb-3">
-                    <h3 class="font-bold text-dollar-green">{{ strategy.name|default('Unknown') }}</h3>
-                    <span class="text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green">Active</span>
-                </div>
-                <div class="space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Win Rate:</span>
-                        <span>{{ strategy.win_rate|default(0) }}%</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Trades:</span>
-                        <span>{{ strategy.trade_count|default(0) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Net Profit:</span>
-                        <span
-                            class="{% if strategy.profit|default(0) > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
-                            ${{ strategy.profit|default(0)|round(2) }}
-                        </span>
-                    </div>
-                </div>
-                <div class="mt-4 flex justify-between items-center">
-                    <span class="text-dollar-green">View Details</span>
-                    <label class="switch" onclick="event.stopPropagation()">
-                        <input type="checkbox" class="strategy-toggle" data-id="{{ strategy.id }}"
-                            data-name="{{ strategy.name }}" {% if strategy.is_active %}checked{% endif %}
-                            onclick="event.stopPropagation()">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
+    <!-- Live Strategies Section -->
+    <div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-dollar-green flex items-center">
+                <span class="animate-pulse inline-block h-3 w-3 rounded-full bg-blue-400 mr-2"></span>
+                Live Trading Strategies
+            </h2>
+            <div class="text-sm text-gray-400">
+                Actively trading now
             </div>
-        </a>
+        </div>
+
+        {% set live_strategies = [] %}
+        {% for strategy in strategies %}
+            {% if strategy.is_active and strategy.is_running %}
+                {% set _ = live_strategies.append(strategy) %}
+            {% endif %}
         {% endfor %}
-    </div>
-    <div class="bg-dark-card rounded-lg p-6 text-center">
-        <i class="fas fa-info-circle text-text-dim text-2xl mb-3"></i>
-        <p class="text-text-dim">No active strategies that aren't currently trading</p>
-    </div>
-    {% endif %}
-</div>
 
-<!-- Inactive Strategies Section -->
-<div class="dashboard-card rounded-lg shadow-md p-6">
-    <div class="flex justify-between items-center mb-4">
-        <h2 class="text-xl font-bold text-text-dim">Inactive Strategies</h2>
-        <div class="text-sm text-gray-400">Disabled strategies</div>
-    </div>
-
-    {% set inactive_strategies = [] %}
-    {% for strategy in strategies %}
-    {% if not strategy.is_active %}
-    {% set _ = inactive_strategies.append(strategy) %}
-    {% endif %}
-    {% endfor %}
-
-    {% if inactive_strategies|length > 0 %}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {% for strategy in inactive_strategies %}
-        <!-- Wrap in anchor tag -->
-        <a href="/strategy/{{ strategy.name }}" class="block hover:transform hover:scale-[1.02] transition-all">
-            <div class="bg-dark-card rounded-lg p-4 border-l-4 border-gray-700 opacity-80">
-                <div class="flex justify-between items-start mb-3">
-                    <h3 class="font-bold text-gray-400">{{ strategy.name|default('Unknown') }}</h3>
-                    <span class="text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400">Inactive</span>
-                </div>
-                <div class="space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Win Rate:</span>
-                        <span class="text-gray-400">{{ strategy.win_rate|default(0) }}%</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Trades:</span>
-                        <span class="text-gray-400">{{ strategy.trade_count|default(0) }}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-text-dim">Net Profit:</span>
-                        <span class="text-gray-400">
-                            ${{ strategy.profit|default(0)|round(2) }}
-                        </span>
-                    </div>
-                </div>
-                <div class="mt-4 flex justify-between items-center">
-                    <span class="text-gray-400 hover:text-dollar-green">View Details</span>
-                    <label class="switch" onclick="event.stopPropagation()">
-                        <input type="checkbox" class="strategy-toggle" data-id="{{ strategy.id }}"
-                            data-name="{{ strategy.name }}" {% if strategy.is_active %}checked{% endif %}
-                            onclick="event.stopPropagation()">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
+        {% if live_strategies|length > 0 %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for strategy in live_strategies %}
+                    <!-- Wrap in anchor tag -->
+                    <a href="/strategies/{{ strategy.id }}"
+                       class="block hover:transform hover:scale-[1.02] transition-all">
+                        <div class="bg-dark-card rounded-lg p-4 border-l-4 border-blue-400">
+                            <div class="flex justify-between items-start mb-3">
+                                <h3 class="font-bold text-dollar-green">
+                                    {{ strategy.name|default("Unknown") }}
+                                </h3>
+                                <span class="text-xs px-2 py-1 rounded-full bg-blue-900 text-blue-400 flex items-center">
+                                    <span class="animate-pulse inline-block h-2 w-2 rounded-full bg-blue-400 mr-1"></span>
+                                    Trading Now
+                                </span>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Win Rate:</span>
+                                    <span>{{ strategy.win_rate|default(0) }}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Trades:</span>
+                                    <span>{{ strategy.trade_count|default(0) }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Net Profit:</span>
+                                    <span class="{% if strategy.profit|default(0) > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                                        ${{ strategy.profit|default(0) |round(2) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex justify-between items-center">
+                                <span class="text-dollar-green">View Details</span>
+                                <label class="switch" onclick="event.stopPropagation()">
+                                    <input type="checkbox"
+                                           class="strategy-toggle"
+                                           data-id="{{ strategy.id }}"
+                                           data-name="{{ strategy.name }}"
+                                           {% if strategy.is_active %}checked{% endif %}
+                                           onclick="event.stopPropagation()">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </a>
+                {% endfor %}
             </div>
-        </a>
+            <div class="bg-dark-card rounded-lg p-6 text-center">
+                <i class="fas fa-info-circle text-text-dim text-2xl mb-3"></i>
+                <p class="text-text-dim">
+                    No strategies are currently live trading
+                </p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Active Strategies Section -->
+    <div class="dashboard-card rounded-lg shadow-md p-6 mb-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-dollar-green">
+                Active Strategies
+            </h2>
+            <div class="text-sm text-gray-400">
+                Ready to trade when conditions are met
+            </div>
+        </div>
+
+        {% set active_non_trading_strategies = [] %}
+        {% for strategy in strategies %}
+            {% if strategy.is_active and not strategy.is_running %}
+                {% set _ = active_non_trading_strategies.append(strategy) %}
+            {% endif %}
         {% endfor %}
+
+        {% if active_non_trading_strategies|length > 0 %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for strategy in active_non_trading_strategies %}
+                    <!-- Wrap in anchor tag -->
+                    <a href="/strategies/{{ strategy.id }}"
+                       class="block hover:transform hover:scale-[1.02] transition-all">
+                        <div class="bg-dark-card rounded-lg p-4 border-l-4 border-profit-green">
+                            <div class="flex justify-between items-start mb-3">
+                                <h3 class="font-bold text-dollar-green">
+                                    {{ strategy.name|default("Unknown") }}
+                                </h3>
+                                <span class="text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green">Active</span>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Win Rate:</span>
+                                    <span>{{ strategy.win_rate|default(0) }}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Trades:</span>
+                                    <span>{{ strategy.trade_count|default(0) }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Net Profit:</span>
+                                    <span class="{% if strategy.profit|default(0) > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                                        ${{ strategy.profit|default(0) |round(2) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex justify-between items-center">
+                                <span class="text-dollar-green">View Details</span>
+                                <label class="switch" onclick="event.stopPropagation()">
+                                    <input type="checkbox"
+                                           class="strategy-toggle"
+                                           data-id="{{ strategy.id }}"
+                                           data-name="{{ strategy.name }}"
+                                           {% if strategy.is_active %}checked{% endif %}
+                                           onclick="event.stopPropagation()">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </a>
+                {% endfor %}
+            </div>
+            <div class="bg-dark-card rounded-lg p-6 text-center">
+                <i class="fas fa-info-circle text-text-dim text-2xl mb-3"></i>
+                <p class="text-text-dim">
+                    No active strategies that aren't currently trading
+                </p>
+            </div>
+        {% endif %}
     </div>
-    <div class="bg-dark-card rounded-lg p-6 text-center">
-        <i class="fas fa-info-circle text-text-dim text-2xl mb-3"></i>
-        <p class="text-text-dim">No inactive strategies</p>
+
+    <!-- Inactive Strategies Section -->
+    <div class="dashboard-card rounded-lg shadow-md p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-text-dim">
+                Inactive Strategies
+            </h2>
+            <div class="text-sm text-gray-400">
+                Disabled strategies
+            </div>
+        </div>
+
+        {% set inactive_strategies = [] %}
+        {% for strategy in strategies %}
+            {% if not strategy.is_active %}
+                {% set _ = inactive_strategies.append(strategy) %}
+            {% endif %}
+        {% endfor %}
+
+        {% if inactive_strategies|length > 0 %}
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for strategy in inactive_strategies %}
+                    <!-- Wrap in anchor tag -->
+                    <a href="/strategies/{{ strategy.id }}"
+                       class="block hover:transform hover:scale-[1.02] transition-all">
+                        <div class="bg-dark-card rounded-lg p-4 border-l-4 border-gray-700 opacity-80">
+                            <div class="flex justify-between items-start mb-3">
+                                <h3 class="font-bold text-gray-400">
+                                    {{ strategy.name|default("Unknown") }}
+                                </h3>
+                                <span class="text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400">Inactive</span>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Win Rate:</span>
+                                    <span class="text-gray-400">{{ strategy.win_rate|default(0) }}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Trades:</span>
+                                    <span class="text-gray-400">{{ strategy.trade_count|default(0) }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-text-dim">Net Profit:</span>
+                                    <span class="text-gray-400">
+                                        ${{ strategy.profit|default(0) |round(2) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="mt-4 flex justify-between items-center">
+                                <span class="text-gray-400 hover:text-dollar-green">View Details</span>
+                                <label class="switch" onclick="event.stopPropagation()">
+                                    <input type="checkbox"
+                                           class="strategy-toggle"
+                                           data-id="{{ strategy.id }}"
+                                           data-name="{{ strategy.name }}"
+                                           {% if strategy.is_active %}checked{% endif %}
+                                           onclick="event.stopPropagation()">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </a>
+                {% endfor %}
+            </div>
+            <div class="bg-dark-card rounded-lg p-6 text-center">
+                <i class="fas fa-info-circle text-text-dim text-2xl mb-3"></i>
+                <p class="text-text-dim">
+                    No inactive strategies
+                </p>
+            </div>
+        {% endif %}
     </div>
-    {% endif %}
-</div>
 
 {% endblock %}
 
 {% block scripts %}
-{{ super() }}
-<script>
+    {{ super() }}
+    <script>
     document.addEventListener('DOMContentLoaded', function () {
         const toggles = document.querySelectorAll('.strategy-toggle');
 
@@ -344,6 +483,44 @@
                         showNotification('Error updating strategy status', 'error');
                     });
             });
+        });
+
+        // View toggle functionality
+        const toggleViewBtn = document.getElementById('toggle-view-btn');
+        const toggleViewText = document.getElementById('toggle-view-text');
+        const cardView = document.getElementById('card-view');
+        const tableView = document.getElementById('table-view');
+        
+        // Check localStorage for saved preference
+        const isTableView = localStorage.getItem('strategyViewPreference') === 'table';
+        
+        // Set initial view state
+        if (isTableView) {
+            cardView.classList.add('hidden');
+            tableView.classList.remove('hidden');
+            toggleViewText.textContent = 'Card View';
+            toggleViewBtn.querySelector('i').className = 'fas fa-th-large mr-2';
+        }
+        
+        // Handle toggle button click
+        toggleViewBtn.addEventListener('click', function() {
+            const isCurrentlyTableView = !cardView.classList.contains('hidden');
+            
+            if (isCurrentlyTableView) {
+                // Switch to card view
+                cardView.classList.remove('hidden');
+                tableView.classList.add('hidden');
+                toggleViewText.textContent = 'Table View';
+                toggleViewBtn.querySelector('i').className = 'fas fa-table mr-2';
+                localStorage.setItem('strategyViewPreference', 'card');
+            } else {
+                // Switch to table view
+                cardView.classList.add('hidden');
+                tableView.classList.remove('hidden');
+                toggleViewText.textContent = 'Card View';
+                toggleViewBtn.querySelector('i').className = 'fas fa-th-large mr-2';
+                localStorage.setItem('strategyViewPreference', 'table');
+            }
         });
 
         // Refresh button
@@ -505,5 +682,74 @@
         checkTradingStatus();
         setInterval(checkTradingStatus, 10000);
     }
-</script>
+    </script>
+    
+    <!-- Add custom styles for the toggle switch -->
+    <style>
+        /* Toggle switch styling */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #2c3a33;
+            transition: .4s;
+            border: 1px solid rgba(133, 187, 101, 0.3);
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 2px;
+            background-color: #666;
+            transition: .4s;
+        }
+        
+        input:checked + .slider {
+            background-color: rgba(133, 187, 101, 0.2);
+            border-color: rgba(133, 187, 101, 0.6);
+        }
+        
+        input:checked + .slider:before {
+            background-color: #85bb65;
+            transform: translateX(16px);
+        }
+        
+        .slider.round {
+            border-radius: 20px;
+        }
+        
+        .slider.round:before {
+            border-radius: 50%;
+        }
+
+        /* Animation for view toggle */
+        #card-view, #table-view {
+            opacity: 1;
+            transition: opacity 0.2s ease-in-out;
+        }
+        
+        #card-view.hidden, #table-view.hidden {
+            opacity: 0;
+            display: none;
+        }
+    </style>
 {% endblock %}

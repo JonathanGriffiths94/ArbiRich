@@ -251,6 +251,14 @@ async def exchanges_list(request: Request):
     return templates.TemplateResponse("pages/exchanges.html", {"request": request, "exchanges": exchanges})
 
 
+@router.get("/about", response_class=HTMLResponse)
+async def get_about(request: Request):
+    """
+    Render the about page.
+    """
+    return templates.TemplateResponse("about.html", {"request": request})
+
+
 @router.get("/{path:path}", response_class=HTMLResponse)
 @handle_errors()
 async def catch_all(request: Request, path: str):

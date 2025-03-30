@@ -1,0 +1,112 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}
+    About ArbiRich - Cryptocurrency Arbitrage Platform
+{% endblock %}
+
+{% block content %}
+    <div class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Header with logo -->
+        <div class="flex flex-col items-center mb-12">
+            <div class="ascii-logo-container mb-6">
+                <pre class="ascii-art inline-block text-left font-mono text-sm md:text-xl leading-tight">
+ $$$$$$\            $$\       $$\$$$$$$$$\  $$\           $$\       
+$$  __$$\           $$ |      \__|$$  __$$\ \__|          $$ |      
+$$ /  $$ | $$$$$$\  $$$$$$$\  $$\ $$ |  $$ |$$\  $$$$$$$\ $$$$$$$\  
+$$$$$$$$ |$$  __$$\ $$  __$$\ $$ |$$$$$$$  |$$ |$$  _____|$$  __$$\ 
+$$  __$$ |$$ |  \__|$$ |  $$ |$$ |$$  __$$< $$ |$$ /      $$ |  $$ |
+$$ |  $$ |$$ |      $$ |  $$ |$$ |$$ |  $$ |$$ |$$ |      $$ |  $$ |
+$$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
+\__|  \__|\__|      \_______/ \__|\__|  \__|\__| \_______|\__|  \__|
+                </pre>
+            </div>
+            <h1 class="text-3xl md:text-4xl font-bold mb-2 text-dollar-green font-mono">About ArbiRich</h1>
+            <p class="text-lg text-text-dim font-mono">Advanced Cryptocurrency Arbitrage Platform</p>
+        </div>
+
+        <!-- About content -->
+        <div class="space-y-8 text-text-primary font-mono">
+            <section>
+                <h2 class="text-2xl font-semibold mb-4 text-dollar-green font-mono">Mission</h2>
+                <p class="mb-4 font-mono text-sm">ArbiRich is designed to identify and execute profitable cryptocurrency arbitrage opportunities across multiple exchanges, maximizing returns while minimizing risks.</p>
+                <p class="font-mono text-sm">Our sophisticated algorithms continuously scan markets for price discrepancies, allowing traders to capitalize on these inefficiencies with automated precision.</p>
+            </section>
+
+            <section>
+                <h2 class="text-2xl font-semibold mb-4 text-dollar-green font-mono">Key Features</h2>
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="p-5 bg-dark-card rounded-lg shadow-md border border-gray-700">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-robot text-dollar-green text-2xl mr-3"></i>
+                            <h3 class="text-xl font-medium font-mono">Automated Trading</h3>
+                        </div>
+                        <p class="font-mono text-sm">Set your parameters and let our system execute trades automatically when profitable opportunities arise.</p>
+                    </div>
+                    <div class="p-5 bg-dark-card rounded-lg shadow-md border border-gray-700">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-chart-line text-dollar-green text-2xl mr-3"></i>
+                            <h3 class="text-xl font-medium font-mono">Real-time Analytics</h3>
+                        </div>
+                        <p class="font-mono text-sm">Monitor market conditions, trading performance, and profit metrics with our intuitive dashboard.</p>
+                    </div>
+                    <div class="p-5 bg-dark-card rounded-lg shadow-md border border-gray-700">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-chess text-dollar-green text-2xl mr-3"></i>
+                            <h3 class="text-xl font-medium font-mono">Custom Strategies</h3>
+                        </div>
+                        <p class="font-mono text-sm">Create and fine-tune trading strategies to match your risk tolerance and profit goals.</p>
+                    </div>
+                    <div class="p-5 bg-dark-card rounded-lg shadow-md border border-gray-700">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-shield-alt text-dollar-green text-2xl mr-3"></i>
+                            <h3 class="text-xl font-medium font-mono">Security First</h3>
+                        </div>
+                        <p class="font-mono text-sm">Trade with confidence knowing your funds and data are protected by enterprise-grade security measures.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="py-8">
+                <div class="text-center">
+                    <a href="/dashboard" class="inline-block px-6 py-3 bg-dollar-green hover:bg-money-dark text-dark-element font-mono rounded-lg transition-colors duration-300">
+                        &gt; Get Started Now _
+                    </a>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <style>
+        /* Terminal-style styling for the about page */
+        .font-mono {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Source Code Pro', monospace;
+        }
+        
+        pre {
+            font-family: 'Fira Code', 'JetBrains Mono', monospace;
+        }
+        
+        .ascii-art {
+            font-family: 'Fira Code', 'JetBrains Mono', 'Source Code Pro', 'Courier New', monospace;
+            color: var(--color-accent);
+            text-shadow: 0 0 10px rgba(133, 187, 101, 0.5);
+            letter-spacing: -0.05em;
+        }
+        
+        /* Blinking cursor effect for terminal feel */
+        a[href="/dashboard"]:after {
+            content: "";
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background-color: currentColor;
+            margin-left: 5px;
+            animation: blink 1s step-end infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+    </style>
+{% endblock %}

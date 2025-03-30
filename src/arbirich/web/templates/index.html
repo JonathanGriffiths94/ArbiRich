@@ -1,91 +1,76 @@
 {% extends "layouts/base.html" %}
 
-{% block title %}ArbiRich - Cryptocurrency Arbitrage Platform{% endblock %}
+{% block title %}
+    ArbiRich - Cryptocurrency Arbitrage Platform
+{% endblock %}
 
 {% block content %}
-<!-- Centered across entire page width (sidebar included) -->
-<div class="flex flex-col items-center justify-center min-h-[80vh] w-screen ml-[-16rem] md:ml-[-16rem] md:pl-[8rem]">
-    <div class="text-center max-w-4xl">
-        <div class="mb-10 flex justify-center ascii-logo-container">
-            <pre
-                class="ascii-art inline-block text-left font-mono text-sm md:text-base lg:text-lg leading-tight ascii-logo">
- $$$$$$\            $$\       $$\ $$$$$$$\  $$\           $$\       
+    <!-- Centered across entire page width (sidebar included) -->
+    <div class="flex flex-col items-center justify-center min-h-[90vh] w-screen ml-[-16rem] md:ml-[-16rem] md:pl-[8rem]">
+        <div class="text-center max-w-6xl"> <!-- Increased max width for larger logo -->
+            <!-- Further reduced top margin to accommodate larger logo -->
+            <div class="mb-12 mt-[-5rem] flex justify-center ascii-logo-container">
+                <!-- Added link to the about page -->
+                <a href="/about" class="block hover:opacity-90 transition-opacity" title="About ArbiRich">
+                    <pre class="ascii-art inline-block text-left font-mono text-md md:text-2xl lg:text-3xl leading-tight ascii-logo">
+ $$$$$$\            $$\       $$\$$$$$$$$\  $$\           $$\       
 $$  __$$\           $$ |      \__|$$  __$$\ \__|          $$ |      
 $$ /  $$ | $$$$$$\  $$$$$$$\  $$\ $$ |  $$ |$$\  $$$$$$$\ $$$$$$$\  
-$$$$$$$$ |$$  __$$\ $$  __$$\ $$ |$$$$$$$ < $$ |$$  _____|$$  __$$\ 
-$$  __$$ |$$ |  \__|$$ |  $$ |$$ |$$  __$$ |$$ |$$ /      $$ |  $$ |
+$$$$$$$$ |$$  __$$\ $$  __$$\ $$ |$$$$$$$  |$$ |$$  _____|$$  __$$\ 
+$$  __$$ |$$ |  \__|$$ |  $$ |$$ |$$  __$$< $$ |$$ /      $$ |  $$ |
 $$ |  $$ |$$ |      $$ |  $$ |$$ |$$ |  $$ |$$ |$$ |      $$ |  $$ |
 $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
 \__|  \__|\__|      \_______/ \__|\__|  \__|\__| \_______|\__|  \__|
-            </pre>
-        </div>
-        <div class="flex flex-col items-center">
-            <a href="/strategies"
-                class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green mb-3 group money-bag-glow">
-                <span class="text-4xl group-hover:scale-110 transition-transform">💰</span>
-            </a>
-        </div>
+                    </pre>
+                </a>
+            </div>
 
-        <!-- Cards section -->
-        <div class="mt-12 w-full max-w-5xl px-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- Strategies Card - Replaced Setup Card -->
-                <div
-                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full card-glow">
-                    <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
-                        <i class="fas fa-chess text-dollar-green text-2xl"></i>
+            <!-- Round buttons section - adjusted margin for larger logo -->
+            <div class="mt-28 flex flex-wrap justify-center gap-12 mb-16">
+                <!-- New Money bag button on the left -->
+                <a href="/balances" class="group">
+                    <div class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green group-hover:scale-105 money-bag-glow">
+                        <span class="text-4xl group-hover:scale-110 transition-transform">💰</span>
                     </div>
-                    <h2 class="text-lg font-bold text-dollar-green mb-3">$$trategies</h2>
-                    <p class="text-gray-400 mb-6 text-center text-sm">Create and manage trading strategies and set up
-                        trading parameters</p>
-                    <a href="/strategies"
-                        class="mt-auto bg-dark-bg hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300 w-full text-center">
-                        Manage $$trategies
-                    </a>
-                </div>
+                </a>
+                
+                <!-- Strategies Button -->
+                <a href="/strategies" class="group">
+                    <div class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green group-hover:scale-105 money-bag-glow">
+                        <i class="fas fa-chess text-4xl group-hover:scale-110 transition-transform"></i>
+                    </div>
+                </a>
 
-                <!-- Dashboard Card -->
-                <div
-                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full card-glow">
-                    <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
-                        <i class="fas fa-chart-line text-dollar-green text-2xl"></i>
+                <!-- Dashboard Button -->
+                <a href="/dashboard" class="group">
+                    <div class="inline-flex items-center justify-center w-24 h-24 bg-dollar-green hover:bg-money-dark text-dark-bg font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-money-dark group-hover:scale-105 money-bag-glow">
+                        <i class="fas fa-chart-line text-4xl group-hover:scale-110 transition-transform"></i>
                     </div>
-                    <h2 class="text-lg font-bold text-dollar-green mb-3">Dashboard</h2>
-                    <p class="text-gray-400 mb-6 text-center text-sm">View performance metrics, opportunities, and
-                        strategy
-                        results</p>
-                    <a href="/dashboard"
-                        class="mt-auto bg-dollar-green hover:bg-money-dark text-dark-bg font-bold py-2 px-4 rounded-lg transition-all duration-300 shadow-lg hover:shadow-money-green/50 border border-money-dark w-full text-center">
-                        View Dashboard
-                    </a>
-                </div>
+                </a>
 
-                <!-- Monitor Card -->
-                <div
-                    class="bg-dark-element rounded-lg shadow-md p-5 flex flex-col items-center hover:scale-105 transition-transform duration-300 h-full card-glow">
-                    <div class="bg-dark-bg rounded-full p-3 mb-4 border border-dollar-green/20">
-                        <i class="fas fa-desktop text-dollar-green text-2xl"></i>
+                <!-- Control Panel Button -->
+                <a href="/control-panel" class="group">
+                    <div class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green group-hover:scale-105 money-bag-glow">
+                        <i class="fas fa-sliders-h text-4xl group-hover:scale-110 transition-transform"></i>
                     </div>
-                    <h2 class="text-lg font-bold text-dollar-green mb-3">Monitor</h2>
-                    <p class="text-gray-400 mb-6 text-center text-sm">Real-time monitoring of trades, prices, and
-                        exchange
-                        status</p>
-                    <a href="/monitor"
-                        class="mt-auto bg-dark-bg hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300 w-full text-center">
-                        Monitor $$ystem
-                    </a>
-                </div>
+                </a>
+                
+                <!-- Money bag button on the right -->
+                <a href="/opportunities" class="group">
+                    <div class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green group-hover:scale-105 money-bag-glow">
+                        <span class="text-4xl group-hover:scale-110 transition-transform">💰</span>
+                    </div>
+                </a>
             </div>
         </div>
-    </div>
 
-    <!-- Add a style to hide horizontal scrollbar that might appear due to negative margin -->
-    <style>
+        <!-- Add a style to hide horizontal scrollbar that might appear due to negative margin -->
+        <style>
         body {
             overflow-x: hidden;
         }
 
-        /* Remove pulsing animation and replace with static glow */
+        /* Enhanced glow effect for round buttons */
         .money-bag-glow {
             box-shadow: 0 0 15px 2px rgba(133, 187, 101, 0.6);
             position: relative;
@@ -100,35 +85,43 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
             transform: scale(1.05);
         }
 
-        /* Add static glow effect for main ASCII art logo */
-        .ascii-logo {
+        /* Updated ASCII logo styling with terminal fonts */
+        .ascii-art {
+            font-family: 'Fira Code', 'JetBrains Mono', 'Source Code Pro', 'Courier New', monospace;
+            font-size: 20px;
+            line-height: 1;
+            margin: 0;
+            display: inline-block;
             color: #85bb65;
-            text-shadow: 0 0 8px rgba(133, 187, 101, 0.4);
+            text-shadow: 0 0 14px rgba(133, 187, 101, 0.5);
             transition: all 0.3s ease;
+            letter-spacing: -0.05em; /* Slightly tighter kerning for terminal look */
         }
 
-        /* Enhanced hover effect for ASCII logo */
-        .ascii-logo-container:hover .ascii-logo {
+        /* Add hover effect matching sidebar logo but with enhanced glow */
+        .ascii-logo-container:hover .ascii-art {
             color: #a0d87c;
-            text-shadow: 0 0 12px rgba(133, 187, 101, 0.7);
-            transform: scale(1.03);
+            text-shadow: 0 0 18px rgba(133, 187, 101, 0.8);
+            transform: scale(1.04);
         }
 
-        /* Add enhanced glow effect for the cards with more prominent border matching the dollar-green color */
-        .card-glow {
-            box-shadow: 0 0 15px 2px rgba(133, 187, 101, 0.3);
-            transition: all 0.3s ease;
-            border: 2px solid #85bb65;
-            /* Thicker border with dollar-green color */
-            position: relative;
+        /* Responsive adjustments for the larger logo */
+        @media (max-width: 1200px) {
+            .ascii-art {
+                font-size: 18px;
+            }
         }
 
-        /* Enhanced hover effect for cards */
-        .card-glow:hover {
-            box-shadow: 0 0 20px 5px rgba(133, 187, 101, 0.5);
-            border-color: #a0d87c;
-            /* Slightly lighter border on hover */
-            transform: scale(1.03);
+        @media (max-width: 768px) {
+            .ascii-art {
+                font-size: 14px;
+            }
         }
-    </style>
+
+        @media (max-width: 480px) {
+            .ascii-art {
+                font-size: 10px;
+            }
+        }
+        </style>
     {% endblock %}

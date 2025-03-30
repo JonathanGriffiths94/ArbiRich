@@ -60,7 +60,7 @@ def display_banner(extra_info=None, log_only=False, console_only=False, use_colo
 
     # Create the banner with colors
     banner = f"""{start_color}
- $$$$$$\\            $$\\       $$\\ $$$$$$$\\  $$\\           $$\\       
+ $$$$$$\\            $$\\       $$\\$$$$$$$$\\  $$\\           $$\\       
 $$  __$$\\           $$ |      \\__|$$  __$$\\ \\__|          $$ |      
 $$ /  $$ | $$$$$$\\  $$$$$$$\\  $$\\ $$ |  $$ |$$\\  $$$$$$$\\ $$$$$$$\\  
 $$$$$$$$ |$$  __$$\\ $$  __$$\\ $$ |$$$$$$$ < $$ |$$  _____|$$  __$$\\ 

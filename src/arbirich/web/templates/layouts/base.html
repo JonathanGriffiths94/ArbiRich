@@ -1,627 +1,483 @@
 <!DOCTYPE html>
 <html lang="en">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}ArbiRich{% endblock %}</title>
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+        <meta name="description" content="ArbiRich - Advanced cryptocurrency arbitrage trading platform">
+        <meta name="keywords" content="crypto, arbitrage, trading, cryptocurrency, exchange, profit">
+        <title>
+            {% block title %}
+                ArbiRich
+            {% endblock title %}
+        </title>
 
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+        <!-- Favicon -->
+        <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon">
 
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+        <!-- Google Fonts -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&family=Source+Code+Pro:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-    <!-- Chart.js - Ensure a single consistent version is loaded -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+        <!-- FontAwesome -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.1/css/all.min.css">
 
-    <!-- Inline critical dashboard CSS to avoid needing the external CSS file -->
-    <style>
-        /* Critical dashboard styles */
-        .stat-card {
-            background-color: #1c2821 !important;
-            border-radius: 0.5rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-            padding: 1rem;
-            height: 7rem;
-            min-height: 7rem;
-            position: relative;
-            overflow: hidden;
-        }
+        <!-- External Theme CSS -->
+        <link rel="stylesheet" href="/static/css/theme.css">
 
-        .stat-card::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #85bb65, #3abe78);
-            border-bottom-left-radius: 0.5rem;
-            border-bottom-right-radius: 0.5rem;
-        }
-
-        /* Enhanced pulsing green dot animation for active trading - More intense pulsing */
-        @keyframes pulse-green {
-            0% {
-                box-shadow: 0 0 0 0 rgba(58, 190, 120, 0.8);
-                opacity: 1;
-                transform: scale(1);
-                background-color: #3abe78;
-                /* Normal green */
-            }
-
-            50% {
-                box-shadow: 0 0 0 8px rgba(58, 190, 120, 0);
-                opacity: 0.85;
-                transform: scale(1.2);
-                background-color: #2a8d58;
-                /* Darker green during pulse */
-            }
-
-            100% {
-                box-shadow: 0 0 0 0 rgba(58, 190, 120, 0);
-                opacity: 1;
-                transform: scale(1);
-                background-color: #3abe78;
-                /* Back to normal green */
-            }
-        }
-
-        .pulse-green {
-            animation: pulse-green 1.5s infinite;
-            /* Faster animation */
-            position: relative;
-            transition: background-color 0.3s ease;
-        }
-
-        /* Add a second pulsing element for double pulse effect */
-        .pulse-green:after {
-            content: '';
-            position: absolute;
-            top: -3px;
-            left: -3px;
-            right: -3px;
-            bottom: -3px;
-            border-radius: 50%;
-            background: rgba(58, 190, 120, 0.3);
-            z-index: -1;
-            animation: pulse-green-outer 1.5s infinite 0.3s;
-            /* Offset timing */
-        }
-
-        @keyframes pulse-green-outer {
-            0% {
-                opacity: 0.5;
-                transform: scale(1);
-                background: rgba(42, 141, 88, 0.3);
-                /* Darker green */
-            }
-
-            50% {
-                opacity: 0;
-                transform: scale(1.5);
-                background: rgba(42, 141, 88, 0.1);
-                /* Fading darker green */
-            }
-
-            100% {
-                opacity: 0.5;
-                transform: scale(1);
-                background: rgba(58, 190, 120, 0.3);
-                /* Back to normal green */
-            }
-        }
-
-        /* ASCII Art Logo static glow effect */
-        .ascii-logo {
-            font-size: 10px;
-            line-height: 1;
-            margin: 0;
-            display: inline-block;
-            color: #85bb65;
-            text-shadow: 0 0 8px rgba(133, 187, 101, 0.4);
-            transition: all 0.3s ease;
-        }
-
-        /* Enhanced hover effect */
-        .ascii-logo-container:hover .ascii-logo {
-            color: #a0d87c;
-            text-shadow: 0 0 12px rgba(133, 187, 101, 0.7);
-            transform: scale(1.03);
-        }
-
-        /* ...existing styles... */
-
-        /* Sticky control panel styles */
-        .control-panel {
-            position: sticky;
-            bottom: 0;
-            background-color: #121a17;
-            border-top: 1px solid #2c3a33;
-            transition: max-height 0.3s ease, opacity 0.2s ease;
-            max-height: 180px;
-            /* Adjust based on your content */
-            overflow: hidden;
-            z-index: 10;
-        }
-
-        .control-panel.collapsed {
-            max-height: 38px;
-            /* Height of just the header */
-        }
-
-        .control-panel-header {
-            padding: 8px 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-            background-color: #121a17;
-        }
-
-        .control-panel-content {
-            padding: 0 16px 16px;
-        }
-
-        .toggle-icon {
-            transition: transform 0.3s ease;
-        }
-
-        .collapsed .toggle-icon {
-            transform: rotate(180deg);
-        }
-    </style>
-
-    <!-- Custom CSS - Use absolute URL to bypass any path resolution issues -->
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/dashboard.css') }}">
-
-    <script>
-        // Tailwind Config
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        'dark-bg': '#121a17',
-                        'dark-element': '#1c2821',
-                        'dark-card': '#29352f',
-                        'dollar-green': '#85bb65',
-                        'money-dark': '#5d8247',
-                        'profit-green': '#3abe78',
-                        'loss-red': '#e15d5d',
-                        'text-dim': '#8a9a94',
+        <!-- Tailwind CSS -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            'dark-bg': '#121417',
+                            'dark-element': '#1a1d21',
+                            'dark-card': '#242528',
+                            'text-dim': '#9ca3af',
+                            'dollar-green': '#85bb65',
+                            'profit-green': '#3abe78',
+                            'loss-red': '#e15554',
+                        }
                     }
                 }
             }
-        }
-    </script>
+        </script>
 
-    <style>
-        body {
-            background-color: #121a17;
-            color: #e0e9e5;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }
+        <!-- Chart.js -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-        .dashboard-card {
-            background-color: #1c2821;
-        }
-
-        /* Toggle Switch Styling */
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 40px;
-            height: 20px;
-        }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #29352f;
-            transition: .4s;
-        }
-
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 16px;
-            width: 16px;
-            left: 2px;
-            bottom: 2px;
-            background-color: #e0e9e5;
-            transition: .4s;
-        }
-
-        input:checked+.slider {
-            background-color: #85bb65;
-        }
-
-        input:checked+.slider:before {
-            transform: translateX(20px);
-        }
-
-        .slider.round {
-            border-radius: 20px;
-        }
-
-        .slider.round:before {
-            border-radius: 50%;
-        }
-
-        /* Refresh indicator animation */
-        .refresh-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border: 2px solid #85bb65;
-            border-radius: 50%;
-            border-top-color: transparent;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        /* Active navigation highlight */
-        .nav-item.active {
-            border-left: 3px solid #85bb65;
-            background-color: rgba(133, 187, 101, 0.1);
-        }
-
-        /* Pipeline diagram styles */
-        .pipeline-diagram-container {
-            overflow-x: auto;
-            background-color: #121a17;
-            border-radius: 0.5rem;
-        }
-
-        /* Pulsing green dot animation for active trading */
-        @keyframes pulse-green {
-            0% {
-                box-shadow: 0 0 0 0 rgba(58, 190, 120, 0.8);
-                opacity: 1;
-                transform: scale(1);
-                background-color: #3abe78;
-                /* Normal green */
+        <!-- Custom CSS -->
+        <style>
+            body {
+                font-family: 'JetBrains Mono', 'Source Code Pro', 'Fira Code', monospace;
+                background-color: #121417;
+                color: #e0e9e5;
             }
 
-            50% {
-                box-shadow: 0 0 0 8px rgba(58, 190, 120, 0);
-                opacity: 0.85;
-                transform: scale(1.2);
-                background-color: #2a8d58;
-                /* Darker green during pulse */
+            /* Custom scrollbar */
+            ::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
             }
 
-            100% {
-                box-shadow: 0 0 0 0 rgba(58, 190, 120, 0);
-                opacity: 1;
-                transform: scale(1);
-                background-color: #3abe78;
-                /* Back to normal green */
-            }
-        }
-
-        .pulse-green {
-            animation: pulse-green 1.5s infinite;
-            position: relative;
-            transition: background-color 0.3s ease;
-        }
-
-        @keyframes pulse-green-outer {
-            0% {
-                opacity: 0.5;
-                transform: scale(1);
-                background: rgba(42, 141, 88, 0.3);
-                /* Darker green */
+            ::-webkit-scrollbar-track {
+                background: #1a1d21;
             }
 
-            50% {
-                opacity: 0;
-                transform: scale(1.5);
-                background: rgba(42, 141, 88, 0.1);
-                /* Fading darker green */
+            ::-webkit-scrollbar-thumb {
+                background: #3e4044;
+                border-radius: 4px;
             }
 
-            100% {
-                opacity: 0.5;
-                transform: scale(1);
+            ::-webkit-scrollbar-thumb:hover {
+                background: #555;
+            }
+
+            .dashboard-card, .strategy-card {
+                background-color: #1a1d21;
+            }
+
+            .refresh-indicator {
+                display: inline-block;
+                width: 30px;
+                height: 30px;
+                line-height: 30px;
+                text-align: center;
+                border-radius: 50%;
+                background-color: #1a1d21;
+                color: #9ca3af;
+            }
+
+            /* Mobile menu styles */
+            @media (max-width: 768px) {
+                .mobile-menu-visible {
+                    display: block !important;
+                }
+            }
+
+            .h-300 {
+                height: 300px;
+            }
+
+            .mt-50 {
+                margin-top: 50px;
+            }
+
+            /* Critical dashboard styles */
+            .stat-card {
+                background-color: #1c2821 !important;
+                border-radius: 0.5rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+                padding: 1rem;
+                height: 7rem;
+                min-height: 7rem;
+                position: relative;
+                overflow: hidden;
+            }
+
+            .stat-card::after {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 4px;
+                background: linear-gradient(90deg, #85bb65, #3abe78);
+                border-bottom-left-radius: 0.5rem;
+                border-bottom-right-radius: 0.5rem;
+            }
+
+            /* Pulsing animation */
+            @keyframes pulse-green {
+                0% {
+                    box-shadow: 0 0 0 0 rgba(58, 190, 120, 0.8);
+                    opacity: 1;
+                    transform: scale(1);
+                    background-color: #3abe78;
+                }
+
+                50% {
+                    box-shadow: 0 0 0 8px rgba(58, 190, 120, 0);
+                    opacity: 0.85;
+                    transform: scale(1.2);
+                    background-color: #2a8d58;
+                }
+
+                100% {
+                    box-shadow: 0 0 0 0 rgba(58, 190, 120, 0);
+                    opacity: 1;
+                    transform: scale(1);
+                    background-color: #3abe78;
+                }
+            }
+
+            .pulse-green {
+                animation: pulse-green 1.5s infinite;
+                position: relative;
+                transition: background-color 0.3s ease;
+            }
+
+            .pulse-green:after {
+                content: '';
+                position: absolute;
+                top: -3px;
+                left: -3px;
+                right: -3px;
+                bottom: -3px;
+                border-radius: 50%;
                 background: rgba(58, 190, 120, 0.3);
-                /* Back to normal green */
+                z-index: -1;
+                animation: pulse-green-outer 1.5s infinite 0.3s;
             }
-        }
 
-        .pulse-green:after {
-            content: '';
-            position: absolute;
-            top: -3px;
-            left: -3px;
-            right: -3px;
-            bottom: -3px;
-            border-radius: 50%;
-            background: rgba(58, 190, 120, 0.3);
-            z-index: -1;
-            animation: pulse-green-outer 1.5s infinite 0.3s;
-        }
-    </style>
+            @keyframes pulse-green-outer {
+                0% {
+                    opacity: 0.5;
+                    transform: scale(1);
+                    background: rgba(42, 141, 88, 0.3);
+                }
 
-    <script>
-        // System status checker - moved from bottom scripts to head
-        document.addEventListener('DOMContentLoaded', function () {
-            function checkSystemStatus() {
-                fetch('/api/status/health')
-                    .then(response => {
-                        if (response.ok) {
-                            return response.json();
-                        } else {
-                            throw new Error('Failed to fetch system status');
+                50% {
+                    opacity: 0;
+                    transform: scale(1.5);
+                    background: rgba(42, 141, 88, 0.1);
+                }
+
+                100% {
+                    opacity: 0.5;
+                    transform: scale(1);
+                    background: rgba(58, 190, 120, 0.3);
+                }
+            }
+
+            /* ASCII Art Logo static glow effect */
+            .ascii-logo {
+                font-family: 'Fira Code', 'JetBrains Mono', monospace;
+                font-size: 10px;
+                line-height: 1;
+                margin: 0;
+                display: inline-block;
+                color: #85bb65;
+                text-shadow: 0 0 8px rgba(133, 187, 101, 0.4);
+                transition: all 0.3s ease;
+            }
+
+            .ascii-logo-container:hover .ascii-logo {
+                color: #a0d87c;
+                text-shadow: 0 0 12px rgba(133, 187, 101, 0.7);
+                transform: scale(1.03);
+            }
+
+            /* Sticky control panel styles */
+            .control-panel {
+                position: sticky;
+                bottom: 0;
+                width: 100%;
+                background-color: #121a17;
+                border-top: 1px solid #2c3a33;
+                transition: max-height 0.3s ease, opacity 0.2s ease;
+                max-height: 300px;
+                /* Increased height to fit all buttons */
+                overflow: hidden;
+                z-index: 10;
+            }
+
+            .control-panel.collapsed {
+                max-height: 38px;
+                /* Height of just the header */
+            }
+
+            .control-panel-header {
+                padding: 8px 16px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                cursor: pointer;
+                background-color: #121a17;
+            }
+
+            .control-panel-content {
+                padding: 0 16px 16px;
+            }
+
+            .toggle-icon {
+                transition: transform 0.3s ease;
+            }
+
+            .collapsed .toggle-icon {
+                transform: rotate(180deg);
+            }
+
+            /* Basic styles */
+            body {
+                background-color: #121a17;
+                color: #e0e9e5;
+                font-family: 'JetBrains Mono', 'Source Code Pro', 'Fira Code', monospace;
+                overflow-x: hidden;
+            }
+
+            .dashboard-card {
+                background-color: #1c2821;
+            }
+
+            /* Active navigation highlight */
+            .nav-item.active {
+                border-left: 3px solid #85bb65;
+                background-color: rgba(133, 187, 101, 0.1);
+            }
+
+            /* Updated panel layout system for proper stacking */
+            .sidebar-panels {
+                display: flex;
+                flex-direction: column;
+                width: 100%;
+                margin-top: auto;
+            }
+
+            #statusPanel {
+                max-height: 300px;
+            }
+
+            #controlPanel {
+                max-height: 160px;
+            }
+
+            :root {
+                --bg-primary: #1a1e23;
+                --bg-element: #242a33;
+                --bg-card: #2d3643;
+                --text-primary: #e0e9e5;
+                --text-secondary: #a0aec0;
+                --color-accent: #85bb65;
+                --color-profit: #3abe78;
+                --color-loss: #e15d5d;
+                --shadow-color: rgba(0, 0, 0, 0.3);
+            }
+            
+            [data-theme="light"] {
+                --bg-primary: #f5f7fa;
+                --bg-element: #ffffff;
+                --bg-card: #f0f4f8;
+                --text-primary: #2d3643;
+                --text-secondary: #64748b;
+                --color-accent: #5a9942;
+                --color-profit: #2a8c58;
+                --color-loss: #d23b3b;
+                --shadow-color: rgba(0, 0, 0, 0.1);
+            }
+            
+            .theme-toggle {
+                box-shadow: 0 0 10px var(--shadow-color);
+                border: 2px solid var(--color-accent);
+            }
+            
+            .theme-toggle:hover {
+                box-shadow: 0 0 15px var(--color-accent);
+            }
+
+            /* Terminal-style inputs and elements */
+            input, textarea, select, button:not(.theme-toggle) {
+                font-family: 'Source Code Pro', 'JetBrains Mono', monospace;
+            }
+        </style>
+
+        <script>
+            // Tailwind Config
+            tailwind.config = {
+                darkMode: 'class',
+                theme: {
+                    extend: {
+                        colors: {
+                            'dark-bg': '#121a17',
+                            'dark-element': '#1c2821',
+                            'dark-card': '#29352f',
+                            'dollar-green': '#85bb65',
+                            'money-dark': '#5d8247',
+                            'profit-green': '#3abe78',
+                            'loss-red': '#e15d5d',
+                            'text-dim': '#8a9a94',
                         }
-                    })
-                    .then(data => {
-                        // Show status details
-                        document.getElementById('status-details').classList.remove('hidden');
+                    }
+                }
+            }
+        </script>
 
-                        // Update overall status
-                        if (data.api === 'healthy' && data.database === 'healthy' && data.redis === 'healthy') {
-                            document.getElementById('status-message').textContent = 'All systems operational';
-                            document.getElementById('status-message').className = 'text-xs text-profit-green mt-1';
-                            document.getElementById('status-icon').className = 'fas fa-check-circle text-profit-green';
-                        } else {
-                            document.getElementById('status-message').textContent = 'System issues detected';
+        <!-- Existing scripts for system status, etc. -->
+        <script>
+            // Status check scripts (unchanged)...
+        </script>
+
+        {% block head %}{% endblock head %}
+
+        <!-- Fix for the scripts and functionality -->
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                function checkSystemStatus() {
+                    fetch('/api/status/health')
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                throw new Error('Failed to fetch system status');
+                            }
+                        })
+                        .then(data => {
+                            // Show status details
+                            document.getElementById('status-details').classList.remove('hidden');
+
+                            // Update overall status
+                            if (data.api === 'healthy' && data.database === 'healthy' && data.redis === 'healthy') {
+                                document.getElementById('status-message').textContent = 'All systems operational';
+                                document.getElementById('status-message').className = 'text-xs text-profit-green mt-1';
+                                document.getElementById('status-icon').className = 'fas fa-check-circle text-profit-green';
+                            } else {
+                                document.getElementById('status-message').textContent = 'System issues detected';
+                                document.getElementById('status-message').className = 'text-xs text-loss-red mt-1';
+                                document.getElementById('status-icon').className = 'fas fa-exclamation-triangle text-loss-red';
+                            }
+
+                            // Update individual components with new indicator style
+                            updateComponentStatus('api', data.api);
+                            updateComponentStatus('db', data.database);
+                            updateComponentStatus('redis', data.redis);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching system status:', error);
+                            document.getElementById('status-message').textContent = 'Unable to fetch status';
                             document.getElementById('status-message').className = 'text-xs text-loss-red mt-1';
-                            document.getElementById('status-icon').className = 'fas fa-exclamation-triangle text-loss-red';
-                        }
-
-                        // Update individual components with new indicator style
-                        updateComponentStatus('api', data.api);
-                        updateComponentStatus('db', data.database);
-                        updateComponentStatus('redis', data.redis);
-                    })
-                    .catch(error => {
-                        console.error('Error fetching system status:', error);
-                        document.getElementById('status-message').textContent = 'Unable to fetch status';
-                        document.getElementById('status-message').className = 'text-xs text-loss-red mt-1';
-                        document.getElementById('status-icon').className = 'fas fa-question-circle text-text-dim';
-                        document.getElementById('status-details').classList.add('hidden');
-                    });
-            }
-
-            function updateComponentStatus(id, status) {
-                const element = document.getElementById(`${id}-status`);
-                const indicator = document.getElementById(`${id}-indicator`);
-
-                if (status === 'healthy') {
-                    element.className = 'inline-flex items-center text-profit-green';
-                    indicator.className = 'h-2 w-2 rounded-full bg-profit-green mr-2';
-                } else {
-                    element.className = 'inline-flex items-center text-loss-red';
-                    indicator.className = 'h-2 w-2 rounded-full bg-loss-red mr-2';
-                }
-
-                // Update text content based on component
-                if (id === 'api') element.textContent = 'API';
-                else if (id === 'db') element.textContent = 'Database';
-                else if (id === 'redis') element.textContent = 'Redis';
-            }
-
-            // Check status on page load and then every 60 seconds
-            checkSystemStatus();
-            setInterval(checkSystemStatus, 60000); // Update every minute
-
-            // New function to check trading system status
-            function checkTradingStatus() {
-                fetch('/api/status/')
-                    .then(response => {
-                        if (response.ok) {
-                            return response.json();
-                        } else {
-                            throw new Error('Failed to fetch trading status');
-                        }
-                    })
-                    .then(data => {
-                        // Show status details
-                        document.getElementById('trading-status-details').classList.remove('hidden');
-
-                        // Update overall status message
-                        const isOperational = data.status === 'operational';
-                        document.getElementById('trading-status-message').textContent = isOperational ?
-                            'System Operational' : 'System Degraded';
-                        document.getElementById('trading-status-message').className = isOperational ?
-                            'text-xs text-profit-green mt-1' : 'text-xs text-loss-red mt-1';
-                        document.getElementById('trading-status-icon').className = isOperational ?
-                            'fas fa-exchange-alt text-profit-green' : 'fas fa-exchange-alt text-loss-red';
-
-                        // Update individual components
-                        const components = data.components || {};
-                        updateTradingComponentStatus('reporting', components.reporting);
-                        updateTradingComponentStatus('ingestion', components.ingestion);
-                        updateTradingComponentStatus('arbitrage', components.arbitrage);
-                        updateTradingComponentStatus('execution', components.execution);
-                    })
-                    .catch(error => {
-                        console.error('Error fetching trading status:', error);
-                        document.getElementById('trading-status-message').textContent = 'Unable to fetch status';
-                        document.getElementById('trading-status-message').className = 'text-xs text-loss-red mt-1';
-                        document.getElementById('trading-status-icon').className = 'fas fa-exchange-alt text-text-dim';
-                        document.getElementById('trading-status-details').classList.add('hidden');
-                    });
-            }
-
-            function updateTradingComponentStatus(id, status) {
-                const element = document.getElementById(`${id}-status`);
-                const indicator = document.getElementById(`${id}-indicator`);
-
-                if (status === 'active') {
-                    element.className = 'inline-flex items-center text-profit-green';
-                    indicator.className = 'h-2 w-2 rounded-full bg-profit-green mr-2';
-                } else {
-                    element.className = 'inline-flex items-center text-gray-400';
-                    indicator.className = 'h-2 w-2 rounded-full bg-loss-red mr-2';
-                }
-            }
-
-            // Check trading status on page load and then every 30 seconds
-            checkTradingStatus();
-            setInterval(checkTradingStatus, 30000); // Update every 30 seconds
-
-            // Setup trading status indicator - Modified to add pulsing animation
-            function updateTradingStatusIndicator() {
-                fetch('/api/trading/status')
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        const isActive = data.overall === true || data.status === 'operational';
-
-                        // Update trading status indicator
-                        const statusDot = document.getElementById('system-trading-dot');
-                        const statusText = document.getElementById('system-trading-text');
-                        const statusLabel = document.getElementById('system-trading-label');
-
-                        // Update button states based on system status
-                        document.getElementById('start-trading-btn').disabled = isActive;
-                        document.getElementById('stop-trading-btn').disabled = !isActive;
-
-                        if (isActive) {
-                            statusDot.className = 'h-3 w-3 rounded-full bg-profit-green mr-2 pulse-green';
-                            statusText.className = 'text-sm font-medium text-profit-green';
-                            statusText.textContent = 'Trading Active';
-                            statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green';
-                            statusLabel.textContent = 'ACTIVE';
-                        } else {
-                            statusDot.className = 'h-3 w-3 rounded-full bg-gray-500 mr-2';
-                            statusText.className = 'text-sm font-medium';
-                            statusText.textContent = 'Trading Inactive';
-                            statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400';
-                            statusLabel.textContent = 'STOPPED';
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching trading status:', error);
-                        // Show error state
-                        const statusDot = document.getElementById('system-trading-dot');
-                        const statusText = document.getElementById('system-trading-text');
-                        const statusLabel = document.getElementById('system-trading-label');
-
-                        statusDot.className = 'h-3 w-3 rounded-full bg-loss-red mr-2';
-                        statusText.className = 'text-sm font-medium text-loss-red';
-                        statusText.textContent = 'Status Error';
-                        statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-red-900 text-loss-red';
-                        statusLabel.textContent = 'ERROR';
-                    });
-            }
-
-            // Setup stop trading button
-            const stopTradingBtn = document.getElementById('stop-trading-btn');
-            stopTradingBtn.addEventListener('click', function () {
-                if (confirm('Are you sure you want to stop all trading activities?')) {
-                    fetch('/api/trading/stop', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                        .then(response => {
-                            if (!response.ok) {
-                                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-                            }
-                            return response.json();
-                        })
-                        .then(data => {
-                            console.log('Trading stopped:', data);
-                            updateTradingStatusIndicator();
-                            showNotification('Trading stopped successfully', 'success');
-                        })
-                        .catch(error => {
-                            console.error('Error stopping trading:', error);
-                            showNotification('Failed to stop trading: ' + error.message, 'error');
+                            document.getElementById('status-icon').className = 'fas fa-question-circle text-text-dim';
+                            document.getElementById('status-details').classList.add('hidden');
                         });
                 }
-            });
 
-            // Setup killswitch button
-            const killswitchBtn = document.getElementById('killswitch-btn');
-            killswitchBtn.addEventListener('click', function () {
-                if (confirm('⚠️ EMERGENCY KILLSWITCH ⚠️\n\nThis will immediately halt ALL system operations! Are you absolutely sure?')) {
-                    fetch('/api/trading/stop', {  // Using the same endpoint with a specific header
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Emergency-Shutdown': 'true'
+                function updateComponentStatus(id, status) {
+                    const element = document.getElementById(`${id}-status`);
+                    const indicator = document.getElementById(`${id}-indicator`);
+
+                    if (element && indicator) {
+                        if (status === 'healthy') {
+                            element.className = 'inline-flex items-center text-profit-green';
+                            indicator.className = 'h-2 w-2 rounded-full bg-profit-green mr-2';
+                        } else {
+                            element.className = 'inline-flex items-center text-loss-red';
+                            indicator.className = 'h-2 w-2 rounded-full bg-loss-red mr-2';
                         }
-                    })
-                        .then(response => {
-                            if (!response.ok) {
-                                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-                            }
-                            return response.json();
-                        })
-                        .then(data => {
-                            console.log('Emergency shutdown activated:', data);
-                            updateTradingStatusIndicator();
-                            showNotification('EMERGENCY SHUTDOWN ACTIVATED', 'error');
-                        })
-                        .catch(error => {
-                            console.error('Error in emergency shutdown:', error);
-                            showNotification('Failed to execute emergency shutdown: ' + error.message, 'error');
-                        });
-                }
-            });
 
-            // Setup start trading button
-            const startTradingBtn = document.getElementById('start-trading-btn');
-            startTradingBtn.addEventListener('click', function () {
-                fetch('/api/trading/start', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
+                        // Update text content based on component
+                        if (id === 'api') element.textContent = 'API';
+                        else if (id === 'db') element.textContent = 'Database';
+                        else if (id === 'redis') element.textContent = 'Redis';
                     }
-                })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        console.log('Trading started:', data);
-                        updateTradingStatusIndicator();
-                        showNotification('Trading started successfully', 'success');
-                    })
-                    .catch(error => {
-                        console.error('Error starting trading:', error);
-                        showNotification('Failed to start trading: ' + error.message, 'error');
-                    });
-            });
+                }
 
-            // Setup restart trading button
-            const restartTradingBtn = document.getElementById('restart-trading-btn');
-            restartTradingBtn.addEventListener('click', function () {
-                if (confirm('Are you sure you want to restart the trading system?')) {
-                    fetch('/api/trading/restart', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
+                // Check status on page load and then every 60 seconds
+                checkSystemStatus();
+                setInterval(checkSystemStatus, 60000); // Update every minute
+
+                function checkTradingStatus() {
+                    fetch('/api/status/')
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                throw new Error('Failed to fetch trading status');
+                            }
+                        })
+                        .then(data => {
+                            // Show status details
+                            document.getElementById('trading-status-details').classList.remove('hidden');
+
+                            // Update overall status message
+                            const isOperational = data.status === 'operational';
+                            document.getElementById('trading-status-message').textContent = isOperational ?
+                                'System Operational' : 'System Degraded';
+                            document.getElementById('trading-status-message').className = isOperational ?
+                                'text-xs text-profit-green mt-1' : 'text-xs text-loss-red mt-1';
+                            document.getElementById('trading-status-icon').className = isOperational ?
+                                'fas fa-exchange-alt text-profit-green' : 'fas fa-exchange-alt text-loss-red';
+
+                            // Update individual components
+                            const components = data.components || {};
+                            updateTradingComponentStatus('reporting', components.reporting);
+                            updateTradingComponentStatus('ingestion', components.ingestion);
+                            updateTradingComponentStatus('arbitrage', components.arbitrage);
+                            updateTradingComponentStatus('execution', components.execution);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching trading status:', error);
+                            document.getElementById('trading-status-message').textContent = 'Unable to fetch status';
+                            document.getElementById('trading-status-message').className = 'text-xs text-loss-red mt-1';
+                            document.getElementById('trading-status-icon').className = 'fas fa-exchange-alt text-text-dim';
+                            document.getElementById('trading-status-details').classList.add('hidden');
+                        });
+                }
+
+                function updateTradingComponentStatus(id, status) {
+                    const element = document.getElementById(`${id}-status`);
+                    const indicator = document.getElementById(`${id}-indicator`);
+
+                    if (element && indicator) {
+                        if (status === 'active') {
+                            element.className = 'inline-flex items-center text-profit-green';
+                            indicator.className = 'h-2 w-2 rounded-full bg-profit-green mr-2';
+                        } else {
+                            element.className = 'inline-flex items-center text-gray-400';
+                            indicator.className = 'h-2 w-2 rounded-full bg-loss-red mr-2';
                         }
-                    })
+                    }
+                }
+
+                // Update trading status initially and then periodically
+                checkTradingStatus();
+                setInterval(checkTradingStatus, 30000);
+
+                // Setup trading status indicator
+                function updateTradingStatusIndicator() {
+                    fetch('/api/trading/status')
                         .then(response => {
                             if (!response.ok) {
                                 throw new Error(`Server returned ${response.status}: ${response.statusText}`);
@@ -629,16 +485,190 @@
                             return response.json();
                         })
                         .then(data => {
-                            console.log('Trading restarted:', data);
-                            updateTradingStatusIndicator();
-                            showNotification('Trading system restarted successfully', 'success');
+                            const isActive = data.overall === true || data.status === 'operational';
+
+                            // Update trading status indicator
+                            const statusDot = document.getElementById('system-trading-dot');
+                            const statusText = document.getElementById('system-trading-text');
+                            const statusLabel = document.getElementById('system-trading-label');
+
+                            if (isActive) {
+                                if (statusDot) statusDot.className = 'h-3 w-3 rounded-full bg-profit-green mr-2 pulse-green';
+                                if (statusText) {
+                                    statusText.className = 'text-sm font-medium text-profit-green';
+                                    statusText.textContent = 'Trading Active';
+                                }
+                                if (statusLabel) {
+                                    statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green';
+                                    statusLabel.textContent = 'ACTIVE';
+                                }
+                            } else {
+                                if (statusDot) statusDot.className = 'h-3 w-3 rounded-full bg-gray-500 mr-2';
+                                if (statusText) {
+                                    statusText.className = 'text-sm font-medium';
+                                    statusText.textContent = 'Trading Inactive';
+                                }
+                                if (statusLabel) {
+                                    statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400';
+                                    statusLabel.textContent = 'STOPPED';
+                                }
+                            }
                         })
                         .catch(error => {
-                            console.error('Error restarting trading:', error);
-                            showNotification('Failed to restart trading: ' + error.message, 'error');
+                            console.error('Error fetching trading status:', error);
+                            const statusDot = document.getElementById('system-trading-dot');
+                            const statusText = document.getElementById('system-trading-text');
+                            const statusLabel = document.getElementById('system-trading-label');
+
+                            if (statusDot) statusDot.className = 'h-3 w-3 rounded-full bg-loss-red mr-2';
+                            if (statusText) {
+                                statusText.className = 'text-sm font-medium text-loss-red';
+                                statusText.textContent = 'Status Error';
+                            }
+                            if (statusLabel) {
+                                statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-red-900 text-loss-red';
+                                statusLabel.textContent = 'ERROR';
+                            }
                         });
                 }
+
+                // Update trading status initially and then every 10 seconds
+                updateTradingStatusIndicator();
+                setInterval(updateTradingStatusIndicator, 10000);
+
+                // Setup control buttons
+                setupTradingControls();
             });
+
+            // Add back the trading control buttons functionality
+            function setupTradingControls() {
+                // Setup stop trading button
+                const stopTradingBtn = document.getElementById('stop-trading-btn');
+                if (stopTradingBtn) {
+                    stopTradingBtn.addEventListener('click', function () {
+                        if (confirm('Are you sure you want to stop all trading activities?')) {
+                            fetch('/api/trading/stop', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                }
+                            })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                                    }
+                                    return response.json();
+                                })
+                                .then(data => {
+                                    console.log('Trading stopped:', data);
+                                    showNotification('Trading stopped successfully', 'success');
+                                    if (typeof updateTradingStatusIndicator === 'function') {
+                                        updateTradingStatusIndicator();
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error stopping trading:', error);
+                                    showNotification('Failed to stop trading: ' + error.message, 'error');
+                                });
+                        }
+                    });
+                }
+
+                // Setup killswitch button
+                const killswitchBtn = document.getElementById('killswitch-btn');
+                if (killswitchBtn) {
+                    killswitchBtn.addEventListener('click', function () {
+                        if (confirm('⚠️ EMERGENCY KILLSWITCH ⚠️\n\nThis will immediately halt ALL system operations! Are you absolutely sure?')) {
+                            fetch('/api/trading/stop', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Emergency-Shutdown': 'true'
+                                }
+                            })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                                    }
+                                    return response.json();
+                                })
+                                .then(data => {
+                                    console.log('Emergency shutdown activated:', data);
+                                    showNotification('EMERGENCY SHUTDOWN ACTIVATED', 'error');
+                                    if (typeof updateTradingStatusIndicator === 'function') {
+                                        updateTradingStatusIndicator();
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error in emergency shutdown:', error);
+                                    showNotification('Failed to execute emergency shutdown: ' + error.message, 'error');
+                                });
+                        }
+                    });
+                }
+
+                // Setup start trading button
+                const startTradingBtn = document.getElementById('start-trading-btn');
+                if (startTradingBtn) {
+                    startTradingBtn.addEventListener('click', function () {
+                        fetch('/api/trading/start', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                console.log('Trading started:', data);
+                                showNotification('Trading started successfully', 'success');
+                                if (typeof updateTradingStatusIndicator === 'function') {
+                                    updateTradingStatusIndicator();
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error starting trading:', error);
+                                showNotification('Failed to start trading: ' + error.message, 'error');
+                            });
+                    });
+                }
+
+                // Setup restart trading button
+                const restartTradingBtn = document.getElementById('restart-trading-btn');
+                if (restartTradingBtn) {
+                    restartTradingBtn.addEventListener('click', function () {
+                        if (confirm('Are you sure you want to restart the trading system?')) {
+                            fetch('/api/trading/restart', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                }
+                            })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                                    }
+                                    return response.json();
+                                })
+                                .then(data => {
+                                    console.log('Trading restarted:', data);
+                                    showNotification('Trading system restarted successfully', 'success');
+                                    if (typeof updateTradingStatusIndicator === 'function') {
+                                        updateTradingStatusIndicator();
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error restarting trading:', error);
+                                    showNotification('Failed to restart trading: ' + error.message, 'error');
+                                });
+                        }
+                    });
+                }
+            }
 
             // Show notification function
             function showNotification(message, type = 'info') {
@@ -658,246 +688,347 @@
                     }, 300);
                 }, 3000);
             }
+        </script>
+    </head>
 
-            // Update trading status initially and then every 10 seconds
-            updateTradingStatusIndicator();
-            setInterval(updateTradingStatusIndicator, 10000);
-        });
-    </script>
+    <body class="min-h-screen flex flex-col">
+        <!-- Mobile menu overlay -->
+        <div id="mobile-menu-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden"></div>
 
-    {% block head %}{% endblock %}
-</head>
+        <!-- Top Bar - changed to match background color -->
+        <header class="bg-dark-bg shadow-md relative z-10">
+            <div class="w-full pl-4 pr-8"> 
+                <div class="flex justify-end py-4"> <!-- Added padding top and bottom -->
+                    <!-- Right section with system status indicator -->
+                    <div class="flex items-center"> 
+                        <!-- Trading Status Indicator - keep this -->
+                        <div class="flex items-center mr-5"> 
+                            <span id="system-trading-dot" class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
+                            <span id="system-trading-text" class="text-sm font-medium">Trading Status</span>
+                        </div>
+                        
+                        <!-- System status indicator -->
+                        <span class="text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green hidden sm:inline-block mr-4">System Online</span>
 
-<body class="min-h-screen flex">
-    <!-- Sidebar Navigation - Completely restructured for proper flexbox layout -->
-    <aside class="w-64 border-r border-gray-800 hidden md:flex md:flex-col h-screen">
-        <!-- Logo container -->
-        <div class="px-6 pt-6 pb-4 ascii-logo-container">
-            <a href="/" class="block">
-                <pre class="ascii-logo">
- $$$$$$\  $$$$$$$\
-$$  __$$\ $$  __$$\
+                        <!-- Mobile menu button -->
+                        <button id="mobile-menu-button" class="sm:hidden text-gray-400 hover:text-white focus:outline-none">
+                            <i class="fas fa-bars text-2xl"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Toggle Button - positioned properly -->
+            <button id="themeToggle" class="theme-toggle fixed top-4 right-6 z-50" aria-label="Toggle theme">
+                <!-- Icon is displayed via CSS ::before pseudo-element -->
+            </button>
+        </header>
+
+        <!-- Sidebar and main content wrapper -->
+        <div class="flex flex-1 relative min-h-screen">
+            <!-- Sidebar for desktop - using a different positioning approach with reduced top padding -->
+            <aside class="w-64 bg-dark-element shadow-md hidden sm:block fixed left-0 top-0 bottom-0 z-20 overflow-y-auto" style="padding-top: calc(2.5rem);">
+                <!-- Adjusted padding to move content up -->
+                <div class="px-4 py-2 h-full flex flex-col">
+                    <!-- AR ASCII Logo at top of sidebar with reduced margin -->
+                    <div class="flex justify-start ascii-logo-container mb-3">
+                        <a href="/" class="text-dollar-green font-bold text-xl">
+                            <pre class="ascii-logo">
+ $$$$$\  $$$$$$$\  
+$$  __$$\ $$  __$$\ 
 $$ /  $$ |$$ |  $$ |
-$$$$$$$$ |$$$$$$$ <
-$$  __$$ |$$  __$$ |
+$$$$$$$$ |$$$$$$$  |
+$$  __$$ |$$  __$$< 
 $$ |  $$ |$$ |  $$ |
 $$ |  $$ |$$ |  $$ |
 \__|  \__|\__|  \__|
-                </pre>
-            </a>
-        </div>
-
-        <!-- Trading Status Indicator - WITHOUT control buttons -->
-        <div class="px-6 pb-3">
-            <div id="trading-status-indicator" class="bg-dark-element rounded-lg p-3 border border-gray-800">
-                <div class="flex items-center justify-between mb-2">
-                    <div class="flex items-center">
-                        <span id="system-trading-dot" class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
-                        <span class="text-sm font-medium" id="system-trading-text">Trading Status</span>
+                            </pre>
+                        </a>
                     </div>
-                    <span id="system-trading-label"
-                        class="text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400">Unknown</span>
-                </div>
-                <!-- Control buttons removed from here -->
-            </div>
-        </div>
+                    
+                    <div class="flex-grow flex flex-col">
+                        <div class="mb-4">
+                            <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">
+                                Main Navigation
+                            </h3>
+                            <div class="space-y-1">
+                                <a href="/dashboard" 
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-tachometer-alt w-6"></i>
+                                    <span>Dashboard</span>
+                                </a>
+                                <a href="/monitor" 
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-heartbeat w-6"></i>
+                                    <span>System Monitor</span>
+                                </a>
+                                <a href="/strategies"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-chess w-6"></i>
+                                    <span>Strategies</span>
+                                </a>
+                            </div>
+                        </div>
 
-        <!-- Navigation items - with overflow scroll -->
-        <div class="flex-1 overflow-y-auto">
-            <nav class="pb-4">
-                <div class="px-4 mb-2">
-                    <span class="text-xs text-text-dim uppercase tracking-wider">Main</span>
-                </div>
+                        <div class="mb-4">
+                            <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">
+                                Trading
+                            </h3>
+                            <div class="space-y-1">
+                                <a href="/opportunities" 
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-search-dollar w-6"></i>
+                                    <span>Opportunities</span>
+                                </a>
+                                <a href="/executions"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-exchange-alt w-6"></i>
+                                    <span>Executions</span>
+                                </a>
+                                <a href="/exchanges"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-exchange-alt w-6"></i>
+                                    <span>Exchanges</span>
+                                </a>
+                            </div>
+                        </div>
 
-                <a href="/dashboard"
-                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/dashboard' %}active{% endif %}">
-                    <i class="fas fa-chart-line w-5"></i>
-                    <span class="ml-3">Dashboard</span>
-                </a>
-
-                <a href="/monitor"
-                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/monitor' %}active{% endif %}">
-                    <i class="fas fa-desktop w-5"></i>
-                    <span class="ml-3">$$ystem Monitor</span>
-                </a>
-
-                <div class="px-4 mb-2 mt-6">
-                    <span class="text-xs text-text-dim uppercase tracking-wider">Configuration</span>
-                </div>
-
-                <!-- Removed System Setup link -->
-
-                <a href="/strategies"
-                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/strategies' %}active{% endif %}">
-                    <i class="fas fa-chess w-5"></i>
-                    <span class="ml-3">$$trategies</span>
-                </a>
-
-                <a href="/exchanges"
-                    class="nav-item flex items-center px-6 py-3 text-gray-300 hover:bg-dark-element {% if request.url.path == '/exchanges' %}active{% endif %}">
-                    <i class="fas fa-exchange-alt w-5"></i>
-                    <span class="ml-3">Market</span>
-                </a>
-            </nav>
-        </div>
-
-        <!-- System status cards - Trading card first now -->
-        <div class="px-6 py-4 border-t border-gray-800">
-            <!-- Trading System Status Card - Now above system status -->
-            <div id="trading-status-card" class="p-3 bg-dark-element rounded-lg mb-3">
-                <div class="flex items-center mb-2">
-                    <div class="mr-3">
-                        <i id="trading-status-icon" class="fas fa-exchange-alt text-dollar-green"></i>
-                    </div>
-                    <div>
-                        <div class="text-sm font-medium">Trading $$ystem</div>
-                        <div id="trading-status-message" class="text-xs text-text-dim mt-1">Checking status...</div>
+                        {% block sidebar %}{% endblock sidebar %}
                     </div>
                 </div>
-                <div id="trading-status-details" class="text-xs mt-2 space-y-2">
-                    <div class="flex items-center">
-                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="reporting-indicator"></span>
-                        <span id="reporting-status" class="inline-flex items-center">Reporting</span>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="ingestion-indicator"></span>
-                        <span id="ingestion-status" class="inline-flex items-center">Ingestion</span>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="arbitrage-indicator"></span>
-                        <span id="arbitrage-status" class="inline-flex items-center">Arbitrage</span>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="execution-indicator"></span>
-                        <span id="execution-status" class="inline-flex items-center">Execution</span>
-                    </div>
-                </div>
-            </div>
+            </aside>
 
-            <!-- Original System Status Card - Now with same style as trading card -->
-            <div id="system-status-card" class="p-3 bg-dark-element rounded-lg">
-                <div class="flex items-center mb-2">
-                    <div class="mr-3">
-                        <i id="status-icon" class="fas fa-info-circle text-dollar-green"></i>
-                    </div>
-                    <div>
-                        <div class="text-sm font-medium">$$ystem $$tatus</div>
-                        <div id="status-message" class="text-xs text-text-dim mt-1">Checking status...</div>
-                    </div>
-                </div>
-                <div id="status-details" class="text-xs mt-2 space-y-2 hidden">
-                    <div class="flex items-center">
-                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="api-indicator"></span>
-                        <span id="api-status" class="inline-flex items-center">API</span>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="db-indicator"></span>
-                        <span id="db-status" class="inline-flex items-center">Database</span>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="h-2 w-2 rounded-full bg-gray-500 mr-2" id="redis-indicator"></span>
-                        <span id="redis-status" class="inline-flex items-center">Redis</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Trading Controls - Now at the bottom of sidebar as collapsible panel -->
-        <div id="controlPanel" class="control-panel">
-            <div id="controlPanelHeader" class="control-panel-header">
-                <span class="text-sm font-medium text-dollar-green">Trading Controls</span>
-                <i id="toggleIcon" class="fas fa-chevron-down toggle-icon text-dollar-green"></i>
-            </div>
-            <div class="control-panel-content">
-                <div class="space-y-2">
-                    <div class="grid grid-cols-2 gap-2">
-                        <button id="start-trading-btn"
-                            class="bg-dark-bg hover:bg-gray-800 text-profit-green text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-profit-green/30">
-                            <i class="fas fa-play mr-1"></i> Start
-                        </button>
-                        <button id="stop-trading-btn"
-                            class="bg-dark-bg hover:bg-gray-800 text-loss-red text-xs py-1 px-2 rounded transition-all flex items-center justify-center border border-loss-red/30">
-                            <i class="fas fa-stop mr-1"></i> Stop
+            <!-- Mobile menu -->
+            <div id="mobile-menu" class="fixed inset-y-0 left-0 w-64 bg-dark-element shadow-md hidden z-50 overflow-y-auto">
+                <div class="px-4 py-5">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="ascii-logo-container">
+                            <pre class="ascii-logo">
+ $$$$$\  $$$$$$$\  
+$$  __$$\ $$  __$$\ 
+$$ /  $$ |$$ |  $$ |
+$$$$$$$$ |$$$$$$$  |
+$$  __$$ |$$  __$$< 
+$$ |  $$ |$$ |  $$ |
+$$ |  $$ |$$ |  $$ |
+\__|  \__|\__|  \__|
+                            </pre>
+                        </div>
+                        <button id="close-mobile-menu" class="text-gray-400 hover:text-white focus:outline-none">
+                            <i class="fas fa-times text-xl"></i>
                         </button>
                     </div>
-                    <button id="restart-trading-btn"
-                        class="bg-dark-bg hover:bg-gray-800 text-dollar-green text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center border border-dollar-green/30">
-                        <i class="fas fa-sync-alt mr-1"></i> Restart
-                    </button>
-                    <button id="killswitch-btn"
-                        class="bg-loss-red hover:bg-red-700 text-white text-xs py-1 px-2 rounded transition-all w-full flex justify-center items-center">
-                        <i class="fas fa-power-off mr-1"></i> Emergency Killswitch
-                    </button>
+
+                    <div class="space-y-6">
+                        <div class="space-y-1">
+                            <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">
+                                Main Navigation
+                            </h3>
+                            <a href="/dashboard" 
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-tachometer-alt mr-2"></i>
+                                Dashboard
+                            </a>
+                            <a href="/monitor"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-heartbeat mr-2"></i>
+                                System Monitor
+                            </a>
+                            <a href="/strategies"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-chess mr-2"></i>
+                                Strategies
+                            </a>
+                        </div>
+
+                        <div class="space-y-1">
+                            <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">
+                                Trading
+                            </h3>
+                            <a href="/opportunities"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-search-dollar mr-2"></i>
+                                Opportunities
+                            </a>
+                            <a href="/executions"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-exchange-alt mr-2"></i>
+                                Executions
+                            </a>
+                            <a href="/exchanges"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-exchange-alt mr-2"></i>
+                                Exchanges
+                            </a>
+                        </div>
+
+                        {% block mobile_menu %}{% endblock mobile_menu %}
+                    </div>
                 </div>
             </div>
+
+            <!-- Main content - adjusted margin and padding to account for fixed sidebar -->
+            <main class="flex-1 p-4 sm:p-6 overflow-auto ml-0 sm:ml-64 mt-0 min-h-screen">
+                {% block content %}{% endblock content %}
+            </main>
         </div>
-    </aside>
 
-    <!-- Mobile Navigation Bar - Fixed missing closing tag -->
-    <div
-        class="fixed bottom-0 left-0 right-0 bg-dark-element border-t border-gray-800 flex justify-around py-2 md:hidden z-10">
-        <!-- Updated href to point to /dashboard instead of / -->
-        <a href="/dashboard"
-            class="text-center p-2 {% if request.url.path == '/dashboard' %}text-dollar-green{% else %}text-gray-400{% endif %}">
-            <i class="fas fa-chart-line block text-lg"></i>
-            <span class="text-xs mt-1">Dashboard</span>
-        </a>
+        <!-- Footer - increased z-index to appear above sidebar -->
+        <footer class="bg-dark-element text-text-dim py-4 mt-auto relative z-30">
+            <div class="w-full px-8">
+                <div class="flex flex-col sm:flex-row justify-between items-center">
+                    <div class="mb-2 sm:mb-0 sm:pl-2">
+                        <span>Copyright © 2023 ArbiRich. All rights reserved.</span>
+                    </div>
+                    <div class="flex space-x-4">
+                        <a href="#" class="text-gray-400 hover:text-dollar-green">Terms</a>
+                        <a href="#" class="text-gray-400 hover:text-dollar-green">Privacy</a>
+                        <span class="text-gray-500">v1.0.3</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
 
-        <a href="/monitor"
-            class="text-center p-2 {% if request.url.path == '/monitor' %}text-dollar-green{% else %}text-gray-400{% endif %}">
-            <i class="fas fa-desktop block text-lg"></i>
-            <span class="text-xs mt-1">Monitor</span>
-        </a>
+        <!-- Base scripts -->
+        <script>
+            // Mobile menu functionality - update to handle trading status without buttons
+            document.addEventListener('DOMContentLoaded', function() {
+                const mobileMenuButton = document.getElementById('mobile-menu-button');
+                const closeMobileMenuButton = document.getElementById('close-mobile-menu');
+                const mobileMenu = document.getElementById('mobile-menu');
+                const mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
 
-        <a href="/strategies"
-            class="text-center p-2 {% if request.url.path == '/strategies' %}text-dollar-green{% else %}text-gray-400{% endif %}">
-            <i class="fas fa-chess block text-lg"></i>
-            <span class="text-xs mt-1">Strategies</span>
-        </a>
+                if (mobileMenuButton && mobileMenu && mobileMenuOverlay) {
+                    mobileMenuButton.addEventListener('click', function() {
+                        mobileMenu.classList.add('mobile-menu-visible');
+                        mobileMenuOverlay.classList.remove('hidden');
+                    });
 
-        <a href="/exchanges"
-            class="text-center p-2 {% if request.url.path == '/exchanges' %}text-dollar-green{% else %}text-gray-400{% endif %}">
-            <i class="fas fa-exchange-alt block text-lg"></i>
-            <span class="text-xs mt-1">Market</span>
-        </a>
-    </div>
+                    function closeMobileMenu() {
+                        mobileMenu.classList.remove('mobile-menu-visible');
+                        mobileMenuOverlay.classList.add('hidden');
+                    }
 
-    <!-- Main Content -->
-    <main class="flex-1 p-6 pb-20 md:pb-6 overflow-y-auto">
-        {% block content %}{% endblock %}
-    </main>
-
-    <!-- JavaScript -->
-    {% block scripts %}
-    {% block page_scripts %}{% endblock %}
-    <!-- Control panel toggle functionality -->
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const controlPanel = document.getElementById('controlPanel');
-            const controlPanelHeader = document.getElementById('controlPanelHeader');
-            const toggleIcon = document.getElementById('toggleIcon');
-
-            // Check if we have a saved state
-            const isPanelCollapsed = localStorage.getItem('controlPanelCollapsed') === 'true';
-
-            // Set initial state
-            if (isPanelCollapsed) {
-                controlPanel.classList.add('collapsed');
-            }
-
-            // Toggle panel on header click
-            controlPanelHeader.addEventListener('click', function () {
-                controlPanel.classList.toggle('collapsed');
-
-                // Save state to localStorage
-                localStorage.setItem(
-                    'controlPanelCollapsed',
-                    controlPanel.classList.contains('collapsed')
-                );
+                    closeMobileMenuButton.addEventListener('click', closeMobileMenu);
+                    mobileMenuOverlay.addEventListener('click', closeMobileMenu);
+                }
+                
+                // Update mobile status when main status updates
+                const updateMobileStatus = setInterval(function() {
+                    const mainDot = document.getElementById('system-trading-dot');
+                    const mainText = document.getElementById('system-trading-text');
+                    const mobileTradingDot = document.getElementById('mobile-system-trading-dot');
+                    const mobileTradingText = document.getElementById('mobile-system-trading-text');
+                    
+                    if (mainDot && mainText && mobileTradingDot && mobileTradingText) {
+                        mobileTradingDot.className = mainDot.className;
+                        mobileTradingText.textContent = mainText.textContent;
+                        mobileTradingText.className = mainText.className;
+                    }
+                }, 1000);
             });
-        });
-    </script>
-    {% endblock %}
-</body>
+
+            // Theme toggle functionality for light/dark theme across the entire app
+            document.addEventListener('DOMContentLoaded', function() {
+                const themeToggle = document.getElementById('themeToggle');
+                
+                if (!themeToggle) return; // Exit if button doesn't exist
+                
+                // Check for saved theme preference or use device preference
+                const savedTheme = localStorage.getItem('theme');
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                
+                // Set initial theme
+                if (savedTheme) {
+                    document.documentElement.setAttribute('data-theme', savedTheme);
+                } else if (prefersDark) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                }
+                
+                // Toggle theme when button is clicked with animation
+                themeToggle.addEventListener('click', function() {
+                    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    
+                    // Add animation class
+                    themeToggle.classList.add('animating');
+                    
+                    // Set a timeout to change the theme after the animation starts
+                    setTimeout(() => {
+                        document.documentElement.setAttribute('data-theme', newTheme);
+                        localStorage.setItem('theme', newTheme);
+                        
+                        // Remove animation class after icon changes
+                        setTimeout(() => {
+                            themeToggle.classList.remove('animating');
+                        }, 300);
+                    }, 150);
+                });
+            });
+        </script>
+
+        {% block scripts %}
+            {% block page_scripts %}{% endblock page_scripts %}
+
+            <!-- Control panel toggle functionality -->
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    // Trading controls panel
+                    const controlPanel = document.getElementById('controlPanel');
+                    const controlPanelHeader = document.getElementById('controlPanelHeader');
+                    const toggleIcon = document.getElementById('toggleIcon');
+
+                    // Check if we have a saved state
+                    const isPanelCollapsed = localStorage.getItem('controlPanelCollapsed') === 'true';
+
+                    // Set initial state
+                    if (isPanelCollapsed && controlPanel) {
+                        controlPanel.classList.add('collapsed');
+                    }
+
+                    // Toggle panel on header click
+                    if (controlPanelHeader) {
+                        controlPanelHeader.addEventListener('click', function () {
+                            controlPanel.classList.toggle('collapsed');
+
+                            // Save state to localStorage
+                            localStorage.setItem(
+                                'controlPanelCollapsed',
+                                controlPanel.classList.contains('collapsed')
+                            );
+                        });
+                    }
+
+                    // System status panel
+                    const statusPanel = document.getElementById('statusPanel');
+                    const statusPanelHeader = document.getElementById('statusPanelHeader');
+                    const statusToggleIcon = document.getElementById('statusToggleIcon');
+
+                    // Check if we have a saved state for status panel
+                    const isStatusPanelCollapsed = localStorage.getItem('statusPanelCollapsed') === 'true';
+
+                    // Set initial state for status panel
+                    if (isStatusPanelCollapsed && statusPanel) {
+                        statusPanel.classList.add('collapsed');
+                    }
+
+                    // Toggle status panel on header click
+                    if (statusPanelHeader) {
+                        statusPanelHeader.addEventListener('click', function () {
+                            statusPanel.classList.toggle('collapsed');
+
+                            // Save state to localStorage
+                            localStorage.setItem(
+                                'statusPanelCollapsed',
+                                statusPanel.classList.contains('collapsed')
+                            );
+                        });
+                    }
+                });
+            </script>
+        {% endblock scripts %}
+    </body>
 
 </html>
