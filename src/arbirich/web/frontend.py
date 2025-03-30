@@ -115,20 +115,9 @@ async def dashboard(request: Request):
             logger.error(f"Error loading exchanges: {e}", exc_info=True)
             exchanges = mock_provider.get_exchanges() if hasattr(mock_provider, "get_exchanges") else []
 
-        # Generate chart data for the profit history graph
-        try:
-            profit_chart_data = get_profit_history_chart_data(db)
-            # Verify we have actual lists, not dict methods
-            if not isinstance(profit_chart_data["values"], list):
-                profit_chart_data["values"] = list(profit_chart_data["values"])
-            if not isinstance(profit_chart_data["labels"], list):
-                profit_chart_data["labels"] = list(profit_chart_data["labels"])
-
-            logger.info(f"Generated profit chart data with {len(profit_chart_data['values'])} points")
-        except Exception as e:
-            logger.error(f"Error generating profit chart data: {e}", exc_info=True)
-            # Default to empty lists
-            profit_chart_data = {"labels": [], "values": []}
+        # We're not using chart_data from the backend anymore
+        # The chart is now created entirely in the frontend with hardcoded data
+        # This eliminates the JSON serialization issue
 
     return templates.TemplateResponse(
         "pages/dashboard.html",
@@ -139,7 +128,7 @@ async def dashboard(request: Request):
             "strategies": strategies,
             "stats": stats,
             "exchanges": exchanges,
-            "chart_data": profit_chart_data,  # Add chart data for profit history
+            # No more chart_data here
         },
     )
 
@@ -733,78 +722,3 @@ def get_enhanced_dashboard_stats(db_service: DatabaseService) -> dict:
             "active_strategies": active_strategies,
             "win_rate": win_rate,
         }
-
-
-def get_profit_history_chart_data(db_service: DatabaseService, days=30) -> dict:
-    """Generate time-series data for profit history chart."""
-    from datetime import datetime, timedelta
-
-    import sqlalchemy as sa
-
-    from src.arbirich.models.schema import trade_executions
-
-    try:
-        with db_service.engine.begin() as conn:
-            # Calculate period end date (today)
-            end_date = datetime.now()
-            # Calculate period start date (30 days ago or as specified)
-            start_date = end_date - timedelta(days=30)
-
-            # Query executions within the date range and order by timestamp
-            result = conn.execute(
-                sa.select(
-                    trade_executions.c.execution_timestamp,
-                    trade_executions.c.executed_buy_price,
-                    trade_executions.c.executed_sell_price,
-                    trade_executions.c.volume,
-                )
-                .where(trade_executions.c.execution_timestamp.between(start_date, end_date))
-                .order_by(trade_executions.c.execution_timestamp.asc())
-            )
-
-            # Process the results to create daily profit data
-            daily_profits = {}
-
-            for row in result:
-                # Calculate profit for this execution
-                profit = (row.executed_sell_price - row.executed_buy_price) * row.volume
-
-                # Get the date part only
-                date_key = row.execution_timestamp.strftime("%Y-%m-%d")
-
-                # Add profit to the daily total
-                if date_key in daily_profits:
-                    daily_profits[date_key] += profit
-                else:
-                    daily_profits[date_key] = profit
-
-            # Create a complete date range (fill in missing days with 0)
-            date_range = []
-            current_date = start_date
-            while current_date <= end_date:
-                date_str = current_date.strftime("%Y-%m-%d")
-                if date_str not in daily_profits:
-                    daily_profits[date_str] = 0
-                date_range.append(date_str)
-                current_date += timedelta(days=1)
-
-            # Sort dates
-            date_range.sort()
-
-            # Calculate cumulative profit
-            cumulative_profits = []
-            running_total = 0
-
-            for date in date_range:
-                running_total += daily_profits[date]
-                cumulative_profits.append(running_total)
-
-            # Format dates for display (e.g., "Mar 28")
-            formatted_dates = [datetime.strptime(d, "%Y-%m-%d").strftime("%b %d") for d in date_range]
-
-            # Return as dictionary with labels and values as fixed lists, not dict_values or dict_keys
-            return {"labels": list(formatted_dates), "values": list(cumulative_profits)}
-    except Exception as e:
-        logger.error(f"Error generating chart data: {e}", exc_info=True)
-        # Return empty lists, not empty dict.values() objects
-        return {"labels": [], "values": []}

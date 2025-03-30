@@ -56,3 +56,9 @@ class ChartData(BaseModel):
 
     labels: List[str]
     datasets: List[ChartDataset]
+
+
+class TradingStopRequest(BaseModel):
+    """Request model for stopping trading operations."""
+
+    emergency: bool = False

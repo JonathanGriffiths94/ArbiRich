@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg2
 import redis
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 
 from src.arbirich.config.config import get_all_strategy_names, get_strategy_config
 from src.arbirich.core.trading_service import get_trading_service
@@ -24,6 +24,7 @@ from src.arbirich.models.router_models import (
     HealthResponse,
     StatusResponse,
     TradingStatusResponse,
+    TradingStopRequest,  # Import the new request model
 )
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.redis.redis_service import RedisService
@@ -208,34 +209,57 @@ async def start_trading():
 
 
 @trading_router.post("/stop", response_model=TradingStatusResponse)
-async def stop_trading():
-    """Stop all trading components"""
+async def stop_trading(request: Request, stop_request: TradingStopRequest = None):
+    """Stop all trading activities."""
+    logger.info("Stop trading requested")
+
+    # Default to non-emergency if no request body is provided
+    emergency = stop_request.emergency if stop_request else False
+
+    # Check for emergency header
+    if request.headers.get("X-Emergency-Shutdown") == "true":
+        emergency = True
+        logger.warning("EMERGENCY SHUTDOWN REQUESTED!")
+
     try:
-        logger.info("Attempting to stop all trading components via router")
+        # Stop all components
+        from src.arbirich.core.system_state import mark_system_shutdown
+        from src.arbirich.flows.ingestion.ingestion_source import disable_processor_startup
+        from src.arbirich.services.exchange_processors.registry import set_processors_shutting_down
 
-        # Import the process diagnostics first to log the current state - but only log once
-        try:
-            from src.arbirich.utils.process_diagnostics import log_process_diagnostics
+        # Set shutdown flags
+        set_processors_shutting_down(True)
+        disable_processor_startup()
 
-            # Add flag to prevent duplicate logging
-            log_process_diagnostics(deduplicate=True)
-        except Exception as e:
-            logger.error(f"Error running process diagnostics: {e}")
+        # Modified: Call mark_system_shutdown without the emergency parameter
+        # If necessary, log that this is an emergency shutdown
+        mark_system_shutdown(True)
+        if emergency:
+            logger.warning("Emergency shutdown completed")
 
-        # Call the new phased shutdown with a timeout
-        from src.arbirich.core.shutdown_manager import execute_phased_shutdown
-
-        success = await execute_phased_shutdown(emergency_timeout=30)
-
+        # All components stopped successfully
         logger.info("Successfully stopped all trading components via router")
+
         return TradingStatusResponse(
-            success=success,
-            message="Trading system stopped successfully" if success else "Trading system shutdown had issues",
+            status="shutdown",
+            message="Trading system shutdown successfully" + (" (EMERGENCY)" if emergency else ""),
+            overall=False,
+            success=True,
+            components={
+                "ingestion": "inactive",
+                "arbitrage": "inactive",
+                "execution": "inactive",
+                "reporting": "inactive",
+            },
         )
     except Exception as e:
         logger.error(f"Error stopping trading system via router: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to stop trading: {str(e)}"
+        return TradingStatusResponse(
+            status="error",
+            message=f"Error stopping trading system: {str(e)}",
+            overall=None,
+            success=False,
+            components=None,
         )
 
 

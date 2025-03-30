@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import threading
+import time
 
 # Singleton instance and lock
 _trading_service_instance = None
