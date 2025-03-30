@@ -28,6 +28,35 @@ _global_executor_lock = threading.Lock()
 _executors_in_use = set()
 
 
+def clear_flow_registry():
+    """
+    Clear all registered flow managers.
+
+    This is crucial for proper system restart.
+    """
+    with _registry_lock:
+        # First stop any running flows
+        flows_to_stop = list(_flow_managers.values())
+        for flow_manager in flows_to_stop:
+            try:
+                if flow_manager.is_running():
+                    logger.info(f"Stopping flow {flow_manager.name} during registry clear")
+                    flow_manager.stop_flow()
+            except Exception as e:
+                logger.error(f"Error stopping flow {flow_manager.name}: {e}")
+
+        # Then clear the registry
+        old_count = len(_flow_managers)
+        _flow_managers.clear()
+
+        # Also clear executors
+        with _global_executor_lock:
+            executor_count = len(_executors_in_use)
+            _executors_in_use.clear()
+
+        logger.info(f"Flow registry cleared: removed {old_count} flows and {executor_count} executors")
+
+
 class BytewaxFlowManager:
     """
     Manager for Bytewax dataflow execution with graceful shutdown support.
@@ -47,6 +76,18 @@ class BytewaxFlowManager:
         with _registry_lock:
             return _flow_managers.get(flow_name)
 
+    @classmethod
+    def stop_all_flows(cls):
+        """Stop all managed flows."""
+        with _registry_lock:
+            for name, manager in _flow_managers.items():
+                try:
+                    if manager.is_running():
+                        logger.info(f"Stopping flow manager: {name}")
+                        manager.stop_flow()
+                except Exception as e:
+                    logger.error(f"Error stopping flow {name}: {e}")
+
     def __init__(self, name: str):
         self.name = name
         self.stop_event = threading.Event()
@@ -65,7 +106,14 @@ class BytewaxFlowManager:
         """
         if self._flow_running:
             self.logger.info(f"Flow {self.name} is already running")
-            return True
+            # Force reset flow state if we're trying to start a flow that thinks it's running but not actually active
+            if self.thread and not self.thread.is_alive():
+                self.logger.warning(f"Flow {self.name} marked as running but thread is dead - resetting state")
+                self._flow_running = False
+                self.stop_event.clear()
+                self.thread = None
+            else:
+                return True
 
         # Create a new stop event if an old one exists
         self.stop_event.clear()
@@ -194,17 +242,36 @@ class BytewaxFlowManager:
 
                 # Close Redis connection
                 try:
-                    # First try module-specific cleanup
+                    # First try module-specific cleanup for common flows
                     if self.name == "reporting":
-                        from src.arbirich.flows.reporting.reporting_source import reset_shared_redis_client
+                        from src.arbirich.flows.reporting.reporting_source import (
+                            reset_shared_redis_client,
+                            terminate_all_partitions,
+                        )
+
+                        terminate_all_partitions()
+                        reset_shared_redis_client()
+                        self.logger.info("Force closed reporting partitions and Redis client")
+                    elif self.name == "arbitrage":
+                        from src.arbirich.flows.arbitrage.arbitrage_source import reset_shared_redis_client
 
                         reset_shared_redis_client()
-                        self.logger.info("Force closed shared Redis client")
+                        self.logger.info("Force closed arbitrage Redis client")
+                    elif self.name == "execution":
+                        from src.arbirich.flows.execution.execution_source import reset_shared_redis_client
+
+                        reset_shared_redis_client()
+                        self.logger.info("Force closed execution Redis client")
+                    elif self.name == "ingestion":
+                        from src.arbirich.flows.ingestion.ingestion_sink import reset_shared_redis_client
+
+                        reset_shared_redis_client()
+                        self.logger.info("Force closed ingestion Redis client")
                 except Exception as e:
                     self.logger.error(f"Error closing Redis connection: {e}")
 
         self._flow_running = False
-        self.logger.info(f"Async {self.name} flow stop completed")
+        self.logger.info(f"{self.name} flow stop completed")
         return True
 
     async def stop_flow_async(self) -> bool:

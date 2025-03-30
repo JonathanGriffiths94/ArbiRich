@@ -122,90 +122,6 @@
                 </div>
             </div>
         </div>
-
-        <!-- Exchange Status Card -->
-        <div class="dashboard-card rounded-lg shadow-md p-6">
-            <h2 class="text-xl font-bold text-dollar-green mb-4">
-                Exchange Status
-            </h2>
-
-            <div class="space-y-3">
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-300">Binance</span>
-                    <span class="px-2 py-1 rounded-full text-xs font-semibold bg-green-900 text-profit-green">Connected</span>
-                </div>
-
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-300">Bybit</span>
-                    <span class="px-2 py-1 rounded-full text-xs font-semibold bg-green-900 text-profit-green">Connected</span>
-                </div>
-
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-300">KuCoin</span>
-                    <span class="px-2 py-1 rounded-full text-xs font-semibold bg-yellow-900 text-yellow-300">Rate
-                    Limited</span>
-                </div>
-
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-300">Crypto.com</span>
-                    <span class="px-2 py-1 rounded-full text-xs font-semibold bg-red-900 text-loss-red">Disconnected</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- System Logs Card -->
-        <div class="dashboard-card rounded-lg shadow-md p-6">
-            <h2 class="text-xl font-bold text-dollar-green mb-4">
-                Recent Logs
-            </h2>
-
-            <div class="h-48 overflow-y-auto bg-dark-element p-3 rounded font-mono text-xs">
-                <div class="text-gray-400">
-                    [2023-05-16 10:15:32] <span class="text-blue-400">INFO</span> - Price update
-                    completed for BTC/USDT
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:15:35] <span class="text-blue-400">INFO</span> - Price update
-                    completed for ETH/USDT
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:15:38] <span class="text-profit-green">SUCCESS</span> - Found
-                    arbitrage opportunity BTC/USDT (Binance->Bybit)
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:15:45] <span class="text-yellow-400">WARNING</span> - Rate limit
-                    approaching for KuCoin API
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:15:50] <span class="text-profit-green">SUCCESS</span> - Executed
-                    trade #12345
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:16:02] <span class="text-blue-400">INFO</span> - Price update
-                    completed for BTC/USDT
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:16:15] <span class="text-loss-red">ERROR</span> - Failed to
-                    connect to Crypto.com API
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:16:22] <span class="text-blue-400">INFO</span> - Retry attempt 1
-                    for Crypto.com connection
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:16:35] <span class="text-blue-400">INFO</span> - Price update
-                    completed for ETH/USDT
-                </div>
-                <div class="text-gray-400">
-                    [2023-05-16 10:16:38] <span class="text-loss-red">ERROR</span> - Retry failed for
-                    Crypto.com API
-                </div>
-            </div>
-
-            <div class="flex justify-end mt-4">
-                <a href="#" class="text-dollar-green hover:text-money-dark text-sm">View Full Logs</a>
-            </div>
-        </div>
     </div>
 {% endblock %}
 
@@ -237,7 +153,6 @@
         // Refresh each component
         fetchSystemStatus();
         fetchProcesses();
-        fetchExchangeStatus();
 
         // Reset refresh indicator
         updateRefreshIndicator(document.getElementById('refresh-indicator'), 15);
@@ -248,8 +163,6 @@
         // Set up initial data fetch
         fetchSystemStatus();
         fetchProcesses();
-        fetchExchangeStatus();
-        fetchLogs();
 
         // Set up activity chart
         setupActivityChart();
@@ -257,37 +170,43 @@
 
     // Fetch system status (CPU, memory, disk, uptime)
     function fetchSystemStatus() {
-        fetch('/api/monitor/system')
+        fetch('/api/monitor/system')  // This endpoint is correct
             .then(response => response.json())
             .then(data => {
                 // Update CPU usage
-                const cpuBar = document.querySelector('div:has(> span:contains("CPU Usage")) .h-2 .bg-dollar-green');
-                const cpuText = document.querySelector('div:has(> span:contains("CPU Usage")) .text-right.text-sm');
+                const cpuBar = document.querySelector('.space-y-4 div:nth-child(1) .h-2 div');
+                const cpuText = document.querySelector('.space-y-4 div:nth-child(1) .text-right.text-sm');
                 if (cpuBar && cpuText) {
                     cpuBar.style.width = `${data.cpu_usage}%`;
                     cpuText.textContent = `${data.cpu_usage}%`;
                 }
 
                 // Update Memory usage
-                const memBar = document.querySelector('div:has(> span:contains("Memory Usage")) .h-2 .bg-dollar-green');
-                const memText = document.querySelector('div:has(> span:contains("Memory Usage")) .text-right.text-sm');
+                const memBar = document.querySelector('.space-y-4 div:nth-child(2) .h-2 div');
+                const memText = document.querySelector('.space-y-4 div:nth-child(2) .text-right.text-sm');
                 if (memBar && memText) {
                     memBar.style.width = `${data.memory_usage}%`;
                     memText.textContent = `${data.memory_usage}%`;
                 }
 
                 // Update Disk usage
-                const diskBar = document.querySelector('div:has(> span:contains("Disk Usage")) .h-2 .bg-dollar-green');
-                const diskText = document.querySelector('div:has(> span:contains("Disk Usage")) .text-right.text-sm');
+                const diskBar = document.querySelector('.space-y-4 div:nth-child(3) .h-2 div');
+                const diskText = document.querySelector('.space-y-4 div:nth-child(3) .text-right.text-sm');
                 if (diskBar && diskText) {
                     diskBar.style.width = `${data.disk_usage}%`;
                     diskText.textContent = `${data.disk_usage}%`;
                 }
 
                 // Update Uptime
-                const uptimeText = document.querySelector('div.space-y-4 div.flex.justify-between span.text-gray-300 + span');
+                const uptimeText = document.querySelector('.space-y-4 div:nth-child(4) span + span');
                 if (uptimeText) {
                     uptimeText.textContent = data.uptime;
+                }
+                
+                // Check services health
+                if (data.services) {
+                    // You could add visual indicators for each service health
+                    console.log("Services health:", data.services);
                 }
             })
             .catch(error => {
@@ -297,13 +216,42 @@
 
     // Fetch active processes
     function fetchProcesses() {
-        fetch('/api/monitor/processes')
-            .then(response => response.json())
+        fetch('/api/monitor/processes')  // This endpoint is correct
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
-                const processContainer = document.querySelector('.dashboard-card:has(h2:contains("Active Processes")) .space-y-3');
-                if (processContainer) {
+                // Find the Active Processes container using standard DOM traversal
+                // First, find all dashboard cards
+                const cards = document.querySelectorAll('.dashboard-card');
+                let container = null;
+                
+                // Find the one with the Active Processes heading
+                for (const card of cards) {
+                    const heading = card.querySelector('h2');
+                    if (heading && heading.textContent.trim() === 'Active Processes') {
+                        container = card.querySelector('.space-y-3');
+                        break;
+                    }
+                }
+                
+                if (container) {
+                    console.log("Found processes container, updating with", data.length, "processes");
+                    
                     // Clear existing processes
-                    processContainer.innerHTML = '';
+                    container.innerHTML = '';
+                    
+                    // Check if we have data
+                    if (!data || data.length === 0) {
+                        const noProcessesElement = document.createElement('div');
+                        noProcessesElement.className = 'text-sm text-gray-400 italic';
+                        noProcessesElement.textContent = 'No active processes found';
+                        container.appendChild(noProcessesElement);
+                        return;
+                    }
 
                     // Add each process
                     data.forEach(process => {
@@ -319,85 +267,41 @@
                             </div>
                             <span class="text-xs bg-dark-element text-gray-400 px-2 py-1 rounded">PID: ${process.pid}</span>
                         `;
-                        processContainer.appendChild(processElement);
+                        container.appendChild(processElement);
                     });
+                } else {
+                    console.error("Could not find processes container");
                 }
             })
             .catch(error => {
                 console.error("Error fetching processes:", error);
-            });
-    }
-
-    // Fetch exchange status
-    function fetchExchangeStatus() {
-        fetch('/api/monitor/exchanges')
-            .then(response => response.json())
-            .then(data => {
-                const exchangeContainer = document.querySelector('.dashboard-card:has(h2:contains("Exchange Status")) .space-y-3');
-                if (exchangeContainer) {
-                    // Clear existing exchanges
-                    exchangeContainer.innerHTML = '';
-
-                    // Add each exchange
-                    data.forEach(exchange => {
-                        const statusClass = getStatusClass(exchange.status);
-
-                        const exchangeElement = document.createElement('div');
-                        exchangeElement.className = 'flex justify-between items-center';
-                        exchangeElement.innerHTML = `
-                            <span class="text-gray-300">${exchange.name}</span>
-                            <span class="${statusClass}">${exchange.status}</span>
-                        `;
-                        exchangeContainer.appendChild(exchangeElement);
-                    });
+                
+                // Try a fallback method to update the UI with error info
+                try {
+                    const cards = document.querySelectorAll('.dashboard-card');
+                    for (const card of cards) {
+                        const heading = card.querySelector('h2');
+                        if (heading && heading.textContent.includes('Active Processes')) {
+                            const container = card.querySelector('.space-y-3');
+                            if (container) {
+                                container.innerHTML = `
+                                    <div class="text-sm text-loss-red">
+                                        Error loading processes: ${error.message}
+                                    </div>
+                                `;
+                            }
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to show error message:", e);
                 }
-            })
-            .catch(error => {
-                console.error("Error fetching exchange status:", error);
-            });
-    }
-
-    // Get CSS class based on status
-    function getStatusClass(status) {
-        switch (status.toLowerCase()) {
-            case 'connected':
-                return 'px-2 py-1 rounded-full text-xs font-semibold bg-green-900 text-profit-green';
-            case 'rate limited':
-                return 'px-2 py-1 rounded-full text-xs font-semibold bg-yellow-900 text-yellow-300';
-            case 'disconnected':
-                return 'px-2 py-1 rounded-full text-xs font-semibold bg-red-900 text-loss-red';
-            default:
-                return 'px-2 py-1 rounded-full text-xs font-semibold bg-gray-800 text-gray-400';
-        }
-    }
-
-    // Fetch system logs
-    function fetchLogs() {
-        fetch('/api/monitor/logs')
-            .then(response => response.json())
-            .then(data => {
-                const logsContainer = document.querySelector('.dashboard-card:has(h2:contains("Recent Logs")) div.h-48');
-                if (logsContainer) {
-                    // Clear existing logs
-                    logsContainer.innerHTML = '';
-
-                    // Add each log entry
-                    data.forEach(log => {
-                        const logElement = document.createElement('div');
-                        logElement.className = 'text-gray-400';
-                        logElement.innerHTML = `[${log.timestamp}] <span class="text-${log.level_color}">${log.level}</span> - ${log.message}`;
-                        logsContainer.appendChild(logElement);
-                    });
-                }
-            })
-            .catch(error => {
-                console.error("Error fetching logs:", error);
             });
     }
 
     // Setup the activity chart
     function setupActivityChart() {
-        fetch('/api/monitor/activity')
+        fetch('/api/monitor/trading-activity')  // Using the correct endpoint path
             .then(response => response.json())
             .then(data => {
                 // Set up chart with real data
@@ -442,7 +346,7 @@
 
                 // Refresh chart every 15 seconds with new data
                 setInterval(() => {
-                    fetch('/api/monitor/activity')
+                    fetch('/api/monitor/trading-activity')  // Using the correct endpoint path
                         .then(response => response.json())
                         .then(newData => {
                             activityChart.data.labels = newData.labels;

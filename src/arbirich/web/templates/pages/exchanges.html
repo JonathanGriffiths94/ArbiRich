@@ -5,7 +5,7 @@
 {% endblock %}
 
 {% block content %}
-    <!-- Page Header - Remove the "Add New" dropdown button -->
+    <!-- Page Header with Info text -->
     <div class="flex justify-between items-center mb-6">
         <h1 class="text-3xl font-bold text-dollar-green">
             Exchanges & Pairs
@@ -13,11 +13,11 @@
         <!-- Info text explaining configuration is managed via backend -->
         <div class="text-sm text-text-dim bg-dark-element px-4 py-2 rounded-lg">
             <i class="fas fa-info-circle mr-2"></i>
-            Exchanges and pairs are configured via the system configuration
+            Exchanges and pairs are configured via active strategies
         </div>
     </div>
 
-    <!-- Tab Navigation - Keep the tab navigation -->
+    <!-- Tab Navigation -->
     <div class="border-b border-gray-800 mb-6">
         <nav class="flex space-x-8">
             <button id="exchangesTabBtn"
@@ -31,7 +31,7 @@
         </nav>
     </div>
 
-    <!-- Exchanges Tab Content - Keep display functionality but remove edit buttons -->
+    <!-- Exchanges Tab Content - Remove toggle functionality -->
     <div id="exchangesTab" class="tab-content">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
              id="exchangesList">
@@ -78,23 +78,16 @@
                         </div>
                     </div>
 
-                    <!-- Keep only the toggle functionality -->
-                    <div class="flex justify-end mt-4">
-                        <label class="switch">
-                            <input type="checkbox"
-                                   class="exchange-toggle"
-                                   data-id="{{ exchange.id }}"
-                                   data-name="{{ exchange.name }}"
-                                   {% if exchange.is_active %}checked{% endif %}>
-                            <span class="slider round"></span>
-                        </label>
+                    <!-- Remove toggle functionality, replace with explanatory text -->
+                    <div class="text-xs text-gray-400 mt-4 italic">
+                        Exchange status is controlled by active strategies
                     </div>
                 </div>
             {% endfor %}
         </div>
     </div>
 
-    <!-- Trading Pairs Tab Content - Keep filtering and display but remove edit buttons -->
+    <!-- Trading Pairs Tab Content - Remove toggle functionality -->
     <div id="pairsTab" class="tab-content hidden">
         <!-- Trading Pairs Filter -->
         <div class="flex flex-wrap items-center gap-3 mb-6">
@@ -130,81 +123,53 @@
             <table class="w-full text-sm">
                 <thead>
                     <tr class="text-gray-400 border-b border-gray-800">
-                        <th class="text-left py-3 px-4">
-                            Symbol
-                        </th>
-                        <th class="text-left py-3">
-                            Base
-                        </th>
-                        <th class="text-left py-3">
-                            Quote
-                        </th>
-                        <th class="text-center py-3">
-                            Min Amount
-                        </th>
-                        <th class="text-center py-3">
-                            Price Precision
-                        </th>
-                        <th class="text-center py-3">
-                            Status
-                        </th>
-                        <!-- Keep the toggle column but rename to "Active/Inactive" -->
-                        <th class="text-right py-3 px-4">
-                            Active/Inactive
-                        </th>
+                        <th class="text-left py-3 px-4">Symbol</th>
+                        <th class="text-left py-3">Base</th>
+                        <th class="text-left py-3">Quote</th>
+                        <th class="text-center py-3">Status</th>
                     </tr>
                 </thead>
                 <tbody id="pairsList">
-                    {% for pair in pairs %}
-                        <tr class="border-b border-gray-800 hover:bg-dark-element pair-row"
-                            data-id="{{ pair.id }}">
-                            <td class="py-3 px-4 font-medium">
-                                {{ pair.symbol }}
-                            </td>
-                            <td class="py-3">
-                                {{ pair.base_currency }}
-                            </td>
-                            <td class="py-3">
-                                {{ pair.quote_currency }}
-                            </td>
-                            <td class="py-3 text-center">
-                                {{ pair.min_amount }}
-                            </td>
-                            <td class="py-3 text-center">
-                                {{ pair.price_precision }}
-                            </td>
-                            <td class="py-3 text-center">
-                                <span class="px-2 py-1 rounded-full text-xs font-semibold inline-block min-w-[70px] text-center {% if pair.is_active %}bg-green-900 text-profit-green{% else %}bg-gray-800 text-gray-400{% endif %}">
-                                    {{ 'Active' if pair.is_active else 'Inactive' }}
-                                </span>
-                            </td>
-                            <td class="py-3 px-4 text-right">
-                                <div class="flex items-center justify-end">
-                                    <label class="switch scale-75">
-                                        <input type="checkbox"
-                                               class="pair-toggle"
-                                               data-id="{{ pair.id }}"
-                                               data-symbol="{{ pair.symbol }}"
-                                               {% if pair.is_active %}checked{% endif %}>
-                                        <span class="slider round"></span>
-                                    </label>
-                                </div>
+                    {% if pairs %}
+                        {% for pair in pairs %}
+                            <tr class="border-b border-gray-800 hover:bg-dark-element pair-row"
+                                data-id="{{ pair.id }}">
+                                <td class="py-3 px-4 font-medium">{{ pair.symbol }}</td>
+                                <td class="py-3">{{ pair.base_currency }}</td>
+                                <td class="py-3">{{ pair.quote_currency }}</td>
+                                <td class="py-3 text-center">
+                                    <span class="px-2 py-1 rounded-full text-xs font-semibold inline-block min-w-[70px] text-center {% if pair.is_active %}bg-green-900 text-profit-green{% else %}bg-gray-800 text-gray-400{% endif %}">
+                                        {{ 'Active' if pair.is_active else 'Inactive' }}
+                                    </span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="py-6 text-center text-gray-400">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                No trading pairs found
                             </td>
                         </tr>
-                    {% endfor %}
+                    {% endif %}
                 </tbody>
             </table>
         </div>
+        
+        <!-- Add explanation about pair activation -->
+        <div class="mt-6 bg-dark-element p-4 rounded-lg text-center text-text-dim text-sm">
+            <i class="fas fa-info-circle mr-2"></i>
+            Trading pairs are activated automatically when used by active strategies
+        </div>
     </div>
 
-    <!-- Toast Notification - Keep for status updates -->
+    <!-- Toast Notification -->
     <div id="toast"
          class="toast hidden fixed bottom-4 right-4 bg-dark-element text-white p-4 rounded-lg shadow-lg z-50 border-l-4 border-green-500 transition-opacity duration-300">
         <div class="flex items-center">
             <i class="fas fa-check-circle text-profit-green mr-3 text-xl"></i>
             <div>
-                <p class="font-medium" id="toastMessage">
-                </p>
+                <p class="font-medium" id="toastMessage"></p>
             </div>
         </div>
     </div>
@@ -214,13 +179,14 @@
     {{ super() }}
 
     <script>
-    document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', function() {
         // Tab functionality
         const exchangesTabBtn = document.getElementById('exchangesTabBtn');
         const pairsTabBtn = document.getElementById('pairsTabBtn');
         const exchangesTab = document.getElementById('exchangesTab');
         const pairsTab = document.getElementById('pairsTab');
 
+        // Tab switching code
         exchangesTabBtn.addEventListener('click', () => {
             // Show exchanges tab
             exchangesTabBtn.classList.add('border-dollar-green', 'text-dollar-green');
@@ -249,23 +215,7 @@
         const toast = document.getElementById('toast');
         const toastMessage = document.getElementById('toastMessage');
 
-        // Attach event handlers to exchange toggle switches
-        document.querySelectorAll('.exchange-toggle').forEach(toggle => {
-            toggle.addEventListener('change', () => toggleExchange(
-                toggle.getAttribute('data-id'),
-                toggle.getAttribute('data-name'),
-                toggle.checked
-            ));
-        });
-
-        // Attach event handlers to pair toggle switches
-        document.querySelectorAll('.pair-toggle').forEach(toggle => {
-            toggle.addEventListener('change', () => togglePair(
-                toggle.getAttribute('data-id'),
-                toggle.getAttribute('data-symbol'),
-                toggle.checked
-            ));
-        });
+        // Remove toggle event handlers since we no longer have toggles
 
         // Pair search functionality
         const pairSearchInput = document.getElementById('pairSearchInput');
@@ -275,63 +225,6 @@
         pairFilterSelect.addEventListener('change', filterPairs);
 
         // Functions
-
-        async function toggleExchange(id, name, isActive) {
-            try {
-                const endpoint = isActive ? `/api/exchanges/${name}/activate` : `/api/exchanges/${name}/deactivate`;
-                const response = await fetch(endpoint, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to update exchange status');
-                }
-
-                showToast(`Exchange ${isActive ? 'activated' : 'deactivated'} successfully`);
-
-            } catch (error) {
-                console.error('Error toggling exchange:', error);
-                showToast('Error: ' + error.message, 'error');
-
-                // Revert the toggle if there was an error
-                const toggle = document.querySelector(`.exchange-toggle[data-id="${id}"]`);
-                if (toggle) {
-                    toggle.checked = !isActive;
-                }
-            }
-        }
-
-        async function togglePair(id, symbol, isActive) {
-            try {
-                const endpoint = isActive ? `/api/pairs/${symbol}/activate` : `/api/pairs/${symbol}/deactivate`;
-                const response = await fetch(endpoint, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to update pair status');
-                }
-
-                showToast(`Pair ${isActive ? 'activated' : 'deactivated'} successfully`);
-
-            } catch (error) {
-                console.error('Error toggling pair:', error);
-                showToast('Error: ' + error.message, 'error');
-
-                // Revert the toggle if there was an error
-                const toggle = document.querySelector(`.pair-toggle[data-id="${id}"]`);
-                if (toggle) {
-                    toggle.checked = !isActive;
-                }
-            }
-        }
-
         function filterPairs() {
             const searchTerm = pairSearchInput.value.toLowerCase();
             const filterValue = pairFilterSelect.value;
@@ -339,7 +232,9 @@
 
             pairRows.forEach(row => {
                 const symbol = row.querySelector('td:first-child').textContent.toLowerCase();
-                const isActive = row.querySelector('.pair-toggle').checked;
+                // Check active status from the status badge text
+                const statusText = row.querySelector('td:nth-child(4) span').textContent.trim();
+                const isActive = statusText === 'Active';
 
                 // Apply filter based on search and status
                 const matchesSearch = symbol.includes(searchTerm);

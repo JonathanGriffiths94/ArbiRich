@@ -708,7 +708,7 @@
                         </div>
                         
                         <!-- System status indicator -->
-                        <span class="text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green hidden sm:inline-block mr-4">System Online</span>
+                        <span class="text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green hidden sm:inline-block mr-4">$ystem Online</span>
 
                         <!-- Mobile menu button -->
                         <button id="mobile-menu-button" class="sm:hidden text-gray-400 hover:text-white focus:outline-none">
@@ -760,12 +760,7 @@ $$ |  $$ |$$ |  $$ |
                                 <a href="/monitor" 
                                    class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
                                     <i class="fas fa-heartbeat w-6"></i>
-                                    <span>System Monitor</span>
-                                </a>
-                                <a href="/strategies"
-                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
-                                    <i class="fas fa-chess w-6"></i>
-                                    <span>Strategies</span>
+                                    <span>$ystem Monitor</span>
                                 </a>
                             </div>
                         </div>
@@ -775,6 +770,11 @@ $$ |  $$ |$$ |  $$ |
                                 Trading
                             </h3>
                             <div class="space-y-1">
+                                <a href="/strategies"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-chess w-6"></i>
+                                    <span>$trategies</span>
+                                </a>
                                 <a href="/opportunities" 
                                    class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
                                     <i class="fas fa-search-dollar w-6"></i>
@@ -832,12 +832,7 @@ $$ |  $$ |$$ |  $$ |
                             <a href="/monitor"
                                class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
                                 <i class="fas fa-heartbeat mr-2"></i>
-                                System Monitor
-                            </a>
-                            <a href="/strategies"
-                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
-                                <i class="fas fa-chess mr-2"></i>
-                                Strategies
+                                $ystem Monitor
                             </a>
                         </div>
 
@@ -845,6 +840,11 @@ $$ |  $$ |$$ |  $$ |
                             <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">
                                 Trading
                             </h3>
+                            <a href="/strategies"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-chess mr-2"></i>
+                                $trategies
+                            </a>
                             <a href="/opportunities"
                                class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
                                 <i class="fas fa-search-dollar mr-2"></i>
@@ -1029,6 +1029,21 @@ $$ |  $$ |$$ |  $$ |
                 });
             </script>
         {% endblock scripts %}
+        
+        <!-- Add this just before the end of the body tag in your base template -->
+        {% if debug %}
+        <div class="fixed bottom-0 left-0 w-full bg-gray-900 text-gray-300 p-4 opacity-80 text-xs">
+            <details>
+                <summary class="cursor-pointer">Debug Info (click to expand)</summary>
+                <div class="mt-2">
+                    <p><strong>Current URL:</strong> {{ request.path }}</p>
+                    <p><strong>Strategy ID:</strong> {{ strategy.id if strategy is defined else 'Not available' }}</p>
+                    <p><strong>Strategy Name:</strong> {{ strategy.name if strategy is defined else 'Not available' }}</p>
+                    <p><strong>Route endpoint:</strong> {{ request.endpoint }}</p>
+                </div>
+            </details>
+        </div>
+        {% endif %}
     </body>
 
 </html>

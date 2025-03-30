@@ -25,6 +25,11 @@ def reset_shared_redis_client():
     Reset the shared Redis client for the reporting module.
     """
     global _shared_redis_client
+
+    # First terminate all partitions to ensure they release Redis resources
+    terminate_all_partitions()
+
+    # Then close the shared client
     if _shared_redis_client:
         try:
             _shared_redis_client.close()
@@ -40,26 +45,29 @@ def terminate_all_partitions():
         partition_count = len(_active_partitions)
         logger.info(f"Terminating {partition_count} active reporting partitions")
 
+        # Create a list to avoid modifying during iteration
         for partition in list(_active_partitions):
             try:
                 if hasattr(partition, "pubsub") and partition.pubsub:
                     try:
                         partition.pubsub.unsubscribe()
                         partition.pubsub.close()
+                        logger.info(f"Closed pubsub for partition: {getattr(partition, 'channel', 'unknown')}")
                     except Exception as e:
                         logger.error(f"Error closing pubsub for partition: {e}")
 
                 # Mark as not running
                 if hasattr(partition, "_running"):
                     partition._running = False
+                    logger.info(f"Marked partition as not running: {getattr(partition, 'channel', 'unknown')}")
 
                 # Remove from active set
                 _active_partitions.remove(partition)
 
-                logger.info(f"Terminated reporting partition for channel: {getattr(partition, 'channel', 'unknown')}")
             except Exception as e:
                 logger.error(f"Error terminating reporting partition: {e}")
 
+        # Explicitly clear the active partitions set
         _active_partitions.clear()
         logger.info("All reporting partitions terminated")
 

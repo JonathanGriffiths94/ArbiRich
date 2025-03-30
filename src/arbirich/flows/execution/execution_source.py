@@ -29,11 +29,12 @@ class RedisExecutionPartition(StatefulSourcePartition):
         self.stop_event = stop_event  # Store the passed stop event
         # Use shared Redis client instead of creating a new one
         self.redis_client = get_shared_redis_client()
-        self._running = True
+        self._running = True  # Always start in running state
         self._last_activity = time.time()
         self._lock = Lock()
         self._error_backoff = 1  # Initial backoff in seconds
         self._max_backoff = 30  # Maximum backoff in seconds
+        self._initialized = False  # Track initialization state
 
         # Determine which channels to subscribe to
         self.channels_to_check = []
@@ -60,12 +61,14 @@ class RedisExecutionPartition(StatefulSourcePartition):
             self.pubsub.subscribe(channel)
             logger.info(f"Explicitly subscribed to: {channel}")
 
+        self._initialized = True
         logger.info("RedisExecutionPartition initialization complete")
 
     def next_batch(self) -> list:
         try:
-            # Check if the system is shutting down
-            if is_system_shutting_down():
+            # Only check for shutdown if we've been initialized
+            # This prevents premature shutdown during restart
+            if self._initialized and is_system_shutting_down():
                 component_id = f"execution:{self.strategy_name or 'all'}"
                 if mark_component_notified("execution", component_id):
                     logger.info(f"Stop event detected for {component_id}")
@@ -80,6 +83,11 @@ class RedisExecutionPartition(StatefulSourcePartition):
                 return []
 
             with self._lock:
+                # After a restart, make sure we're in running state if system isn't shutting down
+                if not self._running and not is_system_shutting_down():
+                    logger.info("Restoring running state after system restart")
+                    self._running = True
+
                 # Check if we should perform periodic health check
                 current_time = time.time()
                 if current_time - self._last_activity > 30:  # 30 seconds timeout
@@ -100,6 +108,8 @@ class RedisExecutionPartition(StatefulSourcePartition):
                         self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
                         for channel in self.channels_to_check:
                             self.pubsub.subscribe(channel)
+                            logger.info(f"Resubscribed to: {channel}")
+                            # Fix missing closing parenthesis on the next line
                             logger.info(f"Resubscribed to: {channel}")
 
                 if not self._running:
@@ -231,4 +241,7 @@ def reset_shared_redis_client():
                 logger.info("Closed shared Redis client in execution source")
             except Exception as e:
                 logger.warning(f"Error closing Redis client: {e}")
+
+            # Sleep briefly to allow proper client recreation
+            time.sleep(0.5)
             _shared_redis_client = None

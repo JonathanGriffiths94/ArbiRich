@@ -63,10 +63,19 @@ def stop_reporting_flow():
 
     # Now stop the flow - this code depends on how your flow is structured
     try:
-        # If the flow has a stop() method
-        if hasattr(flow, "stop") and callable(flow.stop):
-            flow.stop()
-            logger.info("Active reporting flow stop() called")
+        # First try to stop using the flow manager
+        logger.info("Stopping reporting flow using flow manager")
+        flow_manager.stop_flow()
+
+        # Also terminate all reporting partitions explicitly
+        from src.arbirich.flows.reporting.reporting_source import terminate_all_partitions
+
+        terminate_all_partitions()
+
+        # Close Redis connections
+        from src.arbirich.flows.reporting.reporting_source import reset_shared_redis_client
+
+        reset_shared_redis_client()
 
         # Wait for a short time to allow cleanup
         time.sleep(0.5)

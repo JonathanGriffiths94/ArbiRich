@@ -1,4 +1,9 @@
-"""System-wide state management for graceful shutdown coordination."""
+"""
+System state management for ArbiRich trading platform.
+
+Provides functions to handle system-wide shutdown flag and component notification states.
+This module is used by various components to coordinate graceful shutdown.
+"""
 
 import logging
 import threading
@@ -6,85 +11,103 @@ from typing import Dict, Set
 
 logger = logging.getLogger(__name__)
 
-# Global shutdown flag with thread safety
+# Global state flags
 _system_shutting_down = False
-_shutdown_lock = threading.Lock()
+_shutdown_lock = threading.RLock()
 
-# Track which components have already received shutdown signals
+# Track which components have been notified of shutdown
 _notified_components: Dict[str, Set[str]] = {
-    "ingestion": set(),
     "arbitrage": set(),
     "execution": set(),
+    "ingestion": set(),
     "reporting": set(),
 }
-_components_lock = threading.RLock()
-
-
-def mark_system_shutdown(shutting_down: bool):
-    """
-    Mark the system as shutting down or not shutting down.
-
-    Args:
-        shutting_down: True to mark as shutting down, False otherwise.
-    """
-    global _system_shutting_down
-    with _shutdown_lock:
-        _system_shutting_down = shutting_down
-        logger.info(f"System shutdown flag set to {shutting_down}")
-        logger.debug(f"Current shutdown flag state: {_system_shutting_down}")
+_notification_lock = threading.RLock()
 
 
 def is_system_shutting_down() -> bool:
-    """
-    Check if the system is shutting down.
+    """Check if the system is in the process of shutting down.
 
     Returns:
-        True if the system is shutting down, False otherwise.
+        bool: True if the system is shutting down, False otherwise
     """
+    global _system_shutting_down
+    return _system_shutting_down
+
+
+def mark_system_shutdown(shutting_down: bool = True) -> None:
+    """Set the system shutdown flag.
+
+    Args:
+        shutting_down: Whether the system is shutting down
+    """
+    global _system_shutting_down
     with _shutdown_lock:
-        logger.debug(f"Checking shutdown flag: {_system_shutting_down}")
-        return _system_shutting_down
+        old_value = _system_shutting_down
+        _system_shutting_down = shutting_down
+
+        # Log only if the value changes
+        if old_value != shutting_down:
+            action = "starting" if not shutting_down else "shutting down"
+            logger.info(f"System state changed: {action}")
 
 
-# Update the mark_component_notified function to reduce debug logging
 def mark_component_notified(component_type: str, component_id: str) -> bool:
-    """
-    Mark a specific component as having been notified of shutdown.
-    Returns True if this is the first notification for this component, False if already notified.
+    """Mark a component as having been notified of shutdown.
 
-    This function is optimized to reduce excessive logging during shutdown.
+    This helps prevent duplicate shutdown messages/actions for the same component.
+
+    Args:
+        component_type: Type of component ("arbitrage", "execution", etc.)
+        component_id: Unique identifier for the specific component instance
+
+    Returns:
+        bool: True if this is the first notification for this component, False if already notified
     """
-    with _components_lock:
-        # Initialize component type if needed
+    global _notified_components
+
+    with _notification_lock:
+        # Ensure the component type exists
         if component_type not in _notified_components:
             _notified_components[component_type] = set()
 
-        # Check if already notified - silently return false
+        # Check if this component was already notified
         if component_id in _notified_components[component_type]:
-            return False  # Already notified
+            return False
 
-        # First time notification - log and track
+        # Mark as notified
         _notified_components[component_type].add(component_id)
-        logger.info(f"Component {component_id} of type {component_type} marked as notified for shutdown")
-        return True  # First notification
+        return True
 
 
-def reset_notification_state():
-    """Reset the notification state and shutdown flag for system restart"""
-    global _system_shutting_down, _notified_components
+def reset_notification_state() -> None:
+    """Reset the notification state for all components.
 
-    with _shutdown_lock:
-        _system_shutting_down = False
+    This should be called after a shutdown to prepare for next startup.
+    """
+    global _notified_components
 
-    with _components_lock:
+    with _notification_lock:
         for component_type in _notified_components:
             _notified_components[component_type].clear()
 
-    logger.info("System state reset - shutdown flag and notification state cleared")
-    logger.debug(f"Current shutdown flag: {_system_shutting_down}, Notified components: {_notified_components}")
+        logger.info("Component notification states reset")
 
 
-def set_stop_event():
-    """Signal all execution partitions to stop."""
+def get_notification_stats() -> Dict[str, int]:
+    """Get statistics about notified components.
+
+    Returns:
+        Dict mapping component types to the number of notified instances
+    """
+    with _notification_lock:
+        return {component_type: len(instances) for component_type, instances in _notified_components.items()}
+
+
+def set_stop_event() -> None:
+    """Signal all execution partitions to stop.
+
+    This is a shortcut function to set the system shutdown flag.
+    """
     mark_system_shutdown(True)
     logger.debug("Stop event set for all execution partitions")

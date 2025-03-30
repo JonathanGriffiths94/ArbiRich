@@ -68,8 +68,8 @@
                 {% set strategy = ranked_strategies[i] %}
                 {% set rank_class="bg-yellow-400/20 border-yellow-400" if i==0 else "bg-gray-400/20 border-gray-400" if i==1 else "bg-amber-700/20 border-amber-700" %}
                 {% set rank_text = "🥇 1st Place" if i==0 else "🥈 2nd Place" if i==1 else "🥉 3rd Place" %}
-                <!-- Wrap the card in an anchor tag -->
-                <a href="/strategies/{{ strategy.id }}"
+                <!-- Wrap the card in an anchor tag - Using name instead of id -->
+                <a href="/strategy/{{ strategy.name }}"
                    class="block hover:transform hover:scale-[1.02] transition-all">
                     <div class="bg-dark-card rounded-lg shadow-md p-5 border-l-4 {{ rank_class }} flex flex-col">
                         <div class="flex justify-between items-center mb-4">
@@ -116,9 +116,9 @@
                             <div class="space-x-2">
                                 <a href="/strategy/{{ strategy.name }}" class="text-dollar-green hover:underline">Overview</a>
                                 <span class="text-gray-500">|</span>
-                                <a href="/strategy/{{ strategy.name }}/details" class="text-dollar-green hover:underline">Details</a>
+                                <a href="/strategy/{{ strategy.name }}?view=detail" class="text-dollar-green hover:underline">Details</a>
                                 <span class="text-gray-500">|</span>
-                                <a href="/strategy/{{ strategy.name }}/metrics" class="text-dollar-green hover:underline">Metrics</a>
+                                <a href="/strategy/{{ strategy.name }}?view=metrics" class="text-dollar-green hover:underline">Metrics</a>
                             </div>
                             <label class="switch" onclick="event.stopPropagation()">
                                 <input type="checkbox"
@@ -233,8 +233,8 @@
         {% if live_strategies|length > 0 %}
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {% for strategy in live_strategies %}
-                    <!-- Wrap in anchor tag -->
-                    <a href="/strategies/{{ strategy.id }}"
+                    <!-- Wrap in anchor tag - Using name instead of id -->
+                    <a href="/strategy/{{ strategy.name }}"
                        class="block hover:transform hover:scale-[1.02] transition-all">
                         <div class="bg-dark-card rounded-lg p-4 border-l-4 border-blue-400">
                             <div class="flex justify-between items-start mb-3">
@@ -308,8 +308,8 @@
         {% if active_non_trading_strategies|length > 0 %}
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {% for strategy in active_non_trading_strategies %}
-                    <!-- Wrap in anchor tag -->
-                    <a href="/strategies/{{ strategy.id }}"
+                    <!-- Wrap in anchor tag - Using name instead of id -->
+                    <a href="/strategy/{{ strategy.name }}"
                        class="block hover:transform hover:scale-[1.02] transition-all">
                         <div class="bg-dark-card rounded-lg p-4 border-l-4 border-profit-green">
                             <div class="flex justify-between items-start mb-3">
@@ -380,8 +380,8 @@
         {% if inactive_strategies|length > 0 %}
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {% for strategy in inactive_strategies %}
-                    <!-- Wrap in anchor tag -->
-                    <a href="/strategies/{{ strategy.id }}"
+                    <!-- Wrap in anchor tag - Using name instead of id -->
+                    <a href="/strategy/{{ strategy.name }}"
                        class="block hover:transform hover:scale-[1.02] transition-all">
                         <div class="bg-dark-card rounded-lg p-4 border-l-4 border-gray-700 opacity-80">
                             <div class="flex justify-between items-start mb-3">
@@ -440,18 +440,22 @@
         const toggles = document.querySelectorAll('.strategy-toggle');
 
         toggles.forEach(toggle => {
-            toggle.addEventListener('change', function () {
+            toggle.addEventListener('change', function (event) {
+                // Prevent default behavior and propagation
+                event.preventDefault();
+                event.stopPropagation();
+                
                 const strategyId = this.dataset.id;
                 const strategyName = this.dataset.name;
                 const isActive = this.checked;
 
                 // Call API to update strategy status
                 const endpoint = isActive ?
-                    `/api/strategies/${strategyName}/start` :
-                    `/api/strategies/${strategyName}/stop`;
+                    `/api/strategies/${strategyName}/activate` :
+                    `/api/strategies/${strategyName}/deactivate`;
 
                 fetch(endpoint, {
-                    method: 'POST',
+                    method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json'
                     }
@@ -621,6 +625,14 @@
 
         // Attach event handlers for trading control buttons
         startTradingBtn.addEventListener('click', function () {
+            // Disable button immediately to prevent multiple clicks
+            startTradingBtn.disabled = true;
+            startTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            
+            // Add loading indicator
+            const originalText = startTradingBtn.innerHTML;
+            startTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Starting...';
+
             fetch('/api/trading/start', {
                 method: 'POST',
                 headers: {
@@ -635,11 +647,24 @@
                 .catch(error => {
                     console.error('Error starting trading:', error);
                     showNotification('Failed to start trading', 'error');
+                    
+                    // Re-enable button on error
+                    startTradingBtn.disabled = false;
+                    startTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    startTradingBtn.innerHTML = originalText;
                 });
         });
 
         stopTradingBtn.addEventListener('click', function () {
             if (confirm('Are you sure you want to stop all trading activities?')) {
+                // Disable button immediately to prevent multiple clicks
+                stopTradingBtn.disabled = true;
+                stopTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                
+                // Add loading indicator
+                const originalText = stopTradingBtn.innerHTML;
+                stopTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Stopping...';
+                
                 fetch('/api/trading/stop', {
                     method: 'POST',
                     headers: {
@@ -654,12 +679,25 @@
                     .catch(error => {
                         console.error('Error stopping trading:', error);
                         showNotification('Failed to stop trading', 'error');
+                        
+                        // Re-enable button on error
+                        stopTradingBtn.disabled = false;
+                        stopTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        stopTradingBtn.innerHTML = originalText;
                     });
             }
         });
 
         restartTradingBtn.addEventListener('click', function () {
             if (confirm('Are you sure you want to restart the trading system?')) {
+                // Disable button immediately to prevent multiple clicks
+                restartTradingBtn.disabled = true;
+                restartTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                
+                // Add loading indicator
+                const originalText = restartTradingBtn.innerHTML;
+                restartTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Restarting...';
+                
                 fetch('/api/trading/restart', {
                     method: 'POST',
                     headers: {
@@ -674,6 +712,11 @@
                     .catch(error => {
                         console.error('Error restarting trading:', error);
                         showNotification('Failed to restart trading', 'error');
+                        
+                        // Re-enable button on error
+                        restartTradingBtn.disabled = false;
+                        restartTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        restartTradingBtn.innerHTML = originalText;
                     });
             }
         });

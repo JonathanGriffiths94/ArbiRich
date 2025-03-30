@@ -6,23 +6,80 @@
 
 {% block content %}
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-lime-green">
-            {{ strategy.name }}
-        </h1>
+        <div class="flex items-center">
+            <h1 class="text-3xl font-bold text-lime-green mr-4">
+                {{ strategy.name }}
+            </h1>
+            <!-- Add strategy activation toggle -->
+            <div class="flex items-center bg-dark-element px-3 py-1 rounded-lg">
+                <span class="text-sm mr-2 text-gray-300">Status:</span>
+                <label class="switch">
+                    <input type="checkbox"
+                           id="strategy-status-toggle"
+                           data-id="{{ strategy.id }}"
+                           data-name="{{ strategy.name }}"
+                           {% if strategy.is_active %}checked{% endif %}>
+                    <span class="slider round"></span>
+                </label>
+                <span class="ml-2 text-sm {% if strategy.is_active %}text-profit-green{% else %}text-gray-400{% endif %}" id="strategy-status-text">
+                    {{ 'Active' if strategy.is_active else 'Inactive' }}
+                </span>
+            </div>
+        </div>
         <div class="flex space-x-3">
-            <a href="/strategies/{{ strategy.id }}/metrics" 
+            <a href="/strategy/{{ strategy.name }}/metrics" 
                class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300 flex items-center">
-                <i class="fas fa-chart-bar mr-2"></i> View Metrics
+                <i class="fas fa-chart-bar mr-2"></i> Metrics
             </a>
-            <a href="/strategies/{{ strategy.id }}/details"
+            <a href="/strategy/{{ strategy.name }}/detail"
                class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300 flex items-center">
-                <i class="fas fa-cogs mr-2"></i> Strategy Details
+                <i class="fas fa-cogs mr-2"></i> Details
             </a>
             <a href="/strategies"
                class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300">
                 <i class="fas fa-list mr-2"></i> All Strategies
             </a>
         </div>
+    </div>
+
+    <!-- System status indicator and trading controls -->
+    <div class="flex justify-between items-center bg-dark-element rounded-lg p-4 mb-6 border border-gray-800">
+        <div class="flex items-center">
+            <span id="page-system-trading-dot"
+                  class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
+            <span class="text-sm">System Status:</span>
+            <span id="page-system-trading-text" class="ml-2 font-medium text-gray-300">Checking...</span>
+        </div>
+        <div class="flex space-x-2">
+            <button id="start-trading-btn"
+                    class="bg-dark-card hover:bg-gray-700 text-profit-green py-2 px-4 rounded transition-all flex items-center border border-profit-green/30">
+                <i class="fas fa-play mr-2"></i> Start Trading
+            </button>
+            <button id="stop-trading-btn"
+                    class="bg-dark-card hover:bg-gray-700 text-loss-red py-2 px-4 rounded transition-all flex items-center border border-loss-red/30">
+                <i class="fas fa-stop mr-2"></i> Stop Trading
+            </button>
+            <button id="restart-trading-btn"
+                    class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-4 rounded transition-all flex items-center border border-dollar-green/30">
+                <i class="fas fa-sync-alt mr-2"></i> Restart Trading
+            </button>
+        </div>
+    </div>
+
+    <!-- Navigation tabs -->
+    <div class="mb-6 border-b border-dark-element pb-2 flex items-center">
+        <a href="/strategy/{{ strategy.name }}" 
+           class="mr-4 pb-2 text-dollar-green border-b-2 border-dollar-green font-medium">
+           Overview
+        </a>
+        <a href="/strategy/{{ strategy.name }}/detail" 
+           class="mr-4 pb-2 text-gray-400 hover:text-gray-300">
+           Details
+        </a>
+        <a href="/strategy/{{ strategy.name }}/metrics" 
+           class="mr-4 pb-2 text-gray-400 hover:text-gray-300">
+           Metrics
+        </a>
     </div>
 
     <!-- Strategy Overview Card -->
@@ -81,7 +138,7 @@
                     <h2 class="text-xl font-bold text-dollar-green">
                         Performance Metrics
                     </h2>
-                    <a href="/strategies/{{ strategy.id }}/calculate-metrics?period_days=30"
+                    <a href="/strategy/{{ strategy.name }}?action=calculate&period=30"
                        class="text-sm text-lime-green hover:text-lime-700 hover:underline">
                         Recalculate
                     </a>
@@ -277,7 +334,7 @@
                 <p class="text-lg text-gray-400 mb-4">
                     No metrics available for this strategy.
                 </p>
-                <a href="/strategies/{{ strategy.id }}/calculate-metrics?period_days=30"
+                <a href="/strategy/{{ strategy.name }}?action=calculate&period=30"
                    class="bg-lime-green hover:bg-lime-700 text-black py-2 px-4 rounded-lg transition-colors duration-300">
                     Calculate Metrics
                 </a>
@@ -361,7 +418,7 @@
             <h2 class="text-xl font-bold text-dollar-green">
                 Performance Metrics
             </h2>
-            <a href="/strategies/{{ strategy.id }}/calculate-metrics?period_days=30"
+            <a href="/strategy/{{ strategy.name }}?action=calculate&period=30"
                class="text-xs bg-dollar-green text-dark-bg py-1 px-2 rounded">
                 Recalculate
             </a>
@@ -412,12 +469,12 @@
     <div class="mt-6">
         <h3 class="text-lg font-semibold text-dollar-green mb-2">Recalculate Metrics</h3>
         <div class="flex items-center space-x-4">
-            <a href="/strategies/{{ strategy.id }}/calculate-metrics?period_days=30" 
+            <a href="/strategy/{{ strategy.name }}?action=calculate&period=30" 
                class="inline-flex items-center px-4 py-2 bg-dollar-green hover:bg-money-dark text-dark-bg rounded-md transition-colors duration-300">
                 <i class="fas fa-calculator mr-2"></i>
                 Recalculate Last 30 Days
             </a>
-            <a href="/strategies/{{ strategy.id }}/calculate-metrics?period_days=all" 
+            <a href="/strategy/{{ strategy.name }}?action=calculate&period=all" 
                class="inline-flex items-center px-4 py-2 bg-dark-element hover:bg-dark-card text-dollar-green border border-dollar-green rounded-md transition-colors duration-300">
                 <i class="fas fa-calculator mr-2"></i>
                 Recalculate All Time
@@ -503,4 +560,327 @@
             </p>
         {% endif %}
     </div>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const strategyToggle = document.getElementById('strategy-status-toggle');
+            const statusText = document.getElementById('strategy-status-text');
+            
+            if (strategyToggle) {
+                strategyToggle.addEventListener('change', function() {
+                    const strategyName = this.dataset.name;
+                    const isActive = this.checked;
+                    
+                    // Disable toggle to prevent multiple clicks
+                    this.disabled = true;
+                    
+                    // Call API to update strategy status
+                    const endpoint = isActive ? 
+                        `/api/strategies/${strategyName}/activate` : 
+                        `/api/strategies/${strategyName}/deactivate`;
+                    
+                    fetch(endpoint, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Failed to update strategy status');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log(`Strategy ${strategyName} ${isActive ? 'activated' : 'deactivated'} successfully`);
+                        
+                        // Update status text
+                        statusText.textContent = isActive ? 'Active' : 'Inactive';
+                        statusText.className = `ml-2 text-sm ${isActive ? 'text-profit-green' : 'text-gray-400'}`;
+                        
+                        // Show success message
+                        showNotification(`Strategy ${isActive ? 'activated' : 'deactivated'} successfully`, 'success');
+                        
+                        // Re-enable toggle after success
+                        this.disabled = false;
+                    })
+                    .catch(error => {
+                        console.error('Error updating strategy status:', error);
+                        
+                        // Revert toggle state
+                        this.checked = !isActive;
+                        
+                        // Re-enable toggle
+                        this.disabled = false;
+                        
+                        // Show error message
+                        showNotification('Error updating strategy status', 'error');
+                    });
+                });
+            }
+            
+            // Notification function
+            function showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-300 ${
+                    type === 'error' ? 'bg-loss-red/90 text-white' :
+                    type === 'success' ? 'bg-profit-green/90 text-white' :
+                    'bg-dark-element text-white'
+                }`;
+                
+                notification.innerHTML = message;
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    setTimeout(() => {
+                        document.body.removeChild(notification);
+                    }, 300);
+                }, 3000);
+            }
+
+            // Initialize trading control buttons and status indicator
+            initTradingControls();
+        });
+        
+        function initTradingControls() {
+            // Get button references
+            const startTradingBtn = document.getElementById('start-trading-btn');
+            const stopTradingBtn = document.getElementById('stop-trading-btn');
+            const restartTradingBtn = document.getElementById('restart-trading-btn');
+
+            // Initialize status indicators
+            const pageStatusDot = document.getElementById('page-system-trading-dot');
+            const pageStatusText = document.getElementById('page-system-trading-text');
+
+            // Set up trading status check
+            function checkTradingStatus() {
+                fetch('/api/trading/status')
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        const isActive = data.overall === true || data.status === 'operational';
+
+                        // Update trading status indicator
+                        if (isActive) {
+                            pageStatusDot.className = 'h-3 w-3 rounded-full bg-profit-green mr-2 pulse-green';
+                            pageStatusText.className = 'ml-2 font-medium text-profit-green';
+                            pageStatusText.textContent = 'Trading Active';
+
+                            startTradingBtn.disabled = true;
+                            stopTradingBtn.disabled = false;
+                            startTradingBtn.classList.add('opacity-50');
+                            stopTradingBtn.classList.remove('opacity-50');
+                        } else {
+                            pageStatusDot.className = 'h-3 w-3 rounded-full bg-gray-500 mr-2';
+                            pageStatusText.className = 'ml-2 font-medium';
+                            pageStatusText.textContent = 'Trading Inactive';
+
+                            startTradingBtn.disabled = false;
+                            stopTradingBtn.disabled = true;
+                            startTradingBtn.classList.remove('opacity-50');
+                            stopTradingBtn.classList.add('opacity-50');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching trading status:', error);
+                        pageStatusDot.className = 'h-3 w-3 rounded-full bg-loss-red mr-2';
+                        pageStatusText.className = 'ml-2 font-medium text-loss-red';
+                        pageStatusText.textContent = 'Status Error';
+                    });
+            }
+
+            // Attach event handlers for trading control buttons
+            startTradingBtn.addEventListener('click', function () {
+                // Disable button immediately to prevent multiple clicks
+                startTradingBtn.disabled = true;
+                startTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                
+                // Add loading indicator
+                const originalText = startTradingBtn.innerHTML;
+                startTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Starting...';
+
+                fetch('/api/trading/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        checkTradingStatus();
+                        showNotification('Trading started successfully', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error starting trading:', error);
+                        showNotification('Failed to start trading', 'error');
+                        
+                        // Re-enable button on error
+                        startTradingBtn.disabled = false;
+                        startTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        startTradingBtn.innerHTML = originalText;
+                    });
+            });
+
+            stopTradingBtn.addEventListener('click', function () {
+                if (confirm('Are you sure you want to stop all trading activities?')) {
+                    // Disable button immediately to prevent multiple clicks
+                    stopTradingBtn.disabled = true;
+                    stopTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    
+                    // Add loading indicator
+                    const originalText = stopTradingBtn.innerHTML;
+                    stopTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Stopping...';
+                    
+                    fetch('/api/trading/stop', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            checkTradingStatus();
+                            showNotification('Trading stopped successfully', 'success');
+                        })
+                        .catch(error => {
+                            console.error('Error stopping trading:', error);
+                            showNotification('Failed to stop trading', 'error');
+                            
+                            // Re-enable button on error
+                            stopTradingBtn.disabled = false;
+                            stopTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                            stopTradingBtn.innerHTML = originalText;
+                        });
+                }
+            });
+
+            restartTradingBtn.addEventListener('click', function () {
+                if (confirm('Are you sure you want to restart the trading system?')) {
+                    // Disable button immediately to prevent multiple clicks
+                    restartTradingBtn.disabled = true;
+                    restartTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    
+                    // Add loading indicator
+                    const originalText = restartTradingBtn.innerHTML;
+                    restartTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Restarting...';
+                    
+                    fetch('/api/trading/restart', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            checkTradingStatus();
+                            showNotification('Trading system restarted successfully', 'success');
+                        })
+                        .catch(error => {
+                            console.error('Error restarting trading:', error);
+                            showNotification('Failed to restart trading', 'error');
+                            
+                            // Re-enable button on error
+                            restartTradingBtn.disabled = false;
+                            restartTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                            restartTradingBtn.innerHTML = originalText;
+                        });
+                }
+            });
+
+            // Check status immediately and then periodically
+            checkTradingStatus();
+            setInterval(checkTradingStatus, 10000);
+        }
+        
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-300 ${
+                type === 'error' ? 'bg-loss-red/90 text-white' :
+                type === 'success' ? 'bg-profit-green/90 text-white' :
+                'bg-dark-element text-white'
+            }`;
+            
+            notification.innerHTML = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    document.body.removeChild(notification);
+                }, 300);
+            }, 3000);
+        }
+    </script>
+    
+    <!-- Add toggle switch styling if not already included -->
+    <style>
+        /* Toggle switch styling */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #2c3a33;
+            transition: .4s;
+            border: 1px solid rgba(133, 187, 101, 0.3);
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 2px;
+            background-color: #666;
+            transition: .4s;
+        }
+        
+        input:checked + .slider {
+            background-color: rgba(133, 187, 101, 0.2);
+            border-color: rgba(133, 187, 101, 0.6);
+        }
+        
+        input:checked + .slider:before {
+            background-color: #85bb65;
+            transform: translateX(16px);
+        }
+        
+        .slider.round {
+            border-radius: 20px;
+        }
+        
+        .slider.round:before {
+            border-radius: 50%;
+        }
+        
+        /* Disabled state styling */
+        .switch input:disabled + .slider {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
 {% endblock %}

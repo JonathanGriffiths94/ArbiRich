@@ -380,6 +380,18 @@ async def execute_phased_shutdown(emergency_timeout=30):
 
         # Final phase - cleanup complete
         logger.info("Phased shutdown completed successfully")
+
+        # NEW: Reset trading service component states
+        try:
+            from src.arbirich.core.trading_service import get_trading_service
+
+            trading_service = get_trading_service()
+            if hasattr(trading_service, "_reset_all_component_states"):
+                trading_service._reset_all_component_states()
+                logger.info("Trading service component states reset")
+        except Exception as e:
+            logger.error(f"Error resetting component states: {e}")
+
         mark_phase_complete(ShutdownPhase.COMPLETED)
 
         # IMPORTANT: Cancel the emergency exit timer since shutdown succeeded

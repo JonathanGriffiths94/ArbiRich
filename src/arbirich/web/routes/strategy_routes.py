@@ -1,14 +1,12 @@
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
 
 from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
-from src.arbirich.models.models import StrategyExchangeMetrics, StrategyTradingPairMetrics
 from src.arbirich.services.database.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
@@ -17,7 +15,6 @@ router = APIRouter()
 templates = Jinja2Templates(directory="src/arbirich/web/templates")
 
 
-# Fix the dependency to return a database service instance instead of passing it directly
 def get_db_service():
     """Get a database service instance."""
     db = DatabaseService()
@@ -60,14 +57,19 @@ async def get_strategies(request: Request, db: DatabaseService = Depends(get_db_
     except Exception as e:
         logger.error(f"Error in get_strategies: {e}", exc_info=True)
         return templates.TemplateResponse(
-            "error.html", {"request": request, "error_message": f"Error loading strategies: {str(e)}"}
+            "errors/error.html", {"request": request, "error_message": f"Error loading strategies: {str(e)}"}
         )
 
 
-# Update the get_strategy endpoint to include metrics data
 @router.get("/strategy/{strategy_name}", response_class=HTMLResponse)
-async def get_strategy(request: Request, strategy_name: str, db: DatabaseService = Depends(get_db_service)):
-    """Get details for a specific strategy."""
+async def get_strategy_overview(
+    request: Request,
+    strategy_name: str,
+    action: Optional[str] = None,
+    period: Optional[str] = None,
+    db: DatabaseService = Depends(get_db_service),
+):
+    """Get overview details for a specific strategy."""
     try:
         # Get all strategies
         strategies = db.get_all_strategies()
@@ -77,7 +79,98 @@ async def get_strategy(request: Request, strategy_name: str, db: DatabaseService
         if not strategy:
             logger.error(f"Strategy {strategy_name} not found")
             return templates.TemplateResponse(
-                "error.html",
+                "errors/error.html",
+                {
+                    "request": request,
+                    "error_message": f"Strategy '{strategy_name}' not found",
+                    "back_url": "/strategies",
+                },
+            )
+
+        # Handle 'action' parameter - for example, calculating metrics
+        if action == "calculate":
+            # Convert period parameter to days
+            days = 30  # Default
+            if period == "all":
+                days = 365  # Use a large number for "all time"
+            elif period and period.isdigit():
+                days = int(period)
+
+            # Calculate metrics
+            metrics_service = StrategyMetricsService(db)
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+
+            try:
+                metrics = metrics_service.calculate_strategy_metrics(db.session, strategy.id, start_date, end_date)
+                logger.info(f"Metrics calculated for {strategy_name}, period: {period}")
+            except Exception as calc_error:
+                logger.error(f"Error calculating metrics: {calc_error}")
+                # Continue despite calculation error
+
+            # Redirect back to the strategy page
+            return RedirectResponse(url=f"/strategy/{strategy_name}")
+
+        # Get strategy metrics
+        metrics_service = StrategyMetricsService(db)
+        metrics = metrics_service.get_latest_metrics_for_strategy(strategy.id)
+
+        # Get trading pair and exchange metrics
+        pair_metrics = []
+        exchange_metrics = []
+        if metrics:
+            if hasattr(metrics, "trading_pair_metrics"):
+                pair_metrics = metrics.trading_pair_metrics
+            if hasattr(metrics, "exchange_metrics"):
+                exchange_metrics = metrics.exchange_metrics
+
+        # Get executions and opportunities
+        executions = db.get_executions_by_strategy(strategy_name)
+        executions.sort(key=lambda x: x.execution_timestamp, reverse=True)
+
+        # Try to get opportunities if available
+        opportunities = []
+        try:
+            opportunities = db.get_opportunities_by_strategy(strategy_name)
+            opportunities.sort(key=lambda x: x.opportunity_timestamp, reverse=True)
+        except Exception as opp_error:
+            logger.warning(f"Could not load opportunities: {opp_error}")
+
+        # Common template context - add the view parameter
+        context = {
+            "request": request,
+            "strategy": strategy,
+            "metrics": metrics,
+            "pair_metrics": pair_metrics,
+            "exchange_metrics": exchange_metrics,
+            "executions": executions[:10],  # Show only the 10 most recent
+            "opportunities": opportunities[:10] if opportunities else [],
+        }
+
+        logger.info(f"Rendering strategy overview template for: {strategy_name}")
+        return templates.TemplateResponse("pages/strategy.html", context)
+
+    except Exception as e:
+        logger.error(f"Error getting strategy {strategy_name}: {e}", exc_info=True)
+        return templates.TemplateResponse(
+            "errors/error.html",
+            {"request": request, "error_message": f"Error getting strategy: {str(e)}", "back_url": "/strategies"},
+        )
+
+
+@router.get("/strategy/{strategy_name}/detail", response_class=HTMLResponse)
+async def get_strategy_detail(request: Request, strategy_name: str, db: DatabaseService = Depends(get_db_service)):
+    """Get detailed view for a specific strategy."""
+    try:
+        # Get all strategies
+        strategies = db.get_all_strategies()
+
+        # Find the strategy by name
+        strategy = next((s for s in strategies if s.name == strategy_name), None)
+        if not strategy:
+            logger.error(f"Strategy {strategy_name} not found")
+            return templates.TemplateResponse(
+                "errors/error.html",
                 {
                     "request": request,
                     "error_message": f"Strategy '{strategy_name}' not found",
@@ -89,66 +182,110 @@ async def get_strategy(request: Request, strategy_name: str, db: DatabaseService
         metrics_service = StrategyMetricsService(db)
         metrics = metrics_service.get_latest_metrics_for_strategy(strategy.id)
 
-        # Get opportunities and executions
-        opportunities = db.get_opportunities_by_strategy(strategy_name)
-        executions = db.get_executions_by_strategy(strategy_name)
-
-        # Sort by timestamp (newest first)
-        opportunities.sort(key=lambda x: x.opportunity_timestamp, reverse=True)
-        executions.sort(key=lambda x: x.execution_timestamp, reverse=True)
-
-        # Calculate performance metrics
-        total_opportunities = len(opportunities)
-        total_executions = len(executions)
-        execution_rate = (total_executions / total_opportunities * 100) if total_opportunities > 0 else 0
-
-        # Group executions by pair for a basic chart
-        pairs_data = {}
-        for execution in executions:
-            if execution.pair not in pairs_data:
-                pairs_data[execution.pair] = 0
-            profit = (execution.executed_sell_price - execution.executed_buy_price) * execution.volume
-            pairs_data[execution.pair] += profit
-
-        chart_labels = list(pairs_data.keys())
-        chart_data = list(pairs_data.values())
-
-        # Get any trading pair and exchange metrics if available
+        # Get trading pair and exchange metrics
         pair_metrics = []
         exchange_metrics = []
+        if metrics:
+            if hasattr(metrics, "trading_pair_metrics"):
+                pair_metrics = metrics.trading_pair_metrics
+            if hasattr(metrics, "exchange_metrics"):
+                exchange_metrics = metrics.exchange_metrics
 
-        if metrics and hasattr(metrics, "trading_pair_metrics"):
-            pair_metrics = metrics.trading_pair_metrics
+        # Get executions
+        executions = db.get_executions_by_strategy(strategy_name)
+        executions.sort(key=lambda x: x.execution_timestamp, reverse=True)
 
-        if metrics and hasattr(metrics, "exchange_metrics"):
-            exchange_metrics = metrics.exchange_metrics
+        context = {
+            "request": request,
+            "strategy": strategy,
+            "metrics": metrics,
+            "pair_metrics": pair_metrics,
+            "exchange_metrics": exchange_metrics,
+            "executions": executions[:10],  # Show only the 10 most recent
+        }
 
+        logger.info(f"Rendering strategy detail template for: {strategy_name}")
+        return templates.TemplateResponse("strategy_detail.html", context)
+
+    except Exception as e:
+        logger.error(f"Error getting strategy detail for {strategy_name}: {e}", exc_info=True)
         return templates.TemplateResponse(
-            "strategy.html",
+            "errors/error.html",
             {
                 "request": request,
-                "strategy": strategy,
-                "metrics": metrics,
-                "pair_metrics": pair_metrics,
-                "exchange_metrics": exchange_metrics,
-                "opportunities": opportunities[:10],  # Show only the 10 most recent
-                "executions": executions[:10],  # Show only the 10 most recent
-                "total_opportunities": total_opportunities,
-                "total_executions": total_executions,
-                "execution_rate": execution_rate,
-                "chart_labels": chart_labels,
-                "chart_data": chart_data,
+                "error_message": f"Error getting strategy detail: {str(e)}",
+                "back_url": "/strategies",
             },
         )
+
+
+@router.get("/strategy/{strategy_name}/metrics", response_class=HTMLResponse)
+async def get_strategy_metrics(
+    request: Request, strategy_name: str, period: Optional[str] = None, db: DatabaseService = Depends(get_db_service)
+):
+    """Get metrics view for a specific strategy."""
+    try:
+        # Get all strategies
+        strategies = db.get_all_strategies()
+
+        # Find the strategy by name
+        strategy = next((s for s in strategies if s.name == strategy_name), None)
+        if not strategy:
+            logger.error(f"Strategy {strategy_name} not found")
+            return templates.TemplateResponse(
+                "errors/error.html",
+                {
+                    "request": request,
+                    "error_message": f"Strategy '{strategy_name}' not found",
+                    "back_url": "/strategies",
+                },
+            )
+
+        # Get strategy metrics
+        metrics_service = StrategyMetricsService(db)
+        metrics = metrics_service.get_latest_metrics_for_strategy(strategy.id)
+
+        # Get trading pair and exchange metrics
+        pair_metrics = []
+        exchange_metrics = []
+        if metrics:
+            if hasattr(metrics, "trading_pair_metrics"):
+                pair_metrics = metrics.trading_pair_metrics
+            if hasattr(metrics, "exchange_metrics"):
+                exchange_metrics = metrics.exchange_metrics
+
+        # Get executions
+        executions = db.get_executions_by_strategy(strategy_name)
+        executions.sort(key=lambda x: x.execution_timestamp, reverse=True)
+
+        # Parse period parameter for metrics view
+        metrics_period = period or "30d"
+
+        context = {
+            "request": request,
+            "strategy": strategy,
+            "metrics": metrics,
+            "pair_metrics": pair_metrics,
+            "exchange_metrics": exchange_metrics,
+            "executions": executions[:10],  # Show only the 10 most recent
+            "period": metrics_period,
+        }
+
+        logger.info(f"Rendering strategy metrics template for: {strategy_name}")
+        return templates.TemplateResponse("strategy_metrics.html", context)
+
     except Exception as e:
-        logger.error(f"Error getting strategy {strategy_name}: {e}", exc_info=True)
+        logger.error(f"Error getting strategy metrics for {strategy_name}: {e}", exc_info=True)
         return templates.TemplateResponse(
-            "error.html",
-            {"request": request, "error_message": f"Error getting strategy: {str(e)}", "back_url": "/strategies"},
+            "errors/error.html",
+            {
+                "request": request,
+                "error_message": f"Error getting strategy metrics: {str(e)}",
+                "back_url": "/strategies",
+            },
         )
 
 
-# Add a recalculate metrics endpoint that redirects back to the strategy page
 @router.get("/strategy/{strategy_name}/recalculate-metrics")
 async def recalculate_strategy_metrics(
     request: Request,
@@ -166,7 +303,7 @@ async def recalculate_strategy_metrics(
         if not strategy:
             logger.error(f"Strategy {strategy_name} not found")
             return templates.TemplateResponse(
-                "error.html",
+                "errors/error.html",
                 {
                     "request": request,
                     "error_message": f"Strategy '{strategy_name}' not found",
@@ -179,30 +316,27 @@ async def recalculate_strategy_metrics(
         end_date = datetime.now()
         start_date = end_date - timedelta(days=period_days)
 
-        metrics = metrics_service.calculate_strategy_metrics(db.session, strategy.id, start_date, end_date)
+        try:
+            metrics = metrics_service.calculate_strategy_metrics(db.session, strategy.id, start_date, end_date)
+            logger.info(f"Metrics recalculated for {strategy_name}, period: {period_days} days")
 
-        if metrics:
+            # Redirect to metrics page, no need for query params anymore
+            return RedirectResponse(url=f"/strategy/{strategy_name}/metrics")
+
+        except Exception as e:
+            logger.error(f"Error calculating metrics: {e}")
             return templates.TemplateResponse(
-                "success.html",
+                "errors/error.html",
                 {
                     "request": request,
-                    "message": f"Metrics calculated successfully for {strategy.name}",
-                    "redirect_url": f"/strategy/{strategy_name}",
-                },
-            )
-        else:
-            return templates.TemplateResponse(
-                "error.html",
-                {
-                    "request": request,
-                    "error_message": f"No executions found for {strategy.name} in the last {period_days} days",
+                    "error_message": f"Error calculating metrics for {strategy.name}: {str(e)}",
                     "back_url": f"/strategy/{strategy_name}",
                 },
             )
     except Exception as e:
         logger.error(f"Error recalculating metrics: {e}", exc_info=True)
         return templates.TemplateResponse(
-            "error.html",
+            "errors/error.html",
             {
                 "request": request,
                 "error_message": f"Error recalculating metrics: {str(e)}",
@@ -211,44 +345,48 @@ async def recalculate_strategy_metrics(
         )
 
 
-# Add a route to manually trigger metrics calculation
-@router.get("/admin/calculate-metrics/{strategy_id}", response_class=HTMLResponse)
+@router.get("/admin/calculate-metrics/{strategy_name}", response_class=HTMLResponse)
 async def trigger_metrics_calculation(
-    request: Request, strategy_id: int, period_days: int = 7, db: DatabaseService = Depends(get_db_service)
+    request: Request, strategy_name: str, period_days: int = 7, db: DatabaseService = Depends(get_db_service)
 ):
     """Manually trigger metrics calculation for a strategy."""
     try:
+        # Find strategy by name
+        strategy = next((s for s in db.get_all_strategies() if s.name == strategy_name), None)
+        if not strategy:
+            return templates.TemplateResponse(
+                "errors/error.html",
+                {
+                    "request": request,
+                    "error_message": f"Strategy '{strategy_name}' not found",
+                    "back_url": "/strategies",
+                },
+            )
+
         metrics_service = StrategyMetricsService(db)
 
         # Get current time for period end
         period_end = datetime.utcnow()
         period_start = period_end - timedelta(days=period_days)
 
-        # Use the session
+        # Use the session and strategy ID from the found strategy
         session = db.session
-
-        # Calculate metrics
-        metrics = metrics_service.calculate_strategy_metrics(session, strategy_id, period_start, period_end)
+        metrics = metrics_service.calculate_strategy_metrics(session, strategy.id, period_start, period_end)
 
         if metrics:
-            return templates.TemplateResponse(
-                "success.html",
-                {
-                    "request": request,
-                    "message": f"Metrics calculated successfully for strategy ID {strategy_id}",
-                    "redirect_url": f"/strategy/{metrics.strategy.name}",
-                },
-            )
+            # Redirect to strategy page using the strategy name
+            return RedirectResponse(url=f"/strategy/{strategy_name}/metrics")
         else:
             return templates.TemplateResponse(
-                "error.html",
+                "errors/error.html",
                 {
                     "request": request,
-                    "error_message": f"No executions found for strategy ID {strategy_id} in the last {period_days} days",
+                    "error_message": f"No executions found for strategy '{strategy_name}' in the last {period_days} days",
+                    "back_url": "/strategies",
                 },
             )
     except Exception as e:
         logger.error(f"Error calculating metrics: {e}", exc_info=True)
         return templates.TemplateResponse(
-            "error.html", {"request": request, "error_message": f"Error calculating metrics: {str(e)}"}
+            "errors/error.html", {"request": request, "error_message": f"Error calculating metrics: {str(e)}"}
         )

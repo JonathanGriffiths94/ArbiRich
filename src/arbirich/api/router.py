@@ -24,11 +24,14 @@ from src.arbirich.models.router_models import (
     HealthResponse,
     StatusResponse,
     TradingStatusResponse,
-    TradingStopRequest,  # Import the new request model
+    TradingStopRequest,
 )
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.redis.redis_service import RedisService
 from src.arbirich.utils.channel_diagnostics import log_channel_diagnostics
+
+# Import the strategy router
+from src.arbirich.web.routes.strategy_routes import router as strategy_router
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +46,7 @@ dashboard_router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 market_router = APIRouter(prefix="/market", tags=["market"])
 pairs_router = APIRouter(prefix="/pairs", tags=["pairs"])
 exchanges_router = APIRouter(prefix="/exchanges", tags=["exchanges"])
-monitor_api_router = APIRouter(prefix="/monitor", tags=["monitor"])  # Add this line
+monitor_api_router = APIRouter(prefix="/monitor", tags=["monitor"])
 
 
 def get_db():
@@ -108,12 +111,48 @@ async def get_status():
             "execution": "active" if trading_status.get("execution", False) else "inactive",
         }
 
+        # Include process information for each component
+        processes = []
+        process_id = 12340  # Base PID for display purposes
+
+        for component_name, status in components.items():
+            processes.append(
+                {
+                    "name": component_name.capitalize(),
+                    "status": "Running" if status == "active" else "Stopped",
+                    "pid": str(process_id),
+                    "memory_usage": f"{5 + len(processes) * 2}MB",  # Placeholder
+                    "cpu_usage": f"{2 + len(processes)}%",  # Placeholder
+                }
+            )
+            process_id += 1
+
+        # Add active strategies as processes
+        for strategy_name, strategy_status in trading_status.get("strategies", {}).items():
+            if strategy_status.get("active", False):
+                processes.append(
+                    {
+                        "name": f"Strategy: {strategy_name}",
+                        "status": "Running",
+                        "pid": str(process_id),
+                        "memory_usage": "12MB",  # Placeholder
+                        "cpu_usage": "3%",  # Placeholder
+                    }
+                )
+                process_id += 1
+
+        # Always add the web server
+        processes.append(
+            {"name": "Web Server", "status": "Running", "pid": "10000", "memory_usage": "25MB", "cpu_usage": "3%"}
+        )
+
         return {
             "status": "operational" if trading_status.get("overall", False) else "degraded",
             "version": os.getenv("VERSION", "0.1.0"),
             "timestamp": datetime.now().isoformat(),
             "environment": os.getenv("ENV", "development"),
             "components": components,
+            "processes": processes,  # Include processes information
         }
     except Exception as e:
         logger.error(f"Error getting status: {e}")
@@ -123,6 +162,7 @@ async def get_status():
             "timestamp": datetime.now().isoformat(),
             "environment": os.getenv("ENV", "development"),
             "components": {"error": str(e)},
+            "processes": [],  # Empty processes list on error
         }
 
 
@@ -484,6 +524,35 @@ async def deactivate_strategy(
         raise HTTPException(status_code=500, detail="Failed to deactivate strategy")
 
 
+# Add a new route for API recalculate metrics to avoid template rendering
+@strategies_router.get("/{strategy_name}/recalculate-metrics", response_model=Dict[str, Any])
+async def api_recalculate_metrics(strategy_name: str, period_days: int = 30, db: DatabaseService = Depends(get_db)):
+    """Recalculate metrics for a strategy via API."""
+    try:
+        strategy = db.get_strategy_by_name(strategy_name)
+        if not strategy:
+            raise HTTPException(status_code=404, detail=f"Strategy '{strategy_name}' not found")
+
+        # Calculate metrics
+        from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
+
+        metrics_service = StrategyMetricsService(db)
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=period_days)
+
+        metrics = metrics_service.calculate_strategy_metrics(db.session, strategy.id, start_date, end_date)
+
+        return {
+            "success": True,
+            "message": f"Metrics calculated successfully for {strategy_name}",
+            "period_days": period_days,
+        }
+
+    except Exception as e:
+        logger.error(f"Error recalculating metrics for strategy '{strategy_name}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to recalculate metrics: {str(e)}")
+
+
 # -------------------- OPPORTUNITIES & EXECUTIONS ENDPOINTS --------------------
 
 
@@ -747,38 +816,6 @@ async def get_pair(symbol: str, db: DatabaseService = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to retrieve pair")
 
 
-@pairs_router.put("/{symbol}/activate")
-async def activate_pair(symbol: str, db: DatabaseService = Depends(get_db)):
-    """Activate a trading pair."""
-    try:
-        pair = db.get_pair_by_symbol(symbol)
-        if not pair:
-            raise HTTPException(status_code=404, detail=f"Pair '{symbol}' not found")
-        db.set_pair_active((pair.base_currency, pair.quote_currency), True)
-        return {"status": "success", "message": f"Pair '{symbol}' activated successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error activating pair '{symbol}': {e}")
-        raise HTTPException(status_code=500, detail="Failed to activate pair")
-
-
-@pairs_router.put("/{symbol}/deactivate")
-async def deactivate_pair(symbol: str, db: DatabaseService = Depends(get_db)):
-    """Deactivate a trading pair."""
-    try:
-        pair = db.get_pair_by_symbol(symbol)
-        if not pair:
-            raise HTTPException(status_code=404, detail=f"Pair '{symbol}' not found")
-        db.set_pair_active((pair.base_currency, pair.quote_currency), False)
-        return {"status": "success", "message": f"Pair '{symbol}' deactivated successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deactivating pair '{symbol}': {e}")
-        raise HTTPException(status_code=500, detail="Failed to deactivate pair")
-
-
 # -------------------- EXCHANGES ENDPOINTS --------------------
 
 
@@ -808,38 +845,6 @@ async def get_exchange(name: str, db: DatabaseService = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to retrieve exchange")
 
 
-@exchanges_router.put("/{name}/activate")
-async def activate_exchange(name: str, db: DatabaseService = Depends(get_db)):
-    """Activate an exchange."""
-    try:
-        exchange = db.get_exchange_by_name(name)
-        if not exchange:
-            raise HTTPException(status_code=404, detail=f"Exchange '{name}' not found")
-        db.set_exchange_active(name, True)
-        return {"status": "success", "message": f"Exchange '{name}' activated successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error activating exchange '{name}': {e}")
-        raise HTTPException(status_code=500, detail="Failed to activate exchange")
-
-
-@exchanges_router.put("/{name}/deactivate")
-async def deactivate_exchange(name: str, db: DatabaseService = Depends(get_db)):
-    """Deactivate an exchange."""
-    try:
-        exchange = db.get_exchange_by_name(name)
-        if not exchange:
-            raise HTTPException(status_code=404, detail=f"Exchange '{name}' not found")
-        db.set_exchange_active(name, False)
-        return {"status": "success", "message": f"Exchange '{name}' deactivated successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deactivating exchange '{name}': {e}")
-        raise HTTPException(status_code=500, detail="Failed to deactivate exchange")
-
-
 # -------------------- MONITOR ENDPOINTS --------------------
 
 
@@ -857,15 +862,20 @@ async def get_monitor_processes():
     """Get process monitoring data."""
     from src.arbirich.web.controllers.monitor_controller import get_processes
 
-    return await get_processes()
+    try:
+        return await get_processes()
+    except Exception as e:
+        logger.error(f"Error retrieving process data: {e}")
+        # Return a useful error response
+        return [{"name": "Error loading processes", "status": "Error", "pid": "N/A"}]
 
 
-@monitor_api_router.get("/exchanges")
-async def get_monitor_exchanges(db: DatabaseService = Depends(get_db)):
-    """Get exchange status monitoring data."""
-    from src.arbirich.web.controllers.monitor_controller import get_exchange_status
+# @monitor_api_router.get("/exchanges")
+# async def get_monitor_exchanges(db: DatabaseService = Depends(get_db)):
+#     """Get exchange status monitoring data."""
+#     from src.arbirich.web.controllers.monitor_controller import get_exchange_status
 
-    return await get_exchange_status(db)
+#     return await get_exchange_status(db)
 
 
 @monitor_api_router.get("/activity")
@@ -874,6 +884,35 @@ async def get_monitor_activity():
     from src.arbirich.web.controllers.monitor_controller import get_trading_activity
 
     return await get_trading_activity()
+
+
+@monitor_api_router.get("/trading-activity")
+async def get_monitor_trading_activity():
+    """Get trading activity monitoring data."""
+    from src.arbirich.web.controllers.monitor_controller import get_trading_activity
+
+    try:
+        return await get_trading_activity()
+    except Exception as e:
+        logger.error(f"Error retrieving trading activity data: {e}")
+        # Return a useful error response with empty chart data to prevent client-side errors
+        return {
+            "labels": [],
+            "datasets": [
+                {
+                    "label": "Opportunities Found",
+                    "data": [],
+                    "borderColor": "#85bb65",
+                    "backgroundColor": "rgba(133, 187, 101, 0.1)",
+                },
+                {
+                    "label": "Trades Executed",
+                    "data": [],
+                    "borderColor": "#3abe78",
+                    "backgroundColor": "rgba(58, 190, 120, 0.1)",
+                },
+            ],
+        }
 
 
 # -------------------- ROUTER REGISTRATION --------------------
@@ -886,7 +925,8 @@ main_router.include_router(dashboard_router)
 main_router.include_router(market_router)
 main_router.include_router(pairs_router)
 main_router.include_router(exchanges_router)
-main_router.include_router(monitor_api_router)  # Add this line
+main_router.include_router(monitor_api_router)
+main_router.include_router(strategy_router)
 
 
 # Root endpoint

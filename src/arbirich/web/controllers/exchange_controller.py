@@ -3,12 +3,11 @@ Exchange Controller - Renders and handles exchange management views.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 
-from src.arbirich.models.models import Exchange
 from src.arbirich.services.database.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
@@ -41,8 +40,34 @@ async def exchanges_page(request: Request, db: DatabaseService = Depends(get_db)
     # Get all exchanges from database
     exchanges = db.get_all_exchanges()
 
-    return templates.TemplateResponse(
-        "exchanges.html", {"request": request, "exchanges": exchanges, "page_title": "Exchange Management"}
+    # Get all pairs from database with debug logging
+    try:
+        pairs = db.get_all_trading_pairs()
+        logger.info(f"Retrieved {len(pairs)} trading pairs")
+        # Log first few pairs for debugging if available
+        if pairs:
+            sample = pairs[:3]
+            logger.info(f"Sample pairs: {[p.model_dump() for p in sample]}")
+        else:
+            logger.warning("No trading pairs returned from database")
+    except Exception as e:
+        logger.error(f"Error fetching trading pairs: {e}")
+        pairs = []
+
+    # Add the templates instance to context
+    if templates is None:
+        # Get templates instance from app state
+        _templates = request.app.state.templates if hasattr(request.app.state, "templates") else None
+    else:
+        _templates = templates
+
+    if _templates is None:
+        logger.error("Templates instance is not available")
+        return "Error: Templates not available"
+
+    return _templates.TemplateResponse(
+        "pages/exchanges.html",
+        {"request": request, "exchanges": exchanges, "pairs": pairs, "page_title": "Exchange Management"},
     )
 
 
@@ -76,28 +101,6 @@ async def get_exchange(exchange_id: int, db: DatabaseService = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/exchanges")
-async def create_exchange(exchange_data: Dict[str, Any], db: DatabaseService = Depends(get_db)):
-    """
-    Create a new exchange.
-    """
-    try:
-        # Create Exchange object
-        exchange = Exchange(**exchange_data)
-
-        # Save to database
-        result = db.create_exchange(exchange)
-
-        return {
-            "success": True,
-            "message": f"Exchange {result.name} created successfully",
-            "exchange": result.model_dump(),
-        }
-    except Exception as e:
-        logger.error(f"Error creating exchange: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.put("/api/exchanges/{exchange_id}")
 async def update_exchange(exchange_id: int, exchange_data: Dict[str, Any], db: DatabaseService = Depends(get_db)):
     """
@@ -128,60 +131,31 @@ async def update_exchange(exchange_id: int, exchange_data: Dict[str, Any], db: D
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/api/exchanges/{exchange_id}")
-async def delete_exchange(exchange_id: int, db: DatabaseService = Depends(get_db)):
+@router.get("/api/pairs")
+async def get_all_pairs(db: DatabaseService = Depends(get_db)):
     """
-    Delete an exchange.
+    Get all trading pairs via API.
     """
     try:
-        # Check if exchange exists
-        exchange = db.get_exchange(exchange_id)
-        if not exchange:
-            raise HTTPException(status_code=404, detail=f"Exchange with ID {exchange_id} not found")
+        pairs = db.get_all_trading_pairs()
+        return [pair.model_dump() for pair in pairs]
+    except Exception as e:
+        logger.error(f"Error getting trading pairs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-        # Delete from database
-        success = db.delete_exchange(exchange_id)
 
-        if success:
-            return {"success": True, "message": f"Exchange {exchange.name} deleted successfully"}
-        else:
-            return {"success": False, "message": f"Failed to delete exchange {exchange.name}"}
+@router.get("/api/pairs/{pair_symbol}")
+async def get_pair(pair_symbol: str, db: DatabaseService = Depends(get_db)):
+    """
+    Get a specific trading pair by symbol.
+    """
+    try:
+        pair = db.get_trading_pair_by_symbol(pair_symbol)
+        if not pair:
+            raise HTTPException(status_code=404, detail=f"Trading pair with symbol {pair_symbol} not found")
+        return pair.model_dump()
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting exchange {exchange_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/api/exchanges/{exchange_id}/activate")
-async def activate_exchange(exchange_id: int, db: DatabaseService = Depends(get_db)):
-    """
-    Activate an exchange.
-    """
-    try:
-        success = db.activate_exchange(exchange_id)
-        if success:
-            exchange = db.get_exchange(exchange_id)
-            return {"success": True, "message": f"Exchange {exchange.name} activated successfully"}
-        else:
-            return {"success": False, "message": f"Failed to activate exchange with ID {exchange_id}"}
-    except Exception as e:
-        logger.error(f"Error activating exchange {exchange_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/api/exchanges/{exchange_id}/deactivate")
-async def deactivate_exchange(exchange_id: int, db: DatabaseService = Depends(get_db)):
-    """
-    Deactivate an exchange.
-    """
-    try:
-        success = db.deactivate_exchange(exchange_id)
-        if success:
-            exchange = db.get_exchange(exchange_id)
-            return {"success": True, "message": f"Exchange {exchange.name} deactivated successfully"}
-        else:
-            return {"success": False, "message": f"Failed to deactivate exchange with ID {exchange_id}"}
-    except Exception as e:
-        logger.error(f"Error deactivating exchange {exchange_id}: {e}")
+        logger.error(f"Error getting trading pair {pair_symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

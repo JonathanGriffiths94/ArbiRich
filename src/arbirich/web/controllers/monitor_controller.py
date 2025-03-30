@@ -3,10 +3,13 @@ Monitor Controller - Renders and handles system monitoring views.
 """
 
 import logging
+import os
 import platform
 from datetime import datetime, timedelta
 
 import psutil
+import psycopg2
+import redis
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -70,12 +73,40 @@ async def get_system_status():
         hours, remainder = divmod(uptime.seconds, 3600)
         uptime_str = f"{days} days, {hours} hours"
 
+        # Try to get health status
+        try:
+            # Create Redis and DB connections to check health
+            redis_host = os.getenv("REDIS_HOST", "localhost")
+            redis_port = int(os.getenv("REDIS_PORT", 6379))
+            redis_client = redis.Redis(host=redis_host, port=redis_port, db=0)
+            redis_status = "healthy" if redis_client.ping() else "unhealthy"
+            redis_client.close()
+
+            # DB connection check
+            db_host = os.getenv("POSTGRES_HOST", "localhost")
+            db_port = os.getenv("POSTGRES_PORT", "5432")
+            db_name = os.getenv("POSTGRES_DB", "arbirich_db")
+            db_user = os.getenv("POSTGRES_USER", "arbiuser")
+            db_password = os.getenv("POSTGRES_PASSWORD", "postgres")
+
+            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password)
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            conn.close()
+            db_status = "healthy"
+        except Exception as e:
+            logger.error(f"Error checking service health: {e}")
+            redis_status = "unknown"
+            db_status = "unknown"
+
         return {
             "cpu_usage": cpu_percent,
             "memory_usage": memory_percent,
             "disk_usage": disk_percent,
             "uptime": uptime_str,
             "uptime_seconds": int((datetime.now() - datetime.fromtimestamp(uptime_seconds)).total_seconds()),
+            "services": {"api": "healthy", "redis": redis_status, "database": db_status},
         }
     except Exception as e:
         logger.error(f"Error getting system status: {e}")
@@ -96,10 +127,10 @@ async def get_processes():
         processes = []
         process_id = 12340  # Base PID for display purposes
 
-        # Extract component statuses
+        # Add component processes based on the actual running components
         components = trading_status.get("components", {})
         for component_name, status in components.items():
-            if component_name != "overall":
+            if component_name != "overall":  # Skip overall status
                 is_active = status == "active"
                 processes.append(
                     {
@@ -112,7 +143,7 @@ async def get_processes():
                 )
                 process_id += 1
 
-        # Check for strategies
+        # Add active strategies as processes
         strategies = trading_status.get("strategies", {})
         for strategy_name, strategy_status in strategies.items():
             if strategy_status.get("active", False):
@@ -137,20 +168,11 @@ async def get_processes():
         logger.error(f"Error getting processes: {e}")
         # Return fallback processes if the API call fails
         return [
-            {"name": "Price Fetcher", "status": "Running", "pid": "12345", "memory_usage": "10MB", "cpu_usage": "2%"},
-            {
-                "name": "Opportunity Scanner",
-                "status": "Running",
-                "pid": "12346",
-                "memory_usage": "15MB",
-                "cpu_usage": "4%",
-            },
-            {"name": "Trade Executor", "status": "Running", "pid": "12347", "memory_usage": "12MB", "cpu_usage": "3%"},
-            {"name": "Web Server", "status": "Running", "pid": "12348", "memory_usage": "25MB", "cpu_usage": "3%"},
+            {"name": "Price Fetcher", "status": "Running", "pid": "12345"},
+            {"name": "Opportunity Scanner", "status": "Running", "pid": "12346"},
+            {"name": "Trade Executor", "status": "Running", "pid": "12347"},
+            {"name": "Web Server", "status": "Running", "pid": "10000"},
         ]
-    except Exception as e:
-        logger.error(f"Error getting processes: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/api/monitor/exchange-status")

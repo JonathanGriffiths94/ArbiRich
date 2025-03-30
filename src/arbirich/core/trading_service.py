@@ -60,30 +60,18 @@ class TradingService:
             try:
                 self.logger.info("Loading strategies from database")
                 # Try using async fetch_all if available
-                if hasattr(self.db, "fetch_all") and callable(self.db.fetch_all):  # <-- THIS LINE CHANGED
+                if hasattr(self.db, "fetch_all") and callable(self.db.fetch_all):
                     if asyncio.iscoroutinefunction(self.db.fetch_all):
                         strategies = await self.db.fetch_all("SELECT * FROM strategies")
                     else:
                         strategies = self.db.fetch_all("SELECT * FROM strategies")
                 # Fallback to direct query using DatabaseService
-                elif hasattr(self.db, "engine"):  # <-- THIS LINE CHANGED
+                elif hasattr(self.db, "engine"):
                     with self.db.engine.connect() as conn:
                         result = conn.execute(self.db.tables.strategies.select())
                         strategies = [dict(row._mapping) for row in result]
                 else:
-                    # Final fallback - just get active strategies from config
-                    from src.arbirich.config.config import STRATEGIES
-
-                    self.logger.warning("Could not load strategies from database, using config")
-                    strategies = []
-                    for name, config in STRATEGIES.items():
-                        strategies.append(
-                            {
-                                "id": hash(name) % 10000,  # Use hash for ID
-                                "name": name,
-                                "is_active": True,  # Assume active
-                            }
-                        )
+                    raise ValueError("Invalid database connection or fetch_all method not available")
             except Exception as e:
                 self.logger.warning(f"Error loading strategies from database: {e}", exc_info=True)
                 strategies = []
@@ -205,8 +193,26 @@ class TradingService:
 
         RedisService.close_all_connections()
 
+        # 5. Ensure all components are marked as inactive
+        self._reset_all_component_states()
+        self.logger.info("All component states reset to inactive")
+
         self.logger.info("All system components stopped")
         return True
+
+    # Add a new helper method to reset all component states
+    def _reset_all_component_states(self):
+        """Reset all component states to inactive"""
+        for component_name in self.components:
+            self.components[component_name]["active"] = False
+            self.components[component_name]["task"] = None
+
+        # Also mark all strategies as inactive
+        for strategy_id in self.strategies:
+            self.strategies[strategy_id]["active"] = False
+            self.strategies[strategy_id]["task"] = None
+
+        self.logger.info("All component and strategy states reset to inactive")
 
     async def restart_all_components(self):
         """Restart all trading components with clean state"""
@@ -233,11 +239,11 @@ class TradingService:
         await self.initialize()
 
         # Clear global flow manager registry
-        from src.arbirich.flows.common.flow_manager import _active_flow_managers, _flow_managers_lock
+        from src.arbirich.flows.common.flow_manager import _flow_managers, _registry_lock
 
-        with _flow_managers_lock:
-            self.logger.info(f"Clearing {len(_active_flow_managers)} active flow managers")
-            _active_flow_managers.clear()
+        with _registry_lock:
+            self.logger.info("Clearing flow managers registry")
+            _flow_managers.clear()
 
         # Reset Redis connections
         from src.arbirich.services.redis.redis_service import reset_redis_pool
@@ -711,14 +717,35 @@ class TradingService:
                         exception = reporting_flow_task.exception()
                         if exception:
                             self.logger.error(f"Reporting flow task failed: {exception}")
+                            # Check if system is shutting down before restarting
+                            from src.arbirich.core.system_state import is_system_shutting_down
+
+                            if is_system_shutting_down():
+                                self.logger.info("System shutting down, not restarting reporting flow")
+                                break
+
                             # Restart the task
                             reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
-                            self.logger.info("Reporting flow task restarted")
+                            self.logger.info("Reporting flow task restarted after error")
                         else:
                             self.logger.warning("Reporting flow task completed unexpectedly")
+                            # Check if system is shutting down before restarting
+                            from src.arbirich.core.system_state import is_system_shutting_down
+
+                            if is_system_shutting_down():
+                                self.logger.info("System shutting down, not restarting reporting flow")
+                                break
+
                             # Restart the task
                             reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
-                            self.logger.info("Reporting flow task restarted")
+                            self.logger.info("Reporting flow task restarted after completion")
+
+                    # Check if system is shutting down
+                    from src.arbirich.core.system_state import is_system_shutting_down
+
+                    if is_system_shutting_down():
+                        self.logger.info("System shutdown detected in reporting monitor loop, stopping")
+                        break
 
                     # Run health check
                     import sqlalchemy as sa
@@ -730,8 +757,10 @@ class TradingService:
                             # Run a simple query to verify connection
                             result = conn.execute(sa.text("SELECT 1")).scalar()
                             self.logger.debug(f"Database health check: {result}")
+                except asyncio.CancelledError:
+                    raise  # Re-raise to handle properly in the outer try/except
                 except Exception as e:
-                    self.logger.error(f"Database health check failed: {e}")
+                    self.logger.error(f"Error in reporting monitoring loop: {e}")
 
                 # Sleep before next check
                 await asyncio.sleep(60)  # Check every minute
@@ -742,17 +771,24 @@ class TradingService:
             if "reporting_flow_task" in locals() and not reporting_flow_task.done():
                 try:
                     # Import here to avoid circular imports
-                    from arbirich.flows.reporting.reporting_flow import stop_reporting_flow_async
+                    from arbirich.flows.reporting.reporting_flow import stop_reporting_flow, stop_reporting_flow_async
 
-                    # Clean stop of reporting flow
-                    await stop_reporting_flow_async()
+                    # Use sync version for more immediate effect
+                    try:
+                        stop_reporting_flow()
+                        self.logger.info("Reporting flow stopped synchronously")
+                    except Exception as e:
+                        self.logger.error(f"Sync stop of reporting flow failed: {e}")
+                        # Fall back to async version
+                        await stop_reporting_flow_async()
+                        self.logger.info("Reporting flow stopped asynchronously")
 
-                    # Cancel the task
+                    # Cancel the task after flow stop
                     reporting_flow_task.cancel()
                     try:
-                        await reporting_flow_task
-                    except asyncio.CancelledError:
-                        pass
+                        await asyncio.wait_for(reporting_flow_task, timeout=2.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        self.logger.info("Reporting task cancellation completed or timed out")
                 except Exception as e:
                     self.logger.error(f"Error stopping reporting flow: {e}")
 

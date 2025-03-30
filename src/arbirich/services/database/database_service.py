@@ -224,19 +224,34 @@ class DatabaseService:
     def is_exchange_in_use(self, exchange: str) -> bool:
         """Check if an exchange is in use by any active strategy."""
         try:
-            with self.engine.begin() as conn:
-                result = conn.execute(
-                    sa.text(
-                        """
-                        SELECT COUNT(*) FROM strategies
-                        WHERE :exchange = ANY(exchanges) AND is_active = TRUE
-                        """
-                    ),
-                    {"exchange": exchange},
-                )
-                return result.scalar() > 0
+            # Get all active strategies and check their additional_info field for the exchange
+            strategies = self.get_active_strategies()
+            for strategy in strategies:
+                # Check if strategy has additional_info
+                if not hasattr(strategy, "additional_info") or not strategy.additional_info:
+                    continue
+
+                additional_info = strategy.additional_info
+
+                # Handle both dict and JSON string formats
+                if isinstance(additional_info, str):
+                    try:
+                        additional_info = json.loads(additional_info)
+                    except json.JSONDecodeError:
+                        continue
+
+                if isinstance(additional_info, dict):
+                    # Check if 'exchanges' exists in additional_info and contains the target exchange
+                    if "exchanges" in additional_info and isinstance(additional_info["exchanges"], list):
+                        if exchange in additional_info["exchanges"]:
+                            self.logger.debug(f"Exchange {exchange} is used by strategy {strategy.name}")
+                            return True
+
+            # No active strategy is using this exchange
+            return False
         except Exception as e:
             logger.error(f"Error checking if exchange '{exchange}' is in use: {e}")
+            # Default to False to allow deactivation
             return False
 
     # ---- Pair operations ----
@@ -394,19 +409,35 @@ class DatabaseService:
         """
         try:
             symbol = "-".join(pair)  # Construct the symbol dynamically
-            with self.engine.begin() as conn:
-                result = conn.execute(
-                    sa.text(
-                        """
-                        SELECT COUNT(*) FROM strategies
-                        WHERE :symbol = ANY(pairs) AND is_active = TRUE
-                        """
-                    ),
-                    {"symbol": symbol},
-                )
-                return result.scalar() > 0
+
+            # Get all active strategies and check their additional_info field for the pair
+            strategies = self.get_active_strategies()
+            for strategy in strategies:
+                # Check if strategy has additional_info
+                if not hasattr(strategy, "additional_info") or not strategy.additional_info:
+                    continue
+
+                additional_info = strategy.additional_info
+
+                # Handle both dict and JSON string formats
+                if isinstance(additional_info, str):
+                    try:
+                        additional_info = json.loads(additional_info)
+                    except json.JSONDecodeError:
+                        continue
+
+                if isinstance(additional_info, dict):
+                    # Check if 'pairs' exists in additional_info and contains the target pair
+                    if "pairs" in additional_info and isinstance(additional_info["pairs"], list):
+                        if symbol in additional_info["pairs"]:
+                            self.logger.debug(f"Pair {symbol} is used by strategy {strategy.name}")
+                            return True
+
+            # No active strategy is using this pair
+            return False
         except Exception as e:
             logger.error(f"Error checking if pair '{pair}' is in use: {e}")
+            # Default to False to allow deactivation
             return False
 
     # ---- Strategy operations ----
@@ -587,7 +618,6 @@ class DatabaseService:
                 result = conn.execute(strategies.select().where(strategies.c.id == strategy_id))
                 row = result.first()
                 return Strategy.model_validate(row._asdict())
-
         except Exception as e:
             self.logger.error(f"Error updating strategy {strategy.name}: {e}")
             raise
@@ -602,7 +632,6 @@ class DatabaseService:
                 )
 
                 result = conn.execute(query).first()
-
                 if result:
                     # Convert to compatible types
                     current_profit = Decimal(str(result.total_profit))
@@ -751,7 +780,6 @@ class DatabaseService:
             # Convert to db dict and log
             db_dict = execution.to_db_dict()
             logger.info(f"Converting execution to db dict: {db_dict}")
-
             with self.engine.begin() as conn:
                 result = conn.execute(trade_executions.insert().values(**db_dict).returning(*trade_executions.c))
                 row = result.first()
@@ -770,7 +798,6 @@ class DatabaseService:
     def get_trade_execution(self, execution_id: Union[str, UUID]) -> Optional[TradeExecution]:
         if isinstance(execution_id, str):
             execution_id = UUID(execution_id)
-
         with self.engine.begin() as conn:
             result = conn.execute(trade_executions.select().where(trade_executions.c.id == execution_id))
             row = result.first()
@@ -815,11 +842,9 @@ class DatabaseService:
         """
         try:
             query = trade_executions.select().order_by(trade_executions.c.execution_timestamp.desc()).limit(count)
-
             # Add strategy filter if provided
             if strategy_name:
                 query = query.where(trade_executions.c.strategy == strategy_name)
-
             with self.engine.begin() as conn:
                 result = conn.execute(query)
                 executions = []
@@ -870,7 +895,6 @@ class DatabaseService:
                 return None
         except Exception as e:
             logger.error(f"Error getting strategy metrics: {e}")
-            raise
 
     def get_latest_strategy_metrics(self, strategy_id):
         """Get the most recent metrics for a strategy."""
