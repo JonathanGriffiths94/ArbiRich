@@ -157,9 +157,6 @@ async def startup_event() -> None:
     # Diagnose the system status
     diagnose_system_status()
 
-    # Run database prefill FIRST to ensure data is available
-    await run_database_prefill()
-
     # Reset shared services
     try:
         from arbirich.utils.background_subscriber import reset as reset_background_subscriber
@@ -230,15 +227,9 @@ async def shutdown_event() -> None:
 
     # Reset shared Redis clients in modules
     try:
-        from src.arbirich.flows.arbitrage.arbitrage_source import reset_shared_redis_client as reset_arbitrage_redis
-        from src.arbirich.flows.execution.execution_source import reset_shared_redis_client as reset_execution_redis
-        from src.arbirich.flows.ingestion.ingestion_sink import reset_shared_redis_client as reset_ingestion_redis
-        from src.arbirich.flows.reporting.reporting_source import reset_shared_redis_client as reset_reporting_redis
+        from src.arbirich.services.redis.redis_service import reset_all_registered_redis_clients
 
-        reset_arbitrage_redis()
-        reset_execution_redis()
-        reset_ingestion_redis()
-        reset_reporting_redis()
+        reset_all_registered_redis_clients()
         logger.info("All module Redis clients reset")
     except Exception as e:
         logger.error(f"Error resetting module Redis clients: {e}")
