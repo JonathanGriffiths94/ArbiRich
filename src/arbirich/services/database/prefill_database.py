@@ -95,9 +95,9 @@ def get_active_strategy_dependencies():
                 pair_symbol = f"{pair[0]}-{pair[1]}"
                 active_pairs.add(pair_symbol)
 
-    logger.info(f"Active exchanges from strategies: {active_exchanges}")
-    logger.info(f"Active pairs from strategies: {active_pairs}")
-    logger.info(f"Active strategies from config: {active_strategies}")
+    logger.debug(f"Active exchanges from strategies: {active_exchanges}")
+    logger.debug(f"Active pairs from strategies: {active_pairs}")
+    logger.debug(f"Active strategies from config: {active_strategies}")
 
     return active_exchanges, active_pairs, active_strategies
 
@@ -144,11 +144,11 @@ def create_strategies(db_service, activate=False, smart_activate=False):
             # Make sure exchanges are explicitly included
             exchanges = config.get("exchanges", [])
             additional_info["exchanges"] = exchanges
-            logger.info(f"Strategy {strategy_name} uses exchanges: {exchanges}")
+            logger.debug(f"Strategy {strategy_name} uses exchanges: {exchanges}")
 
             # Make sure pairs are explicitly included
             pairs = config.get("pairs", [])
-            logger.info(f"Strategy {strategy_name} uses pairs: {pairs}")
+            logger.debug(f"Strategy {strategy_name} uses pairs: {pairs}")
             # Convert pair tuples to list format for better JSON storage
             if pairs and isinstance(pairs[0], tuple):
                 formatted_pairs = []
@@ -156,10 +156,10 @@ def create_strategies(db_service, activate=False, smart_activate=False):
                     if len(pair) == 2:
                         formatted_pairs.append(list(pair))
                 additional_info["pairs"] = formatted_pairs
-                logger.info(f"Strategy {strategy_name} uses pairs: {formatted_pairs}")
+                logger.debug(f"Strategy {strategy_name} uses pairs: {formatted_pairs}")
             else:
                 additional_info["pairs"] = pairs
-                logger.info(f"Strategy {strategy_name} uses pairs: {pairs}")
+                logger.debug(f"Strategy {strategy_name} uses pairs: {pairs}")
 
             # Add any strategy-specific parameters to additional_info
             for param in ["min_depth", "min_volume", "max_slippage", "execution_delay"]:
@@ -170,7 +170,7 @@ def create_strategies(db_service, activate=False, smart_activate=False):
             existing = db_service.get_strategy_by_name(strategy_name)
 
             if existing:
-                logger.info(f"Strategy already exists: {strategy_name}, updating...")
+                logger.debug(f"Strategy already exists: {strategy_name}, updating...")
 
                 # Update existing strategy (don't try to modify the ID)
                 with db_service.engine.begin() as conn:
@@ -200,7 +200,7 @@ def create_strategies(db_service, activate=False, smart_activate=False):
 
                     updated = result.first()
                     if updated:
-                        logger.info(f"Updated strategy: {updated.name}, active: {updated.is_active}")
+                        logger.debug(f"Updated strategy: {updated.name}, active: {updated.is_active}")
                         # Create a simple dict for the response
                         created_strategies.append(
                             {"id": updated.id, "name": updated.name, "is_active": updated.is_active}
@@ -238,7 +238,7 @@ def create_strategies(db_service, activate=False, smart_activate=False):
 
                     created = result.first()
                     if created:
-                        logger.info(f"Created strategy: {created.name}, active: {created.is_active}")
+                        logger.debug(f"Created strategy: {created.name}, active: {created.is_active}")
                         # Create a simple dict for the response
                         created_strategies.append(
                             {"id": created.id, "name": created.name, "is_active": created.is_active}
@@ -247,7 +247,7 @@ def create_strategies(db_service, activate=False, smart_activate=False):
         except Exception as e:
             logger.error(f"Error creating/updating strategy {strategy_name}: {e}")
 
-    logger.info(f"Created/updated {len(created_strategies)} strategies")
+    logger.debug(f"Created/updated {len(created_strategies)} strategies")
     return created_strategies
 
 
@@ -285,7 +285,7 @@ def create_exchanges(db_service, activate=False, smart_activate=False):
             existing = db_service.get_exchange_by_name(exchange_name)
 
             if existing:
-                logger.info(f"Exchange already exists: {exchange_name}, updating...")
+                logger.debug(f"Exchange already exists: {exchange_name}, updating...")
 
                 # Update existing exchange (don't try to modify the ID)
                 with db_service.engine.begin() as conn:
@@ -327,7 +327,7 @@ def create_exchanges(db_service, activate=False, smart_activate=False):
 
                     updated = result.first()
                     if updated:
-                        logger.info(f"Updated exchange: {updated.name}, active: {updated.is_active}")
+                        logger.debug(f"Updated exchange: {updated.name}, active: {updated.is_active}")
                         # Create a simple dict for the response since we don't need the full object
                         created_exchanges.append(
                             {"id": updated.id, "name": updated.name, "is_active": updated.is_active}
@@ -367,7 +367,7 @@ def create_exchanges(db_service, activate=False, smart_activate=False):
 
                     created = result.first()
                     if created:
-                        logger.info(f"Created exchange: {created.name}, active: {created.is_active}")
+                        logger.debug(f"Created exchange: {created.name}, active: {created.is_active}")
                         # Create a simple dict for the response
                         created_exchanges.append(
                             {"id": created.id, "name": created.name, "is_active": created.is_active}
@@ -376,7 +376,7 @@ def create_exchanges(db_service, activate=False, smart_activate=False):
         except Exception as e:
             logger.error(f"Error creating/updating exchange {exchange_name}: {e}")
 
-    logger.info(f"Created/updated {len(created_exchanges)} exchanges")
+    logger.debug(f"Created/updated {len(created_exchanges)} exchanges")
     return created_exchanges
 
 
@@ -387,7 +387,7 @@ def create_pairs(db_service, activate=False, smart_activate=False):
     # Get active pairs from strategies if using smart activation
     if smart_activate:
         _, active_pairs, _ = get_active_strategy_dependencies()
-        logger.info(f"Smart activation enabled for pairs: {active_pairs}")
+        logger.debug(f"Smart activation enabled for pairs: {active_pairs}")
 
     # Track created/updated pairs
     created_count = 0
@@ -425,7 +425,7 @@ def create_pairs(db_service, activate=False, smart_activate=False):
                 )
                 db_service.update_pair(pair)
                 updated_count += 1
-                logger.info(f"Updated pair: {symbol} (Active: {should_activate})")
+                logger.debug(f"Updated pair: {symbol} (Active: {should_activate})")
             else:
                 # Create new pair
                 pair = Pair(
@@ -436,11 +436,11 @@ def create_pairs(db_service, activate=False, smart_activate=False):
                 )
                 db_service.create_pair(pair)
                 created_count += 1
-                logger.info(f"Created pair: {symbol} (Active: {should_activate})")
+                logger.debug(f"Created pair: {symbol} (Active: {should_activate})")
         except Exception as e:
             logger.error(f"Error creating/updating pair {symbol}: {e}")
 
-    logger.info(f"Created {created_count} pairs, updated {updated_count} pairs")
+    logger.debug(f"Created {created_count} pairs, updated {updated_count} pairs")
     return created_count + updated_count
 
 
@@ -462,7 +462,7 @@ def prefill_database(activate=False, smart_activate=False):
     try:
         # Additional check with a flag in case the lock mechanism fails
         if _prefill_in_progress:
-            logger.info("Database prefill already in progress (flag check), skipping this call")
+            logger.debug("Database prefill already in progress (flag check), skipping this call")
             return
 
         _prefill_in_progress = True
@@ -496,19 +496,19 @@ def prefill_database(activate=False, smart_activate=False):
                     # Double-check that strategies are active in the database
                     try:
                         strategies_check = db_service.get_active_strategies()
-                        logger.info(f"Verified {len(strategies_check)} active strategies in database")
+                        logger.debug(f"Verified {len(strategies_check)} active strategies in database")
                         if strategies_check:
                             for strat in strategies_check:
-                                logger.info(f"  - Active strategy: {strat.name}")
+                                logger.debug(f"  - Active strategy: {strat.name}")
                         else:
                             logger.warning("No active strategies found after activation!")
 
                             # Force activate all strategies if none are active
-                            logger.info("Forcing activation of all strategies...")
+                            logger.debug("Forcing activation of all strategies...")
                             with db_service.engine.begin() as conn:
                                 result = conn.execute(sa.text("UPDATE strategies SET is_active = TRUE"))
                                 if result.rowcount > 0:
-                                    logger.info(f"Successfully activated {result.rowcount} strategies")
+                                    logger.debug(f"Successfully activated {result.rowcount} strategies")
                     except Exception as e:
                         logger.error(f"Error checking active strategies: {e}")
                 elif smart_activate:
@@ -517,10 +517,10 @@ def prefill_database(activate=False, smart_activate=False):
                     # Double-check that strategies from STRATEGIES config are active
                     try:
                         strategies_check = db_service.get_active_strategies()
-                        logger.info(f"Verified {len(strategies_check)} active strategies in database")
+                        logger.debug(f"Verified {len(strategies_check)} active strategies in database")
                         if strategies_check:
                             for strat in strategies_check:
-                                logger.info(f"  - Active strategy: {strat.name}")
+                                logger.debug(f"  - Active strategy: {strat.name}")
                     except Exception as e:
                         logger.error(f"Error checking active strategies: {e}")
                 else:
