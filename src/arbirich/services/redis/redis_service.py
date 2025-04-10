@@ -18,6 +18,32 @@ _redis_lock = threading.RLock()
 
 _shared_redis_client = None
 
+# Global registry of Redis clients to reset
+_redis_clients_registry = {}
+
+
+def register_redis_client(module_name, reset_function):
+    """Register a module's Redis client reset function."""
+    _redis_clients_registry[module_name] = reset_function
+
+
+def reset_all_registered_redis_clients():
+    """Reset all registered Redis clients across modules."""
+    for module_name, reset_function in _redis_clients_registry.items():
+        try:
+            reset_function()
+            logger.info(f"Reset Redis client for {module_name}")
+        except Exception as e:
+            logger.error(f"Error resetting Redis client for {module_name}: {e}")
+
+    # Also reset the channel manager
+    try:
+        from src.arbirich.services.redis.redis_channel_manager import reset_channel_manager
+
+        reset_channel_manager()
+    except Exception as e:
+        logger.error(f"Error resetting channel manager: {e}")
+
 
 def get_shared_redis_client():
     """Get or create a shared Redis client for the application."""
@@ -581,7 +607,7 @@ class RedisService:
                 self.client.set(key, execution_data.model_dump_json(), ex=expiry_seconds)
 
                 # Publish to strategy-specific channel if provided, ensuring the channel exists
-                channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}" if strategy_name else TRADE_EXECUTIONS_CHANNEL
+                channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}" if strategy_name else TRADE_EXECIONS_CHANNEL
                 # self._ensure_subscribed(channel)  # Ensure channel exists
                 self.client.publish(channel, execution_data.model_dump_json())
 

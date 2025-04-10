@@ -4,10 +4,8 @@ import logging
 import threading
 import time
 
-from src.arbirich.config.config import STRATEGIES
-from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified
-from src.arbirich.flows.ingestion.ingestion_sink import get_order_book_channel
+from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
@@ -115,27 +113,9 @@ class ChannelMaintenanceService:
 
     def _get_channels_to_maintain(self):
         """Get list of channels to maintain with consistent formatting"""
-        channels = [
-            # Base channels with consistent format
-            TRADE_OPPORTUNITIES_CHANNEL,
-            TRADE_EXECUTIONS_CHANNEL,
-        ]
-
-        # Add strategy-specific channels
-        for strategy_name in STRATEGIES.keys():
-            channels.append(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}")
-            channels.append(f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}")
-
-        # Add order book channels with consistent format
-        from src.arbirich.config.config import EXCHANGES, PAIRS
-
-        for exchange in EXCHANGES.keys():
-            for base, quote in PAIRS:
-                symbol = f"{base}-{quote}"
-                channel = get_order_book_channel(exchange, symbol)
-                channels.append(channel)
-
-        return channels
+        # Use the channel manager to get a consistent list of channels
+        channel_manager = get_channel_manager()
+        return channel_manager.get_all_system_channels()
 
 
 # Singleton instance

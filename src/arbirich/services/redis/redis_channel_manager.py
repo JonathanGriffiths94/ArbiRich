@@ -1,12 +1,39 @@
 import json
 import logging
+import threading
 from typing import Dict, List, Optional, Set, Union
 
-from src.arbirich.config import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
-from src.arbirich.services.redis.redis_service import RedisService
+from src.arbirich.services.redis.redis_service import RedisService, get_shared_redis_client
 
 logger = logging.getLogger(__name__)
+
+# Singleton instance
+_channel_manager_instance = None
+_channel_manager_lock = threading.Lock()
+
+
+def get_channel_manager():
+    """Get the singleton RedisChannelManager instance"""
+    global _channel_manager_instance
+    with _channel_manager_lock:
+        if _channel_manager_instance is None:
+            _channel_manager_instance = RedisChannelManager()
+        return _channel_manager_instance
+
+
+def reset_channel_manager():
+    """Reset the channel manager singleton"""
+    global _channel_manager_instance
+    with _channel_manager_lock:
+        if _channel_manager_instance:
+            try:
+                _channel_manager_instance.close()
+            except Exception as e:
+                logger.error(f"Error closing channel manager: {e}")
+            _channel_manager_instance = None
+    logger.info("Channel manager reset")
 
 
 class RedisChannelManager:
@@ -17,18 +44,8 @@ class RedisChannelManager:
 
     # Channel type constants
     ORDER_BOOK = ORDER_BOOK_CHANNEL
-    TRADE_OPPORTUNITIES = TRADE_EXECUTIONS_CHANNEL
-    TRADE_EXECUTIONS = TRADE_OPPORTUNITIES_CHANNEL
-
-    # Singleton instance
-    _instance = None
-
-    @classmethod
-    def get_instance(cls):
-        """Get singleton instance of RedisChannelManager"""
-        if cls._instance is None:
-            cls._instance = RedisChannelManager()
-        return cls._instance
+    TRADE_OPPORTUNITIES = TRADE_OPPORTUNITIES_CHANNEL
+    TRADE_EXECUTIONS = TRADE_EXECUTIONS_CHANNEL
 
     def __init__(self, redis_service: Optional[RedisService] = None):
         """
@@ -37,7 +54,7 @@ class RedisChannelManager:
         Args:
             redis_service: Optional existing RedisService instance
         """
-        self.redis = redis_service or RedisService()
+        self.redis = redis_service or get_shared_redis_client()
         self._subscribed_channels: Set[str] = set()
 
     # ===== Channel Name Formatting =====
@@ -300,3 +317,28 @@ class RedisChannelManager:
     def close(self):
         """Close the Redis connection"""
         self.redis.close()
+
+    def get_all_system_channels(self) -> List[str]:
+        """Get a list of all standard system channels"""
+        from src.arbirich.config.config import EXCHANGES, PAIRS, STRATEGIES
+
+        channels = [
+            # Base channels
+            self.ORDER_BOOK,
+            self.TRADE_OPPORTUNITIES,
+            self.TRADE_EXECUTIONS,
+        ]
+
+        # Add strategy-specific channels
+        for strategy_name in STRATEGIES.keys():
+            channels.append(f"{self.TRADE_OPPORTUNITIES}:{strategy_name}")
+            channels.append(f"{self.TRADE_EXECUTIONS}:{strategy_name}")
+
+        # Add exchange-pair specific channels
+        for exchange in EXCHANGES:
+            for base, quote in PAIRS:
+                symbol = f"{base}-{quote}"
+                channel = self.get_orderbook_channel(exchange, symbol)
+                channels.append(channel)
+
+        return channels

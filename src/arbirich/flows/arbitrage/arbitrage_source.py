@@ -9,10 +9,33 @@ from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
 from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified
 from src.arbirich.models.models import OrderBookUpdate
-from src.arbirich.services.redis.redis_service import get_shared_redis_client
+from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
+from src.arbirich.services.redis.redis_service import get_shared_redis_client, register_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# Redis client for this module
+_redis_client = None
+
+
+def get_redis_client():
+    """Get or create a Redis client for this module."""
+    global _redis_client
+    if _redis_client is None:
+        from src.arbirich.services.redis.redis_service import RedisService
+
+        _redis_client = RedisService().client
+    return _redis_client
+
+
+def reset_shared_redis_client():
+    """Reset the shared Redis client."""
+    global _redis_client
+    _redis_client = None
+
+
+register_redis_client("arbitrage", reset_shared_redis_client)
 
 
 class RedisExchangePartition(StatefulSourcePartition):
@@ -26,6 +49,12 @@ class RedisExchangePartition(StatefulSourcePartition):
         self.last_activity = time.time()
         self.error_backoff = 1  # Initial backoff in seconds
         self.max_backoff = 30  # Maximum backoff in seconds
+        # Use channel manager for consistent channel naming
+        self.channel_manager = get_channel_manager()
+        if channel == "order_book":
+            self.channel = self.channel_manager.get_orderbook_channel(exchange)
+        else:
+            self.channel = channel
         # Subscribe to the Redis pubsub channel explicitly
         self.pubsub = self.redis_client.client.pubsub()
         self.pubsub.subscribe(self.channel)
