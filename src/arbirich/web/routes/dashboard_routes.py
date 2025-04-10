@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.services.database.database_service import DatabaseService
+from src.arbirich.web.dependencies import get_db_service
 
 logger = logging.getLogger(__name__)
 
@@ -16,17 +17,6 @@ router = APIRouter()
 # Update templates_dir to point to the parent directory of "pages"
 templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
 templates = Jinja2Templates(directory=templates_dir)
-
-
-# Add get_db_service dependency
-def get_db_service():
-    """Get a database service instance."""
-    db = DatabaseService()
-    try:
-        yield db
-    finally:
-        # Clean up any resources if needed
-        pass
 
 
 @router.get("/dashboard", response_class=HTMLResponse)

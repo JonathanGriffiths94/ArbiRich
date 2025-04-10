@@ -12,7 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg2
 import redis
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
+from fastapi.responses import JSONResponse
 
 from src.arbirich.config.config import get_all_strategy_names, get_strategy_config
 from src.arbirich.core.trading_service import get_trading_service
@@ -27,10 +28,10 @@ from src.arbirich.models.router_models import (
     TradingStopRequest,
 )
 from src.arbirich.services.database.database_service import DatabaseService
+from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.services.redis.redis_service import RedisService
 from src.arbirich.utils.channel_diagnostics import log_channel_diagnostics
-
-# Import the strategy router
+from src.arbirich.web.dependencies import get_db_service, get_metrics_service
 from src.arbirich.web.routes.strategy_routes import router as strategy_router
 
 logger = logging.getLogger(__name__)
@@ -51,11 +52,8 @@ monitor_api_router = APIRouter(prefix="/monitor", tags=["monitor"])
 
 def get_db():
     """Database service dependency"""
-    db = DatabaseService()
-    try:
-        yield db
-    finally:
-        db.close()
+    # Re-use the common implementation
+    return get_db_service()
 
 
 def get_services() -> Tuple[DatabaseService, RedisService]:
@@ -524,7 +522,7 @@ async def deactivate_strategy(
         raise HTTPException(status_code=500, detail="Failed to deactivate strategy")
 
 
-# Add a new route for API recalculate metrics to avoid template rendering
+# Add route for API recalculate metrics to avoid template rendering
 @strategies_router.get("/{strategy_name}/recalculate-metrics", response_model=Dict[str, Any])
 async def api_recalculate_metrics(strategy_name: str, period_days: int = 30, db: DatabaseService = Depends(get_db)):
     """Recalculate metrics for a strategy via API."""
@@ -551,6 +549,37 @@ async def api_recalculate_metrics(strategy_name: str, period_days: int = 30, db:
     except Exception as e:
         logger.error(f"Error recalculating metrics for strategy '{strategy_name}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to recalculate metrics: {str(e)}")
+
+
+@strategies_router.get("/api/metrics/{strategy_id}")
+async def get_strategy_metrics_api(
+    strategy_id: int,
+    period: str = Query("7d", description="Time period for metrics (1d, 7d, 30d, 90d, all)"),
+    metrics_service: StrategyMetricsService = Depends(get_metrics_service),
+):
+    """API endpoint to get metrics for a strategy in JSON format."""
+    try:
+        # Use the shared helper function
+        from src.arbirich.utils.metrics_helper import calculate_period_dates, format_metrics_for_api
+
+        # Get time period
+        start_date, end_date, _ = calculate_period_dates(period)
+
+        # Get metrics for the period
+        metrics = metrics_service.get_metrics_for_period(strategy_id, start_date, end_date)
+
+        if not metrics:
+            return {"status": "success", "data": None, "message": "No metrics found for this period"}
+
+        # Convert metrics to dictionary format for JSON response using the helper
+        metrics_data = format_metrics_for_api(metrics)
+
+        return {"status": "success", "data": metrics_data, "count": len(metrics_data)}
+    except Exception as e:
+        logger.error(f"Error in strategy metrics API: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500, content={"status": "error", "message": f"Error retrieving metrics: {str(e)}"}
+        )
 
 
 # -------------------- OPPORTUNITIES & EXECUTIONS ENDPOINTS --------------------

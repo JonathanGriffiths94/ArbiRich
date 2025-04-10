@@ -8,21 +8,12 @@ from fastapi.templating import Jinja2Templates
 
 from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.services.database.database_service import DatabaseService
+from src.arbirich.web.dependencies import get_db_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 templates = Jinja2Templates(directory="src/arbirich/web/templates")
-
-
-def get_db_service():
-    """Get a database service instance."""
-    db = DatabaseService()
-    try:
-        yield db
-    finally:
-        # Clean up resources if needed
-        pass
 
 
 @router.get("/strategies", response_class=HTMLResponse)
@@ -205,7 +196,7 @@ async def get_strategy_detail(request: Request, strategy_name: str, db: Database
         }
 
         logger.info(f"Rendering strategy detail template for: {strategy_name}")
-        return templates.TemplateResponse("strategy_detail.html", context)
+        return templates.TemplateResponse("pages/strategy_detail.html", context)
 
     except Exception as e:
         logger.error(f"Error getting strategy detail for {strategy_name}: {e}", exc_info=True)
@@ -272,7 +263,7 @@ async def get_strategy_metrics(
         }
 
         logger.info(f"Rendering strategy metrics template for: {strategy_name}")
-        return templates.TemplateResponse("strategy_metrics.html", context)
+        return templates.TemplateResponse("pages/strategy_metrics.html", context)
 
     except Exception as e:
         logger.error(f"Error getting strategy metrics for {strategy_name}: {e}", exc_info=True)
@@ -311,7 +302,7 @@ async def recalculate_strategy_metrics(
                 },
             )
 
-        # Calculate metrics
+        # Reuse API endpoint functionality for calculation
         metrics_service = StrategyMetricsService(db)
         end_date = datetime.now()
         start_date = end_date - timedelta(days=period_days)
@@ -320,7 +311,7 @@ async def recalculate_strategy_metrics(
             metrics = metrics_service.calculate_strategy_metrics(db.session, strategy.id, start_date, end_date)
             logger.info(f"Metrics recalculated for {strategy_name}, period: {period_days} days")
 
-            # Redirect to metrics page, no need for query params anymore
+            # Redirect to metrics page
             return RedirectResponse(url=f"/strategy/{strategy_name}/metrics")
 
         except Exception as e:

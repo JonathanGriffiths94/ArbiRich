@@ -5,28 +5,15 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
-from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.services.database.database_service import DatabaseService
+from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
+from src.arbirich.utils.metrics_helper import calculate_period_dates
+from src.arbirich.web.dependencies import get_db_service, get_metrics_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 templates = Jinja2Templates(directory="src/arbirich/web/templates")
-
-
-# Get dependencies
-def get_db_service():
-    """Get a database service instance."""
-    db = DatabaseService()
-    try:
-        yield db
-    finally:
-        pass
-
-
-def get_metrics_service(db: DatabaseService = Depends(get_db_service)):
-    """Get a metrics service instance."""
-    return StrategyMetricsService(db)
 
 
 @router.get("/metrics", response_class=HTMLResponse)
@@ -59,7 +46,7 @@ async def get_metrics_dashboard(request: Request, db: DatabaseService = Depends(
         overall_win_rate = (win_count / (win_count + loss_count) * 100) if (win_count + loss_count) > 0 else 0
 
         return templates.TemplateResponse(
-            "metrics.html",
+            "pages/metrics.html",
             {
                 "request": request,
                 "strategies": strategies,
@@ -72,7 +59,7 @@ async def get_metrics_dashboard(request: Request, db: DatabaseService = Depends(
     except Exception as e:
         logger.error(f"Error in metrics dashboard: {e}", exc_info=True)
         return templates.TemplateResponse(
-            "error.html", {"request": request, "error_message": f"Error loading metrics dashboard: {str(e)}"}
+            "errors/error.html", {"request": request, "error_message": f"Error loading metrics dashboard: {str(e)}"}
         )
 
 
@@ -90,26 +77,11 @@ async def get_strategy_metrics(
         strategy = db.get_strategy(strategy_id)
         if not strategy:
             return templates.TemplateResponse(
-                "error.html", {"request": request, "error_message": f"Strategy with ID {strategy_id} not found"}
+                "errors/error.html", {"request": request, "error_message": f"Strategy with ID {strategy_id} not found"}
             )
 
         # Get time period
-        end_date = datetime.now()
-        if period == "1d":
-            start_date = end_date - timedelta(days=1)
-            period_name = "Last 24 hours"
-        elif period == "7d":
-            start_date = end_date - timedelta(days=7)
-            period_name = "Last 7 days"
-        elif period == "30d":
-            start_date = end_date - timedelta(days=30)
-            period_name = "Last 30 days"
-        elif period == "90d":
-            start_date = end_date - timedelta(days=90)
-            period_name = "Last 90 days"
-        else:  # "all"
-            start_date = datetime(2000, 1, 1)
-            period_name = "All time"
+        start_date, end_date, period_name = calculate_period_dates(period)
 
         # Get metrics for the period
         metrics = metrics_service.get_metrics_for_period(strategy_id, start_date, end_date)
@@ -132,7 +104,7 @@ async def get_strategy_metrics(
         )[:10]  # Get only the 10 most recent
 
         return templates.TemplateResponse(
-            "strategy_metrics.html",
+            "pages/strategy_metrics.html",
             {
                 "request": request,
                 "strategy": strategy,
@@ -146,7 +118,7 @@ async def get_strategy_metrics(
     except Exception as e:
         logger.error(f"Error in strategy metrics: {e}", exc_info=True)
         return templates.TemplateResponse(
-            "error.html", {"request": request, "error_message": f"Error loading strategy metrics: {str(e)}"}
+            "errors/error.html", {"request": request, "error_message": f"Error loading strategy metrics: {str(e)}"}
         )
 
 
@@ -159,17 +131,7 @@ async def get_strategy_metrics_api(
     """API endpoint to get metrics for a strategy in JSON format."""
     try:
         # Get time period
-        end_date = datetime.now()
-        if period == "1d":
-            start_date = end_date - timedelta(days=1)
-        elif period == "7d":
-            start_date = end_date - timedelta(days=7)
-        elif period == "30d":
-            start_date = end_date - timedelta(days=30)
-        elif period == "90d":
-            start_date = end_date - timedelta(days=90)
-        else:  # "all"
-            start_date = datetime(2000, 1, 1)
+        start_date, end_date, _ = calculate_period_dates(period)
 
         # Get metrics for the period
         metrics = metrics_service.get_metrics_for_period(strategy_id, start_date, end_date)
@@ -230,7 +192,7 @@ async def recalculate_metrics_endpoint(
         strategy = db.get_strategy(strategy_id)
         if not strategy:
             return templates.TemplateResponse(
-                "error.html", {"request": request, "error_message": f"Strategy with ID {strategy_id} not found"}
+                "errors/error.html", {"request": request, "error_message": f"Strategy with ID {strategy_id} not found"}
             )
 
         # Calculate time period
@@ -251,7 +213,7 @@ async def recalculate_metrics_endpoint(
             )
         else:
             return templates.TemplateResponse(
-                "error.html",
+                "errors/error.html",
                 {
                     "request": request,
                     "error_message": f"No executions found for {strategy.name} in the last {period_days} days",
@@ -260,5 +222,5 @@ async def recalculate_metrics_endpoint(
     except Exception as e:
         logger.error(f"Error recalculating metrics: {e}", exc_info=True)
         return templates.TemplateResponse(
-            "error.html", {"request": request, "error_message": f"Error recalculating metrics: {str(e)}"}
+            "errors/error.html", {"request": request, "error_message": f"Error recalculating metrics: {str(e)}"}
         )

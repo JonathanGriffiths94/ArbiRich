@@ -4,12 +4,12 @@ Dashboard Controller - Handles dashboard UI and API endpoints
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 
 from src.arbirich.services.database.database_service import DatabaseService
+from src.arbirich.web.dependencies import get_db_service
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +21,8 @@ templates = None
 
 def get_db():
     """Get database service instance"""
-    db = DatabaseService()
-    try:
-        yield db
-    finally:
-        db.close()
+    # Re-use the common implementation
+    return get_db_service()
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
