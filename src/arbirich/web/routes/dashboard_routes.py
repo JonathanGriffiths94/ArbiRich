@@ -1,6 +1,6 @@
 import logging
-import os
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -14,9 +14,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Update templates_dir to point to the parent directory of "pages"
-templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
-templates = Jinja2Templates(directory=templates_dir)
+templates_dir = Path(__file__).parent.parent / "templates"
+templates = Jinja2Templates(directory=str(templates_dir))
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
