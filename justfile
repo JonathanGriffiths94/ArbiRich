@@ -21,7 +21,6 @@ install:
 format:
     poetry run ruff check . --select I --fix # sort imports
     poetry run ruff format .
-    poetry run black .
     poetry run djlint src/arbirich/web/templates --reformat --indent 4
 
 # Run linter for python

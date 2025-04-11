@@ -45,7 +45,5 @@ jobs:
         run: poetry run ruff format --check .
       - name: ✅ Check Import Sorting with Ruff
         run: poetry run ruff check --select I .
-      - name: ✅ Check Formatting with Black
-        run: poetry run black --check .
       - name: ✅ Check Formatting with djlint
         run: poetry run djlint src/arbirich/web/templates --check --extension=html,jinja

@@ -29,7 +29,6 @@ psutil = "^7.0.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.9.6"
-black = "^25.1.0"
 pytest = "^8.3.4"
 pre-commit = "^4.1.0"
 debugpy = "^1.8.12"
@@ -43,9 +42,6 @@ build-backend = "poetry.core.masonry.api"
 arbirich = "main:app"
 
 [tool.ruff]
-line-length = 120
-
-[tool.black]
 line-length = 120
 
 [tool.djlint]
