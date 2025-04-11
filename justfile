@@ -28,6 +28,10 @@ format:
 lint:
     poetry run ruff check src tests
 
+# Add a command to check HTML files with djLint
+lint-html:
+    poetry run djlint src/arbirich/web/templates --lint
+
 # Run tests
 test:
     {{ pytest }} -v

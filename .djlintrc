@@ -1,5 +1,5 @@
 {
-  "indent": 2,
+  "indent": 4,
   "blank_line_after_tag": "load,extends,include",
   "max_line_length": 100,
   "profile": "jinja",
