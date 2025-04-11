@@ -1,8 +1,7 @@
-# ...existing imports...
-from src.arbirich.web.routes import strategy_routes
+from src.arbirich.web.routes import dashboard_routes, metrics_routes, strategy_routes
 
-# Export modules
 __all__ = [
-    # ...existing exports...,
     "strategy_routes",
+    "dashboard_routes",
+    "metrics_routes",
 ]
