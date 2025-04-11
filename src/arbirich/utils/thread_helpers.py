@@ -1,7 +1,3 @@
-"""
-Thread management utilities for graceful termination of threads.
-"""
-
 import asyncio
 import logging
 import threading

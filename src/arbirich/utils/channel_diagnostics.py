@@ -1,7 +1,3 @@
-"""
-Diagnostic utilities for Redis channels and subscriptions.
-"""
-
 import logging
 from typing import Dict
 

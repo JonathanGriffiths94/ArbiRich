@@ -1,10 +1,3 @@
-"""
-System state management for ArbiRich trading platform.
-
-Provides functions to handle system-wide shutdown flag and component notification states.
-This module is used by various components to coordinate graceful shutdown.
-"""
-
 import logging
 import threading
 from typing import Dict, Set

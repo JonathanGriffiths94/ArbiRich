@@ -1,15 +1,10 @@
-"""
-Background service to maintain active Redis subscriptions.
-This ensures channels always have at least one subscriber.
-"""
-
 import logging
 import threading
 import time
 
+from arbirich.core.state.system_state import is_system_shutting_down
 from src.arbirich.config.config import EXCHANGES, PAIRS, STRATEGIES
 from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
-from src.arbirich.core.system_state import is_system_shutting_down
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)

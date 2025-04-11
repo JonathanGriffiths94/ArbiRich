@@ -6,7 +6,7 @@ import weakref
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from src.arbirich.core.system_state import is_system_shutting_down
+from arbirich.core.state.system_state import is_system_shutting_down
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)

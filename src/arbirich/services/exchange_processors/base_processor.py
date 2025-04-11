@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 
 import websockets
 
-from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified
+from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

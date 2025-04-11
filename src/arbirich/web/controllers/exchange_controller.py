@@ -1,7 +1,3 @@
-"""
-Exchange Controller - Renders and handles exchange management views.
-"""
-
 import logging
 from pathlib import Path
 from typing import Any, Dict

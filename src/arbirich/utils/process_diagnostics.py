@@ -1,7 +1,3 @@
-"""
-Utilities for diagnosing process and thread issues during shutdown.
-"""
-
 import logging
 import sys
 import threading

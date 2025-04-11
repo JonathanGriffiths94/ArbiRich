@@ -1,5 +1,3 @@
-"""Configuration for the arbitrage system"""
-
 import os
 
 from dotenv import load_dotenv

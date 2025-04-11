@@ -7,7 +7,7 @@ from typing import List, Optional
 from bytewax import operators as op
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified
+from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified
 from src.arbirich.models.models import OrderBookUpdate
 from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
 from src.arbirich.services.redis.redis_service import get_shared_redis_client, register_redis_client

@@ -1,7 +1,3 @@
-"""
-Application lifecycle events for startup and shutdown.
-"""
-
 import asyncio
 import logging
 import os
@@ -12,8 +8,8 @@ import time
 
 import psutil
 
+from arbirich.core.lifecycle.shutdown_manager import execute_phased_shutdown
 from arbirich.services.database.prefill_database import prefill_database
-from src.arbirich.core.shutdown_manager import execute_phased_shutdown
 from src.arbirich.services.exchange_processors.registry import set_processors_shutting_down, shutdown_all_processors
 
 logger = logging.getLogger(__name__)
@@ -137,7 +133,7 @@ async def startup_event() -> None:
 
     # Reset system shutdown flag
     try:
-        from src.arbirich.core.system_state import mark_system_shutdown, reset_notification_state
+        from arbirich.core.state.system_state import mark_system_shutdown, reset_notification_state
 
         mark_system_shutdown(False)
         reset_notification_state()
@@ -189,7 +185,7 @@ async def shutdown_event() -> None:
         logger.info("Processor-specific shutdown flag set")
 
         # Set the system-wide shutdown flag
-        from src.arbirich.core.system_state import mark_system_shutdown
+        from arbirich.core.state.system_state import mark_system_shutdown
 
         mark_system_shutdown(True)
         logger.info("System-wide shutdown flag set")

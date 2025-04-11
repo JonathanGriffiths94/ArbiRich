@@ -146,7 +146,7 @@ class TradingService:
 
         # Set system-wide shutdown flag
         try:
-            from src.arbirich.core.system_state import mark_system_shutdown
+            from arbirich.core.state.system_state import mark_system_shutdown
 
             mark_system_shutdown(True)
             self.logger.info("System-wide shutdown flag set")
@@ -227,7 +227,7 @@ class TradingService:
         reset_processor_states()
 
         # Reset system state
-        from src.arbirich.core.system_state import mark_system_shutdown, reset_notification_state
+        from arbirich.core.state.system_state import mark_system_shutdown, reset_notification_state
 
         mark_system_shutdown(False)
         reset_notification_state()
@@ -680,7 +680,7 @@ class TradingService:
                             self.logger.error(f"Failed to restart {process_name} task: {restart_error}")
 
             # Check system shutdown
-            from src.arbirich.core.system_state import is_system_shutting_down
+            from arbirich.core.state.system_state import is_system_shutting_down
 
             if is_system_shutting_down():
                 self.logger.info(f"System shutdown detected in {process_name} monitor, stopping")
@@ -788,42 +788,55 @@ class TradingService:
             # Periodically check database health while the flow runs
             while True:
                 try:
+                    # First check if system is shutting down before any other checks
+                    from arbirich.core.state.system_state import is_system_shutting_down
+
+                    if is_system_shutting_down():
+                        self.logger.info("System shutdown detected in reporting monitor loop, stopping task")
+
+                        # First explicitly stop the reporting flow - even if task is not done
+                        try:
+                            from arbirich.flows.reporting.reporting_flow import stop_reporting_flow
+
+                            stop_reporting_flow()
+                            self.logger.info("Explicitly stopped reporting flow during shutdown")
+                        except Exception as e:
+                            self.logger.error(f"Error stopping reporting flow during shutdown: {e}")
+
+                        # Cancel the task if it's still running
+                        if not reporting_flow_task.done():
+                            reporting_flow_task.cancel()
+                            try:
+                                await asyncio.wait_for(asyncio.shield(reporting_flow_task), timeout=2.0)
+                            except (asyncio.CancelledError, asyncio.TimeoutError):
+                                self.logger.info("Reporting task cancelled or timed out during shutdown")
+                        break
+
                     # Check if the reporting flow task is still running
                     if reporting_flow_task.done():
                         exception = reporting_flow_task.exception()
                         if exception:
                             self.logger.error(f"Reporting flow task failed: {exception}")
-                            # Check if system is shutting down before restarting
-                            from src.arbirich.core.system_state import is_system_shutting_down
-
-                            if is_system_shutting_down():
+                            # Only restart if system is not shutting down
+                            if not is_system_shutting_down():
+                                # Restart the task
+                                reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
+                                self.logger.info("Reporting flow task restarted after error")
+                            else:
                                 self.logger.info("System shutting down, not restarting reporting flow")
                                 break
-
-                            # Restart the task
-                            reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
-                            self.logger.info("Reporting flow task restarted after error")
                         else:
                             self.logger.warning("Reporting flow task completed unexpectedly")
-                            # Check if system is shutting down before restarting
-                            from src.arbirich.core.system_state import is_system_shutting_down
-
-                            if is_system_shutting_down():
+                            # Only restart if system is not shutting down
+                            if not is_system_shutting_down():
+                                # Restart the task
+                                reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
+                                self.logger.info("Reporting flow task restarted after completion")
+                            else:
                                 self.logger.info("System shutting down, not restarting reporting flow")
                                 break
 
-                            # Restart the task
-                            reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
-                            self.logger.info("Reporting flow task restarted after completion")
-
-                    # Check if system is shutting down
-                    from src.arbirich.core.system_state import is_system_shutting_down
-
-                    if is_system_shutting_down():
-                        self.logger.info("System shutdown detected in reporting monitor loop, stopping")
-                        break
-
-                    # Run health check
+                    # Run health check less frequently
                     import sqlalchemy as sa
 
                     from src.arbirich.services.database.database_service import DatabaseService
@@ -833,13 +846,14 @@ class TradingService:
                             # Run a simple query to verify connection
                             result = conn.execute(sa.text("SELECT 1")).scalar()
                             self.logger.debug(f"Database health check: {result}")
+
                 except asyncio.CancelledError:
                     raise  # Re-raise to handle properly in the outer try/except
                 except Exception as e:
                     self.logger.error(f"Error in reporting monitoring loop: {e}")
 
                 # Sleep before next check
-                await asyncio.sleep(60)  # Check every minute
+                await asyncio.sleep(10)  # Check more frequently to detect shutdown faster
 
         except asyncio.CancelledError:
             self.logger.info("Reporting process stopping")

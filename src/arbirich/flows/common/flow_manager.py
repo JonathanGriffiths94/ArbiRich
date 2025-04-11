@@ -1,7 +1,3 @@
-"""
-Flow manager for Bytewax dataflows.
-"""
-
 import asyncio
 import concurrent.futures
 import logging
@@ -14,7 +10,7 @@ from bytewax.dataflow import Dataflow
 # Update import based on documentation
 from bytewax.run import cli_main
 
-from src.arbirich.core.system_state import is_system_shutting_down
+from arbirich.core.state.system_state import is_system_shutting_down
 from src.arbirich.utils.thread_helpers import terminate_thread_pool, try_join_thread
 
 logger = logging.getLogger(__name__)
@@ -226,7 +222,7 @@ class BytewaxFlowManager:
         self.logger.info(f"Stop signal sent to {self.name} flow")
 
         # Mark system as shutting down to ensure other components respect it
-        from src.arbirich.core.system_state import mark_system_shutdown
+        from arbirich.core.state.system_state import mark_system_shutdown
 
         mark_system_shutdown(True)
 

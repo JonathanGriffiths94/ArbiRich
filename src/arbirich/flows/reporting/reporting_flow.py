@@ -1,7 +1,3 @@
-"""
-Reporting dataflow for trade opportunities and executions.
-"""
-
 import logging
 import signal
 import sys
@@ -50,27 +46,37 @@ def stop_reporting_flow():
     Returns True if a flow was stopped, False otherwise.
     """
     global _active_flow
+    logger.info("Explicit stop_reporting_flow called")
+
+    # First set system shutdown flag
+    try:
+        from arbirich.core.state.system_state import mark_system_shutdown
+
+        mark_system_shutdown(True)
+        logger.info("System shutdown flag set in stop_reporting_flow")
+    except Exception as e:
+        logger.error(f"Error setting system shutdown flag: {e}")
+
+    # Explicitly terminate all partitions first
+    try:
+        from src.arbirich.flows.reporting.reporting_source import terminate_all_partitions
+
+        terminate_all_partitions()
+        logger.info("All reporting partitions terminated")
+    except Exception as e:
+        logger.error(f"Error terminating reporting partitions: {e}")
+
     with _flow_lock:
         flow = _active_flow
         if flow is None:
             logger.info("No active reporting flow to stop")
             return False
+        _active_flow = None  # Clear reference immediately
 
-    # Set system shutdown flag
-    from src.arbirich.core.system_state import mark_system_shutdown
-
-    mark_system_shutdown(True)
-
-    # Now stop the flow - this code depends on how your flow is structured
+    # Now stop the flow using the flow manager
     try:
-        # First try to stop using the flow manager
         logger.info("Stopping reporting flow using flow manager")
-        flow_manager.stop_flow()
-
-        # Also terminate all reporting partitions explicitly
-        from src.arbirich.flows.reporting.reporting_source import terminate_all_partitions
-
-        terminate_all_partitions()
+        result = flow_manager.stop_flow()
 
         # Close Redis connections
         from src.arbirich.flows.reporting.reporting_source import reset_shared_redis_client
@@ -80,11 +86,7 @@ def stop_reporting_flow():
         # Wait for a short time to allow cleanup
         time.sleep(0.5)
 
-        # Clear reference
-        with _flow_lock:
-            _active_flow = None
-
-        return True
+        return result
     except Exception as e:
         logger.error(f"Error stopping reporting flow: {e}")
         return False
@@ -143,6 +145,16 @@ def stop_reporting_flow_sync():
 
 async def stop_reporting_flow_async():
     """Signal the reporting flow to stop asynchronously"""
+    logger.info("stop_reporting_flow_async called")
+    # First terminate partitions
+    try:
+        from src.arbirich.flows.reporting.reporting_source import terminate_all_partitions
+
+        terminate_all_partitions()
+    except Exception as e:
+        logger.error(f"Error terminating partitions in async stop: {e}")
+
+    # Then stop flow
     return await flow_manager.stop_flow_async()
 
 

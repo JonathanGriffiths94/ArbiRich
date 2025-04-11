@@ -1,7 +1,3 @@
-"""
-Setup Controller - Renders and handles system setup views.
-"""
-
 import logging
 from pathlib import Path
 

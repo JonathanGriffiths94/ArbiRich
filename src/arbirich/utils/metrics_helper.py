@@ -1,8 +1,3 @@
-"""
-Helper functions for metrics calculations and processing.
-This module centralizes common metrics-related functions used across the application.
-"""
-
 from datetime import datetime, timedelta
 from typing import Tuple
 

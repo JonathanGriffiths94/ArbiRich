@@ -766,7 +766,7 @@ class RedisService:
         """Check if Redis connection is healthy"""
         # First check system shutdown state
         try:
-            from src.arbirich.core.system_state import is_system_shutting_down
+            from arbirich.core.state.system_state import is_system_shutting_down
 
             if is_system_shutting_down():
                 # During shutdown, return False without attempting reconnection
@@ -784,7 +784,7 @@ class RedisService:
         """Reconnect to Redis if connection is unhealthy"""
         # Check system shutdown state first
         try:
-            from src.arbirich.core.system_state import is_system_shutting_down
+            from arbirich.core.state.system_state import is_system_shutting_down
 
             if is_system_shutting_down():
                 # Don't attempt reconnection during shutdown

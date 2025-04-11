@@ -1,7 +1,3 @@
-"""
-Dashboard Controller - Handles dashboard UI and API endpoints
-"""
-
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path

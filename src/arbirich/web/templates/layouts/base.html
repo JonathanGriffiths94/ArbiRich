@@ -589,6 +589,15 @@
                                 .then(data => {
                                     console.log('Emergency shutdown activated:', data);
                                     showNotification('EMERGENCY SHUTDOWN ACTIVATED', 'error');
+                                    
+                                    // Add a second call to ensure complete shutdown
+                                    setTimeout(() => {
+                                        fetch('/api/system/shutdown_flows', { 
+                                            method: 'POST',
+                                            headers: {'Content-Type': 'application/json'}
+                                        }).catch(e => console.error('Second shutdown call error:', e));
+                                    }, 500);
+                                    
                                     if (typeof updateTradingStatusIndicator === 'function') {
                                         updateTradingStatusIndicator();
                                     }

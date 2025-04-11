@@ -1,9 +1,3 @@
-"""
-Enums used throughout the ArbiRich application.
-This file combines enums with constants to provide a centralized, type-safe approach
-to commonly used values.
-"""
-
 import enum
 from typing import Any, Dict, List, Optional, Tuple
 

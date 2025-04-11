@@ -1,7 +1,3 @@
-"""
-Aggressive shutdown manager for ensuring clean application termination.
-"""
-
 import asyncio
 import concurrent.futures
 import logging
@@ -14,7 +10,7 @@ from enum import Enum
 
 import psutil
 
-from src.arbirich.core.system_state import mark_system_shutdown
+from arbirich.core.state.system_state import mark_system_shutdown
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +246,28 @@ async def execute_phased_shutdown(emergency_timeout=30):
             logger.error(f"Error setting processor shutdown flag: {e}")
         mark_phase_complete(ShutdownPhase.FLAG_SET)
 
+        # NEW PHASE: First Stop Reporting Flow - this is critical to prevent hanging
+        logger.info("PHASE 1.5: Stopping reporting flow early")
+        try:
+            from src.arbirich.flows.common.flow_manager import BytewaxFlowManager
+            from src.arbirich.flows.reporting.reporting_flow import stop_reporting_flow
+
+            # Try to get the reporting flow manager
+            reporting_manager = BytewaxFlowManager.get_manager("reporting")
+            if reporting_manager and reporting_manager.is_running():
+                logger.info("Found active reporting flow manager, stopping")
+                await asyncio.wait_for(asyncio.shield(asyncio.to_thread(reporting_manager.stop_flow)), timeout=5)
+            else:
+                # Direct call to stop_reporting_flow as fallback
+                await asyncio.wait_for(asyncio.shield(asyncio.to_thread(stop_reporting_flow)), timeout=5)
+
+            logger.info("Reporting flow stopped early in shutdown sequence")
+        except (asyncio.TimeoutError, Exception) as e:
+            logger.warning(f"Reporting flow early stop timed out or failed: {e}")
+
+        # Give a moment for cleanup
+        await asyncio.sleep(1.0)
+
         # Phase 2: Stop WebSocket consumers
         logger.info("PHASE 2: Stopping WebSocket consumers")
         try:
@@ -383,7 +401,7 @@ async def execute_phased_shutdown(emergency_timeout=30):
 
         # NEW: Reset trading service component states
         try:
-            from src.arbirich.core.trading_service import get_trading_service
+            from arbirich.core.trading.trading_service import get_trading_service
 
             trading_service = get_trading_service()
             if hasattr(trading_service, "_reset_all_component_states"):

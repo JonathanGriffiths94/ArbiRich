@@ -1,8 +1,3 @@
-"""
-Provides mock data for dashboard and other components when real data is unavailable.
-This helps the UI work even when the backend is not fully implemented.
-"""
-
 import logging
 import random
 from datetime import datetime, timedelta

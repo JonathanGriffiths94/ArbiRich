@@ -1,7 +1,3 @@
-"""
-Constants used throughout the ArbiRich application.
-"""
-
 # Redis channel names
 TRADE_OPPORTUNITIES_CHANNEL = "trade_opportunities"
 TRADE_EXECUTIONS_CHANNEL = "trade_executions"

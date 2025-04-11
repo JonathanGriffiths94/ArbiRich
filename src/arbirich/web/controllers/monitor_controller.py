@@ -1,7 +1,3 @@
-"""
-Monitor Controller - Renders and handles system monitoring views.
-"""
-
 import logging
 import platform
 from datetime import datetime, timedelta

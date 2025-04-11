@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Tuple, Type
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified
+from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified
 from src.arbirich.services.exchange_processors.registry import (
     are_processors_shutting_down,
     deregister_processor,

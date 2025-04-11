@@ -1,11 +1,4 @@
-"""
-Dashboard-specific database queries for the ArbiRich dashboard controller.
-This module should be imported and used by the DatabaseService class.
-"""
-
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional
 
 from sqlalchemy.sql import text
 

@@ -1,10 +1,8 @@
-"""Service to maintain Redis channel subscriptions."""
-
 import logging
 import threading
 import time
 
-from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified
+from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified
 from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 

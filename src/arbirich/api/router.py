@@ -1,10 +1,3 @@
-"""
-Unified API Router for ArbiRich trading platform.
-
-This module consolidates all API endpoints into a single organized structure,
-including status endpoints, trading operations, dashboard data, and health monitoring.
-"""
-
 import logging
 import os
 from datetime import datetime, timedelta
@@ -15,8 +8,8 @@ import redis
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from fastapi.responses import JSONResponse
 
+from arbirich.core.trading.trading_service import get_trading_service
 from src.arbirich.config.config import get_all_strategy_names, get_strategy_config
-from src.arbirich.core.trading_service import get_trading_service
 from src.arbirich.models.models import Strategy
 from src.arbirich.models.router_models import (
     ChartData,
@@ -261,7 +254,7 @@ async def stop_trading(request: Request, stop_request: TradingStopRequest = None
 
     try:
         # Stop all components
-        from src.arbirich.core.system_state import mark_system_shutdown
+        from arbirich.core.state.system_state import mark_system_shutdown
         from src.arbirich.flows.ingestion.ingestion_source import disable_processor_startup
         from src.arbirich.services.exchange_processors.registry import set_processors_shutting_down
 

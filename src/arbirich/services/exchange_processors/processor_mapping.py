@@ -1,12 +1,6 @@
-"""
-Mapping between exchange names and their processors.
-This centralizes exchange name normalization and processor selection.
-"""
-
 import logging
 from typing import Dict, Type
 
-from src.arbirich.config.config import ALL_EXCHANGES
 from src.arbirich.services.exchange_processors.base_processor import BaseOrderBookProcessor
 from src.arbirich.services.exchange_processors.default_processor import DefaultOrderBookProcessor
 

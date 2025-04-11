@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from arbirich.api.router import main_router
-from src.arbirich.core.app_lifecyle import lifespan
+from arbirich.core.lifecycle.app_lifecyle import lifespan
 from src.arbirich.web.controllers.dashboard_controller import router as dashboard_controller_router
 from src.arbirich.web.controllers.exchange_controller import router as exchange_router
 from src.arbirich.web.controllers.monitor_controller import router as monitor_router

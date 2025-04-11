@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
-from src.arbirich.core.system_state import is_system_shutting_down
+from arbirich.core.state.system_state import is_system_shutting_down
 from src.arbirich.models.models import TradeExecution, TradeOpportunity
 from src.arbirich.models.schema import trade_opportunities
 from src.arbirich.services.database.database_service import DatabaseService

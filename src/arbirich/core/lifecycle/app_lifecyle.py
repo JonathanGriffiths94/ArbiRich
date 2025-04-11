@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from src.arbirich.core.events import shutdown_event, startup_event
-from src.arbirich.core.trading_service import TradingService
+from arbirich.core.lifecycle.events import shutdown_event, startup_event
+from arbirich.core.trading.trading_service import TradingService
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.web.websockets import websocket_broadcast_task
 
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
 
         # Run database prefill first to ensure configuration data exists
         try:
-            from src.arbirich.core.events import run_database_prefill
+            from arbirich.core.lifecycle.events import run_database_prefill
 
             await run_database_prefill()
             logger.info("Database prefill completed")
@@ -101,7 +101,7 @@ async def lifespan(app: FastAPI):
 
         # Set system-wide shutdown flag immediately (moved from shutdown_event)
         try:
-            from src.arbirich.core.system_state import mark_system_shutdown
+            from arbirich.core.state.system_state import mark_system_shutdown
 
             mark_system_shutdown(True)
             logger.info("System-wide shutdown flag set")

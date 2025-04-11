@@ -1,8 +1,3 @@
-"""
-Default processor that can be used for any exchange.
-This is a fallback for exchanges that don't have a specific processor.
-"""
-
 import asyncio
 import json
 import logging

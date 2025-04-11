@@ -1,7 +1,3 @@
-"""
-Strategy Manager for handling strategy configuration and management.
-"""
-
 import logging
 from typing import Dict, List, Tuple
 

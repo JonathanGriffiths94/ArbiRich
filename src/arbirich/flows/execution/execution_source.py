@@ -6,9 +6,9 @@ from threading import Lock
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
+from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified, set_stop_event
 from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
-from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified, set_stop_event
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
