@@ -1,13 +1,22 @@
 """
 Constants used throughout the ArbiRich application.
-Centralizing constants helps maintain consistency across the codebase.
 """
 
 # Redis channel names
-ORDER_BOOK_CHANNEL = "order_book"
 TRADE_OPPORTUNITIES_CHANNEL = "trade_opportunities"
 TRADE_EXECUTIONS_CHANNEL = "trade_executions"
-DEBUG_CHANNEL = "debug"
+ORDER_BOOK_CHANNEL = "order_book"
+
+# Database table names
+EXCHANGES_TABLE = "exchanges"
+PAIRS_TABLE = "pairs"
+STRATEGIES_TABLE = "strategies"
+TRADE_OPPORTUNITIES_TABLE = "trade_opportunities"
+TRADE_EXECUTIONS_TABLE = "trade_executions"
+STRATEGY_METRICS_TABLE = "strategy_metrics"
+STRATEGY_TRADING_PAIR_METRICS_TABLE = "strategy_trading_pair_metrics"
+STRATEGY_TRADING_EXCHANGE_METRICS_TABLE = "strategy_trading_exchange_metrics"
+
 
 # Redis key prefixes
 ORDER_BOOK_KEY_PREFIX = "order_book:"
@@ -29,14 +38,18 @@ DEFAULT_BATCH_SIZE = 10
 PRICE_PRECISION = 8  # Decimal places for price
 VOLUME_PRECISION = 8  # Decimal places for volume
 
-# Status codes
-STATUS_SUCCESS = "success"
+# Status constants
+STATUS_ACTIVE = "active"
+STATUS_INACTIVE = "inactive"
 STATUS_ERROR = "error"
 STATUS_PENDING = "pending"
-STATUS_EXECUTING = "executing"
-STATUS_COMPLETED = "completed"
-STATUS_CANCELED = "canceled"
-STATUS_EXPIRED = "expired"
+STATUS_COMPLETE = "complete"
+
+# Trading constants
+MIN_ORDER_SIZE = 0.001  # Minimum order size for most exchanges
+MAX_SLIPPAGE_PERCENT = 0.5  # Maximum allowed slippage (0.5%)
+MAX_EXECUTION_RETRIES = 3  # Maximum number of execution retry attempts
+EXECUTION_TIMEOUT_MS = 10000  # Timeout for executions (10 seconds)
 
 # Log levels as constants
 LOG_DEBUG = "DEBUG"
@@ -44,27 +57,3 @@ LOG_INFO = "INFO"
 LOG_WARNING = "WARNING"
 LOG_ERROR = "ERROR"
 LOG_CRITICAL = "CRITICAL"
-
-# Default strategy name
-DEFAULT_STRATEGY = "basic_arbitrage"
-
-# Exchange specific constants
-# Minimum order sizes (in base asset)
-MIN_ORDER_SIZE = {
-    "bybit": {
-        "BTC-USDT": 0.001,
-        "ETH-USDT": 0.01,
-        "SOL-USDT": 0.1,
-    },
-    "cryptocom": {
-        "BTC-USDT": 0.0001,
-        "ETH-USDT": 0.01,
-        "SOL-USDT": 0.1,
-    },
-}
-
-# Fee rates by exchange (as decimal, e.g., 0.001 = 0.1%)
-FEE_RATES = {
-    "bybit": 0.001,  # 0.1%
-    "cryptocom": 0.001,  # 0.1%
-}

@@ -1,0 +1,114 @@
+/* Dashboard specific styles */
+
+/* Stats Cards */
+.stats-cards-container {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.stat-card {
+    background-color: #1c2821 !important;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    height: 7rem;
+    min-height: 7rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #85bb65, #3abe78);
+    border-bottom-left-radius: 0.5rem;
+    border-bottom-right-radius: 0.5rem;
+}
+
+/* Media queries for responsive grid */
+@media (min-width: 640px) {
+    .stats-cards-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .stats-cards-container {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* Dashboard cards styling */
+.dashboard-card {
+    background-color: #1c2821;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Table styling for dashboard */
+.dashboard-card table thead tr {
+    border-bottom: 1px solid #29352f;
+}
+
+.dashboard-card table tbody tr {
+    border-bottom: 1px solid #1a241e;
+}
+
+.dashboard-card table tbody tr:hover {
+    background-color: #213028;
+}
+
+/* Refresh indicator animation enhancement */
+.refresh-indicator {
+    position: relative;
+    width: 40px;
+    height: 4px;
+    background-color: #1a241e;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.refresh-indicator::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    background: linear-gradient(90deg, transparent, #85bb65, transparent);
+    animation: refresh-progress 2s infinite linear;
+}
+
+@keyframes refresh-progress {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+/* Debug panel styling */
+#debug-info {
+    background-color: #1c2821;
+    border: 1px solid #29352f;
+    border-radius: 0.5rem;
+}
+
+#debug-info pre {
+    background-color: #121a17;
+    border-radius: 0.25rem;
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    color: #85bb65;
+    overflow-x: auto;
+}

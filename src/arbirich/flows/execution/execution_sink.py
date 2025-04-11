@@ -52,14 +52,6 @@ def execute_trade(opportunity_raw: dict) -> dict:
         strategy_name = trade_exec.strategy
         channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}" if strategy_name else TRADE_EXECUTIONS_CHANNEL
 
-        # try:
-        #     # Ensure the channel exists
-        #     logger.info(f"Ensuring trade execution channel {channel} exists...")
-        #     redis_client.ensure_execution_channels_exist()
-        #     logger.info("Channel existence ensured successfully")
-        # except Exception as e:
-        #     logger.error(f"Error ensuring channel exists: {e}", exc_info=True)
-
         # Publish execution
         logger.info(f"About to publish trade execution {trade_exec.id} to channel {channel}")
         redis_client.publish_trade_execution(trade_exec, strategy_name)

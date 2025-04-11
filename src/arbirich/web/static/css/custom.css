@@ -1,0 +1,212 @@
+/* Custom styles for ArbiRich frontend - Money Green Theme */
+
+:root {
+    --primary-green: #0d904f;
+    --primary-hover: #07713e;
+    --primary-light: #5cbf91;
+    --dark-bg: #0a1e14;
+    --darker-bg: #081812;
+    --dark-card: #122520;
+    --dark-element: #1c352d;
+    --profit-green: #3abe78;
+    --loss-red: #e55039;
+    --text-light: #e0e9e5;
+    --text-dim: #a0b3ac;
+    --border-dark: #1e3d34;
+    --highlight: rgba(13, 144, 79, 0.15);
+    --dollar-accent: #85bb65;
+    --money-green: #0d904f;
+    --money-light: #5cbf91;
+    --money-dark: #07713e;
+    --dollar-green: #85bb65;
+    --lime-green: #85bb65;
+    --light-green: #90EE90;
+}
+
+body {
+    background-color: var(--dark-bg);
+    color: var(--text-light);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Logo styling */
+.logo {
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: var(--dollar-accent);
+    text-shadow: 0 0 10px rgba(133, 187, 101, 0.4);
+    font-family: 'Courier New', monospace;
+    transition: all 0.3s ease;
+}
+
+.logo:hover {
+    color: var(--money-light);
+}
+
+/* ASCII art styling - Light green */
+.ascii-art {
+    color: var(--light-green);
+    text-shadow: 0 0 10px rgba(144, 238, 144, 0.5);
+    font-family: 'Courier New', monospace;
+    white-space: pre;
+    font-size: 0.75rem;
+}
+
+@media (min-width: 768px) {
+    .ascii-art {
+        font-size: 0.875rem;
+    }
+}
+
+@media (min-width: 1024px) {
+    .ascii-art {
+        font-size: 1rem;
+    }
+}
+
+/* Header styling */
+.top-header {
+    background-color: var(--darker-bg);
+    border-bottom: 1px solid rgba(133, 187, 101, 0.1);
+}
+
+/* Card styling */
+.dashboard-card,
+.bg-dark-element {
+    background-color: var(--dark-card);
+    border: 1px solid var(--border-dark);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+    border-color: var(--dollar-green);
+}
+
+/* Button styling */
+.btn-primary {
+    background-color: var(--dollar-green);
+    color: var(--dark-bg);
+    transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+    background-color: var(--money-dark);
+}
+
+.btn-secondary {
+    background-color: var(--dark-bg);
+    color: var(--dollar-green);
+    border: 1px solid rgba(133, 187, 101, 0.3);
+    transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+    background-color: var(--dark-card);
+}
+
+/* Status colors */
+.text-profit-green {
+    color: var(--profit-green);
+}
+
+.text-loss-red {
+    color: var(--loss-red);
+}
+
+.text-dollar-green {
+    color: var(--dollar-green);
+}
+
+/* Footer styling */
+.footer {
+    background-color: var(--darker-bg);
+    border-top: 1px solid rgba(133, 187, 101, 0.1);
+}
+
+/* Profit/Loss indicators */
+.profit-positive {
+    color: var(--profit-green);
+    font-weight: bold;
+}
+
+.profit-negative {
+    color: var(--loss-red);
+    font-weight: bold;
+}
+
+/* Navigation bar */
+.nav-bg {
+    background-color: var(--dark-element);
+    border-bottom: 1px solid var(--border-dark);
+}
+
+.nav-link {
+    color: var(--text-light);
+}
+
+.nav-link:hover {
+    color: var(--primary-green);
+}
+
+/* Table styling */
+.table-header {
+    background-color: var(--dark-element);
+    color: var(--primary-green);
+}
+
+.table-row {
+    border-color: var(--border-dark);
+}
+
+.table-row:hover {
+    background-color: rgba(0, 255, 0, 0.05);
+}
+
+/* Dashboard card animations */
+.dashboard-card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    background-color: var(--dark-card);
+    border: 1px solid var(--border-dark);
+    transition: all 0.3s ease;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px rgba(0, 255, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+    border-color: var(--primary-green);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Refresh indicator animation */
+.refresh-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: 5px;
+    background-color: var(--primary-green);
+    box-shadow: 0 0 10px var(--primary-green);
+}
+
+.refresh-indicator.updating {
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+        box-shadow: 0 0 15px var(--primary-green);
+    }
+
+    50% {
+        opacity: 0.3;
+        box-shadow: 0 0 5px var(--primary-green);
+    }
+
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 15px var(--primary-green);
+    }
+}

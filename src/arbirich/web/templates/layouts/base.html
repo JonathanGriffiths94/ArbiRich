@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+        <meta name="description"
+              content="ArbiRich - Advanced cryptocurrency arbitrage trading platform">
+        <meta name="keywords"
+              content="crypto, arbitrage, trading, cryptocurrency, exchange, profit">
+        <title>
+            {% block title %}
+                ArbiRich
+            {% endblock title %}
+        </title>
+        <!-- Favicon -->
+        <link rel="shortcut icon"
+              href="/static/img/favicon.ico"
+              type="image/x-icon">
+        <!-- Google Fonts -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&family=Source+Code+Pro:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap"
+              rel="stylesheet">
+        <!-- FontAwesome -->
+        <link rel="stylesheet"
+              href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.1/css/all.min.css">
+        <!-- External Theme CSS -->
+        <link rel="stylesheet" href="/static/css/theme.css">
+        <!-- Tailwind CSS -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            'dark-bg': '#121417',
+                            'dark-element': '#1a1d21',
+                            'dark-card': '#242528',
+                            'text-dim': '#9ca3af',
+                            'dollar-green': '#85bb65',
+                            'profit-green': '#3abe78',
+                            'loss-red': '#e15554',
+                        }
+                    }
+                }
+            }
+        </script>
+        <!-- Chart.js -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <!-- Custom CSS -->
+        <style>
+            body {
+                font-family: 'JetBrains Mono', 'Source Code Pro', 'Fira Code', monospace;
+                background-color: #121417;
+                color: #e0e9e5;
+            }
+
+            /* Custom scrollbar */
+            ::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+
+            ::-webkit-scrollbar-track {
+                background: #1a1d21;
+            }
+
+            ::-webkit-scrollbar-thumb {
+                background: #3e4044;
+                border-radius: 4px;
+            }
+
+            ::-webkit-scrollbar-thumb:hover {
+                background: #555;
+            }
+
+            .dashboard-card, .strategy-card {
+                background-color: #1a1d21;
+            }
+
+            .refresh-indicator {
+                display: inline-block;
+                width: 30px;
+                height: 30px;
+                line-height: 30px;
+                text-align: center;
+                border-radius: 50%;
+                background-color: #1a1d21;
+                color: #9ca3af;
+            }
+
+            /* Mobile menu styles */
+            @media (max-width: 768px) {
+                .mobile-menu-visible {
+                    display: block !important;
+                }
+            }
+
+            .h-300 {
+                height: 300px;
+            }
+
+            .mt-50 {
+                margin-top: 50px;
+            }
+
+            /* Critical dashboard styles */
+            .stat-card {
+                background-color: #1c2821 !important;
+                border-radius: 0.5rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+                padding: 1rem;
+                height: 7rem;
+                min-height: 7rem;
+                position: relative;
+                overflow: hidden;
+            }
+
+            .stat-card::after {
+                content: '';
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 4px;
+                background: linear-gradient(90deg, #85bb65, #3abe78);
+                border-bottom-left-radius: 0.5rem;
+                border-bottom-right-radius: 0.5rem;
+            }
+
+            /* Pulsing animation */
+            @keyframes pulse-green {
+                0% {
+                    box-shadow: 0 0 0 0 rgba(58, 190, 120, 0.8);
+                    opacity: 1;
+                    transform: scale(1);
+                    background-color: #3abe78;
+                }
+
+                50% {
+                    box-shadow: 0 0 0 8px rgba(58, 190, 120, 0);
+                    opacity: 0.85;
+                    transform: scale(1.2);
+                    background-color: #2a8d58;
+                }
+
+                100% {
+                    box-shadow: 0 0 0 0 rgba(58, 190, 120, 0);
+                    opacity: 1;
+                    transform: scale(1);
+                    background-color: #3abe78;
+                }
+            }
+
+            .pulse-green {
+                animation: pulse-green 1.5s infinite;
+                position: relative;
+                transition: background-color 0.3s ease;
+            }
+
+            .pulse-green:after {
+                content: '';
+                position: absolute;
+                top: -3px;
+                left: -3px;
+                right: -3px;
+                bottom: -3px;
+                border-radius: 50%;
+                background: rgba(58, 190, 120, 0.3);
+                z-index: -1;
+                animation: pulse-green-outer 1.5s infinite 0.3s;
+            }
+
+            @keyframes pulse-green-outer {
+                0% {
+                    opacity: 0.5;
+                    transform: scale(1);
+                    background: rgba(42, 141, 88, 0.3);
+                }
+
+                50% {
+                    opacity: 0;
+                    transform: scale(1.5);
+                    background: rgba(42, 141, 88, 0.1);
+                }
+
+                100% {
+                    opacity: 0.5;
+                    transform: scale(1);
+                    background: rgba(58, 190, 120, 0.3);
+                }
+            }
+
+            /* ASCII Art Logo static glow effect */
+            .ascii-logo {
+                font-family: 'Fira Code', 'JetBrains Mono', monospace;
+                font-size: 10px;
+                line-height: 1;
+                margin: 0;
+                display: inline-block;
+                color: #85bb65;
+                text-shadow: 0 0 8px rgba(133, 187, 101, 0.4);
+                transition: all 0.3s ease;
+            }
+
+            .ascii-logo-container:hover .ascii-logo {
+                color: #a0d87c;
+                text-shadow: 0 0 12px rgba(133, 187, 101, 0.7);
+                transform: scale(1.03);
+            }
+
+            /* Sticky control panel styles */
+            .control-panel {
+                position: sticky;
+                bottom: 0;
+                width: 100%;
+                background-color: #121a17;
+                border-top: 1px solid #2c3a33;
+                transition: max-height 0.3s ease, opacity 0.2s ease;
+                max-height: 300px;
+                /* Increased height to fit all buttons */
+                overflow: hidden;
+                z-index: 10;
+            }
+
+            .control-panel.collapsed {
+                max-height: 38px;
+                /* Height of just the header */
+            }
+
+            .control-panel-header {
+                padding: 8px 16px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                cursor: pointer;
+                background-color: #121a17;
+            }
+
+            .control-panel-content {
+                padding: 0 16px 16px;
+            }
+
+            .toggle-icon {
+                transition: transform 0.3s ease;
+            }
+
+            .collapsed .toggle-icon {
+                transform: rotate(180deg);
+            }
+
+            /* Basic styles */
+            body {
+                background-color: #121a17;
+                color: #e0e9e5;
+                font-family: 'JetBrains Mono', 'Source Code Pro', 'Fira Code', monospace;
+                overflow-x: hidden;
+            }
+
+            .dashboard-card {
+                background-color: #1c2821;
+            }
+
+            /* Active navigation highlight */
+            .nav-item.active {
+                border-left: 3px solid #85bb65;
+                background-color: rgba(133, 187, 101, 0.1);
+            }
+
+            /* Updated panel layout system for proper stacking */
+            .sidebar-panels {
+                display: flex;
+                flex-direction: column;
+                width: 100%;
+                margin-top: auto;
+            }
+
+            #statusPanel {
+                max-height: 300px;
+            }
+
+            #controlPanel {
+                max-height: 160px;
+            }
+
+            :root {
+                --bg-primary: #1a1e23;
+                --bg-element: #242a33;
+                --bg-card: #2d3643;
+                --text-primary: #e0e9e5;
+                --text-secondary: #a0aec0;
+                --color-accent: #85bb65;
+                --color-profit: #3abe78;
+                --color-loss: #e15d5d;
+                --shadow-color: rgba(0, 0, 0, 0.3);
+            }
+            
+            [data-theme="light"] {
+                --bg-primary: #f5f7fa;
+                --bg-element: #ffffff;
+                --bg-card: #f0f4f8;
+                --text-primary: #2d3643;
+                --text-secondary: #64748b;
+                --color-accent: #5a9942;
+                --color-profit: #2a8c58;
+                --color-loss: #d23b3b;
+                --shadow-color: rgba(0, 0, 0, 0.1);
+            }
+            
+            .theme-toggle {
+                box-shadow: 0 0 10px var(--shadow-color);
+                border: 2px solid var(--color-accent);
+            }
+            
+            .theme-toggle:hover {
+                box-shadow: 0 0 15px var(--color-accent);
+            }
+
+            /* Terminal-style inputs and elements */
+            input, textarea, select, button:not(.theme-toggle) {
+                font-family: 'Source Code Pro', 'JetBrains Mono', monospace;
+            }
+        </style>
+        <script>
+            // Tailwind Config
+            tailwind.config = {
+                darkMode: 'class',
+                theme: {
+                    extend: {
+                        colors: {
+                            'dark-bg': '#121a17',
+                            'dark-element': '#1c2821',
+                            'dark-card': '#29352f',
+                            'dollar-green': '#85bb65',
+                            'money-dark': '#5d8247',
+                            'profit-green': '#3abe78',
+                            'loss-red': '#e15d5d',
+                            'text-dim': '#8a9a94',
+                        }
+                    }
+                }
+            }
+        </script>
+        <!-- Existing scripts for system status, etc. -->
+        <script>// Status check scripts (unchanged)...</script>
+        {% block head %}
+        {% endblock head %}
+        <!-- Fix for the scripts and functionality -->
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                function checkSystemStatus() {
+                    fetch('/api/status/health')
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                throw new Error('Failed to fetch system status');
+                            }
+                        })
+                        .then(data => {
+                            // Show status details
+                            document.getElementById('status-details').classList.remove('hidden');
+
+                            // Update overall status
+                            if (data.api === 'healthy' && data.database === 'healthy' && data.redis === 'healthy') {
+                                document.getElementById('status-message').textContent = 'All systems operational';
+                                document.getElementById('status-message').className = 'text-xs text-profit-green mt-1';
+                                document.getElementById('status-icon').className = 'fas fa-check-circle text-profit-green';
+                            } else {
+                                document.getElementById('status-message').textContent = 'System issues detected';
+                                document.getElementById('status-message').className = 'text-xs text-loss-red mt-1';
+                                document.getElementById('status-icon').className = 'fas fa-exclamation-triangle text-loss-red';
+                            }
+
+                            // Update individual components with new indicator style
+                            updateComponentStatus('api', data.api);
+                            updateComponentStatus('db', data.database);
+                            updateComponentStatus('redis', data.redis);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching system status:', error);
+                            document.getElementById('status-message').textContent = 'Unable to fetch status';
+                            document.getElementById('status-message').className = 'text-xs text-loss-red mt-1';
+                            document.getElementById('status-icon').className = 'fas fa-question-circle text-text-dim';
+                            document.getElementById('status-details').classList.add('hidden');
+                        });
+                }
+
+                function updateComponentStatus(id, status) {
+                    const element = document.getElementById(`${id}-status`);
+                    const indicator = document.getElementById(`${id}-indicator`);
+
+                    if (element && indicator) {
+                        if (status === 'healthy') {
+                            element.className = 'inline-flex items-center text-profit-green';
+                            indicator.className = 'h-2 w-2 rounded-full bg-profit-green mr-2';
+                        } else {
+                            element.className = 'inline-flex items-center text-loss-red';
+                            indicator.className = 'h-2 w-2 rounded-full bg-loss-red mr-2';
+                        }
+
+                        // Update text content based on component
+                        if (id === 'api') element.textContent = 'API';
+                        else if (id === 'db') element.textContent = 'Database';
+                        else if (id === 'redis') element.textContent = 'Redis';
+                    }
+                }
+
+                // Check status on page load and then every 60 seconds
+                checkSystemStatus();
+                setInterval(checkSystemStatus, 60000); // Update every minute
+
+                function checkTradingStatus() {
+                    fetch('/api/status/')
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            } else {
+                                throw new Error('Failed to fetch trading status');
+                            }
+                        })
+                        .then(data => {
+                            // Show status details
+                            document.getElementById('trading-status-details').classList.remove('hidden');
+
+                            // Update overall status message
+                            const isOperational = data.status === 'operational';
+                            document.getElementById('trading-status-message').textContent = isOperational ?
+                                'System Operational' : 'System Degraded';
+                            document.getElementById('trading-status-message').className = isOperational ?
+                                'text-xs text-profit-green mt-1' : 'text-xs text-loss-red mt-1';
+                            document.getElementById('trading-status-icon').className = isOperational ?
+                                'fas fa-exchange-alt text-profit-green' : 'fas fa-exchange-alt text-loss-red';
+
+                            // Update individual components
+                            const components = data.components || {};
+                            updateTradingComponentStatus('reporting', components.reporting);
+                            updateTradingComponentStatus('ingestion', components.ingestion);
+                            updateTradingComponentStatus('arbitrage', components.arbitrage);
+                            updateTradingComponentStatus('execution', components.execution);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching trading status:', error);
+                            document.getElementById('trading-status-message').textContent = 'Unable to fetch status';
+                            document.getElementById('trading-status-message').className = 'text-xs text-loss-red mt-1';
+                            document.getElementById('trading-status-icon').className = 'fas fa-exchange-alt text-text-dim';
+                            document.getElementById('trading-status-details').classList.add('hidden');
+                        });
+                }
+
+                function updateTradingComponentStatus(id, status) {
+                    const element = document.getElementById(`${id}-status`);
+                    const indicator = document.getElementById(`${id}-indicator`);
+
+                    if (element && indicator) {
+                        if (status === 'active') {
+                            element.className = 'inline-flex items-center text-profit-green';
+                            indicator.className = 'h-2 w-2 rounded-full bg-profit-green mr-2';
+                        } else {
+                            element.className = 'inline-flex items-center text-gray-400';
+                            indicator.className = 'h-2 w-2 rounded-full bg-loss-red mr-2';
+                        }
+                    }
+                }
+
+                // Update trading status initially and then periodically
+                checkTradingStatus();
+                setInterval(checkTradingStatus, 30000);
+
+                // Setup trading status indicator
+                function updateTradingStatusIndicator() {
+                    fetch('/api/trading/status')
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            const isActive = data.overall === true || data.status === 'operational';
+
+                            // Update trading status indicator
+                            const statusDot = document.getElementById('system-trading-dot');
+                            const statusText = document.getElementById('system-trading-text');
+                            const statusLabel = document.getElementById('system-trading-label');
+
+                            if (isActive) {
+                                if (statusDot) statusDot.className = 'h-3 w-3 rounded-full bg-profit-green mr-2 pulse-green';
+                                if (statusText) {
+                                    statusText.className = 'text-sm font-medium text-profit-green';
+                                    statusText.textContent = 'Trading Active';
+                                }
+                                if (statusLabel) {
+                                    statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green';
+                                    statusLabel.textContent = 'ACTIVE';
+                                }
+                            } else {
+                                if (statusDot) statusDot.className = 'h-3 w-3 rounded-full bg-gray-500 mr-2';
+                                if (statusText) {
+                                    statusText.className = 'text-sm font-medium';
+                                    statusText.textContent = 'Trading Inactive';
+                                }
+                                if (statusLabel) {
+                                    statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-gray-800 text-gray-400';
+                                    statusLabel.textContent = 'STOPPED';
+                                }
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching trading status:', error);
+                            const statusDot = document.getElementById('system-trading-dot');
+                            const statusText = document.getElementById('system-trading-text');
+                            const statusLabel = document.getElementById('system-trading-label');
+
+                            if (statusDot) statusDot.className = 'h-3 w-3 rounded-full bg-loss-red mr-2';
+                            if (statusText) {
+                                statusText.className = 'text-sm font-medium text-loss-red';
+                                statusText.textContent = 'Status Error';
+                            }
+                            if (statusLabel) {
+                                statusLabel.className = 'text-xs px-2 py-1 rounded-full bg-red-900 text-loss-red';
+                                statusLabel.textContent = 'ERROR';
+                            }
+                        });
+                }
+
+                // Update trading status initially and then every 10 seconds
+                updateTradingStatusIndicator();
+                setInterval(updateTradingStatusIndicator, 10000);
+
+                // Setup control buttons
+                setupTradingControls();
+            });
+
+            // Add back the trading control buttons functionality
+            function setupTradingControls() {
+                // Setup stop trading button
+                const stopTradingBtn = document.getElementById('stop-trading-btn');
+                if (stopTradingBtn) {
+                    stopTradingBtn.addEventListener('click', function () {
+                        if (confirm('Are you sure you want to stop all trading activities?')) {
+                            fetch('/api/trading/stop', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                }
+                            })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                                    }
+                                    return response.json();
+                                })
+                                .then(data => {
+                                    console.log('Trading stopped:', data);
+                                    showNotification('Trading stopped successfully', 'success');
+                                    if (typeof updateTradingStatusIndicator === 'function') {
+                                        updateTradingStatusIndicator();
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error stopping trading:', error);
+                                    showNotification('Failed to stop trading: ' + error.message, 'error');
+                                });
+                        }
+                    });
+                }
+
+                // Setup killswitch button
+                const killswitchBtn = document.getElementById('killswitch-btn');
+                if (killswitchBtn) {
+                    killswitchBtn.addEventListener('click', function () {
+                        if (confirm('⚠️ EMERGENCY KILLSWITCH ⚠️\n\nThis will immediately halt ALL system operations! Are you absolutely sure?')) {
+                            fetch('/api/trading/stop', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Emergency-Shutdown': 'true'
+                                }
+                            })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                                    }
+                                    return response.json();
+                                })
+                                .then(data => {
+                                    console.log('Emergency shutdown activated:', data);
+                                    showNotification('EMERGENCY SHUTDOWN ACTIVATED', 'error');
+                                    if (typeof updateTradingStatusIndicator === 'function') {
+                                        updateTradingStatusIndicator();
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error in emergency shutdown:', error);
+                                    showNotification('Failed to execute emergency shutdown: ' + error.message, 'error');
+                                });
+                        }
+                    });
+                }
+
+                // Setup start trading button
+                const startTradingBtn = document.getElementById('start-trading-btn');
+                if (startTradingBtn) {
+                    startTradingBtn.addEventListener('click', function () {
+                        fetch('/api/trading/start', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
+                        })
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                console.log('Trading started:', data);
+                                showNotification('Trading started successfully', 'success');
+                                if (typeof updateTradingStatusIndicator === 'function') {
+                                    updateTradingStatusIndicator();
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error starting trading:', error);
+                                showNotification('Failed to start trading: ' + error.message, 'error');
+                            });
+                    });
+                }
+
+                // Setup restart trading button
+                const restartTradingBtn = document.getElementById('restart-trading-btn');
+                if (restartTradingBtn) {
+                    restartTradingBtn.addEventListener('click', function () {
+                        if (confirm('Are you sure you want to restart the trading system?')) {
+                            fetch('/api/trading/restart', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                }
+                            })
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                                    }
+                                    return response.json();
+                                })
+                                .then(data => {
+                                    console.log('Trading restarted:', data);
+                                    showNotification('Trading system restarted successfully', 'success');
+                                    if (typeof updateTradingStatusIndicator === 'function') {
+                                        updateTradingStatusIndicator();
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Error restarting trading:', error);
+                                    showNotification('Failed to restart trading: ' + error.message, 'error');
+                                });
+                        }
+                    });
+                }
+            }
+
+            // Show notification function
+            function showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-300 ${type === 'error' ? 'bg-loss-red/90 text-white' :
+                    type === 'success' ? 'bg-profit-green/90 text-white' :
+                        'bg-dark-element text-white'
+                    }`;
+
+                notification.innerHTML = message;
+                document.body.appendChild(notification);
+
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    setTimeout(() => {
+                        document.body.removeChild(notification);
+                    }, 300);
+                }, 3000);
+            }
+        </script>
+    </head>
+    <body class="min-h-screen flex flex-col">
+        <!-- Mobile menu overlay -->
+        <div id="mobile-menu-overlay"
+             class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden"></div>
+        <!-- Top Bar - changed to match background color -->
+        <header class="bg-dark-bg shadow-md relative z-10">
+            <div class="w-full pl-4 pr-8">
+                <div class="flex justify-end py-4">
+                    <!-- Added padding top and bottom -->
+                    <!-- Right section with system status indicator -->
+                    <div class="flex items-center">
+                        <!-- Trading Status Indicator - keep this -->
+                        <div class="flex items-center mr-5">
+                            <span id="system-trading-dot" class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
+                            <span id="system-trading-text" class="text-sm font-medium">Trading Status</span>
+                        </div>
+                        <!-- System status indicator -->
+                        <span class="text-xs px-2 py-1 rounded-full bg-green-900 text-profit-green hidden sm:inline-block mr-4">$ystem Online</span>
+                        <!-- Mobile menu button -->
+                        <button id="mobile-menu-button"
+                                class="sm:hidden text-gray-400 hover:text-white focus:outline-none">
+                            <i class="fas fa-bars text-2xl"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <!-- Theme Toggle Button - positioned properly -->
+            <button id="themeToggle"
+                    class="theme-toggle fixed top-4 right-6 z-50"
+                    aria-label="Toggle theme">
+                <!-- Icon is displayed via CSS ::before pseudo-element -->
+            </button>
+        </header>
+        <!-- Sidebar and main content wrapper -->
+        <div class="flex flex-1 relative min-h-screen">
+            <!-- Sidebar for desktop - using a different positioning approach with reduced top padding -->
+            <aside class="w-64 bg-dark-element shadow-md hidden sm:block fixed left-0 top-0 bottom-0 z-20 overflow-y-auto"
+                   style="padding-top: calc(2.5rem)">
+                <!-- Adjusted padding to move content up -->
+                <div class="px-4 py-2 h-full flex flex-col">
+                    <!-- AR ASCII Logo at top of sidebar with reduced margin -->
+                    <div class="flex justify-start ascii-logo-container mb-3">
+                        <a href="/" class="text-dollar-green font-bold text-xl">
+                            <pre class="ascii-logo">
+ $$$$$$\ $$$$$$$$\ $$$$$$$$\  
+$$  __$$\ $$  __$$\ $$  __$$\ 
+$$ /  $$ |$$ |  $$ |$$ |  $$ |
+$$$$$$$$ |$$$$$$$  |$$$$$$$  |
+$$  __$$ |$$  __$$< $$  __$$< 
+$$ |  $$ |$$ |  $$ |$$ |  $$ |
+$$ |  $$ |$$ |  $$ |$$ |  $$ |
+\__|  \__|\__|  \__|\__|  \__|
+                            </pre>
+                        </a>
+                    </div>
+                    <div class="flex-grow flex flex-col">
+                        <div class="mb-4">
+                            <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">Main Navigation</h3>
+                            <div class="space-y-1">
+                                <a href="/dashboard"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-tachometer-alt w-6"></i>
+                                    <span>Dashboard</span>
+                                </a>
+                                <a href="/monitor"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-heartbeat w-6"></i>
+                                    <span>$ystem Monitor</span>
+                                </a>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">Trading</h3>
+                            <div class="space-y-1">
+                                <a href="/strategies"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-chess w-6"></i>
+                                    <span>$trategies</span>
+                                </a>
+                                <a href="/opportunities"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-search-dollar w-6"></i>
+                                    <span>Opportunities</span>
+                                </a>
+                                <a href="/executions"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-exchange-alt w-6"></i>
+                                    <span>Executions</span>
+                                </a>
+                                <a href="/exchanges"
+                                   class="flex items-center px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                    <i class="fas fa-exchange-alt w-6"></i>
+                                    <span>Exchanges</span>
+                                </a>
+                            </div>
+                        </div>
+                        {% block sidebar %}
+                        {% endblock sidebar %}
+                    </div>
+                </div>
+            </aside>
+            <!-- Mobile menu -->
+            <div id="mobile-menu"
+                 class="fixed inset-y-0 left-0 w-64 bg-dark-element shadow-md hidden z-50 overflow-y-auto">
+                <div class="px-4 py-5">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="ascii-logo-container">
+                            <pre class="ascii-logo">
+ $$$$$$\ $$$$$$$$\ $$$$$$$$\  
+$$  __$$\ $$  __$$\ $$  __$$\ 
+$$ /  $$ |$$ |  $$ |$$ |  $$ |
+$$$$$$$$ |$$$$$$$  |$$$$$$$  |
+$$  __$$ |$$  __$$< $$  __$$< 
+$$ |  $$ |$$ |  $$ |$$ |  $$ |
+$$ |  $$ |$$ |  $$ |$$ |  $$ |
+\__|  \__|\__|  \__|\__|  \__|
+                            </pre>
+                        </div>
+                        <button id="close-mobile-menu"
+                                class="text-gray-400 hover:text-white focus:outline-none">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-6">
+                        <div class="space-y-1">
+                            <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">Main Navigation</h3>
+                            <a href="/dashboard"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-tachometer-alt mr-2"></i>
+                                Dashboard
+                            </a>
+                            <a href="/monitor"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-heartbeat mr-2"></i>
+                                $ystem Monitor
+                            </a>
+                        </div>
+                        <div class="space-y-1">
+                            <h3 class="text-text-dim text-xs uppercase tracking-wider font-semibold mb-2">Trading</h3>
+                            <a href="/strategies"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-chess mr-2"></i>
+                                $trategies
+                            </a>
+                            <a href="/opportunities"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-search-dollar mr-2"></i>
+                                Opportunities
+                            </a>
+                            <a href="/executions"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-exchange-alt mr-2"></i>
+                                Executions
+                            </a>
+                            <a href="/exchanges"
+                               class="block px-2 py-2 rounded-md hover:bg-dark-card text-gray-300 hover:text-dollar-green">
+                                <i class="fas fa-exchange-alt mr-2"></i>
+                                Exchanges
+                            </a>
+                        </div>
+                        {% block mobile_menu %}
+                        {% endblock mobile_menu %}
+                    </div>
+                </div>
+            </div>
+            <!-- Main content - adjusted margin and padding to account for fixed sidebar -->
+            <main class="flex-1 p-4 sm:p-6 overflow-auto ml-0 sm:ml-64 mt-0 min-h-screen">
+                {% block content %}
+                {% endblock content %}
+            </main>
+        </div>
+        <!-- Footer - increased z-index to appear above sidebar -->
+        <footer class="bg-dark-element text-text-dim py-4 mt-auto relative z-30">
+            <div class="w-full px-8">
+                <div class="flex flex-col sm:flex-row justify-between items-center">
+                    <div class="mb-2 sm:mb-0 sm:pl-2">
+                        <span>Copyright © 2023 ArbiRich. All rights reserved.</span>
+                    </div>
+                    <div class="flex space-x-4">
+                        <a href="#" class="text-gray-400 hover:text-dollar-green">Terms</a>
+                        <a href="#" class="text-gray-400 hover:text-dollar-green">Privacy</a>
+                        <span class="text-gray-500">v1.0.3</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+        <!-- Base scripts -->
+        <script>
+            // Mobile menu functionality - update to handle trading status without buttons
+            document.addEventListener('DOMContentLoaded', function() {
+                const mobileMenuButton = document.getElementById('mobile-menu-button');
+                const closeMobileMenuButton = document.getElementById('close-mobile-menu');
+                const mobileMenu = document.getElementById('mobile-menu');
+                const mobileMenuOverlay = document.getElementById('mobile-menu-overlay');
+
+                if (mobileMenuButton && mobileMenu && mobileMenuOverlay) {
+                    mobileMenuButton.addEventListener('click', function() {
+                        mobileMenu.classList.add('mobile-menu-visible');
+                        mobileMenuOverlay.classList.remove('hidden');
+                    });
+
+                    function closeMobileMenu() {
+                        mobileMenu.classList.remove('mobile-menu-visible');
+                        mobileMenuOverlay.classList.add('hidden');
+                    }
+
+                    closeMobileMenuButton.addEventListener('click', closeMobileMenu);
+                    mobileMenuOverlay.addEventListener('click', closeMobileMenu);
+                }
+                
+                // Update mobile status when main status updates
+                const updateMobileStatus = setInterval(function() {
+                    const mainDot = document.getElementById('system-trading-dot');
+                    const mainText = document.getElementById('system-trading-text');
+                    const mobileTradingDot = document.getElementById('mobile-system-trading-dot');
+                    const mobileTradingText = document.getElementById('mobile-system-trading-text');
+                    
+                    if (mainDot && mainText && mobileTradingDot && mobileTradingText) {
+                        mobileTradingDot.className = mainDot.className;
+                        mobileTradingText.textContent = mainText.textContent;
+                        mobileTradingText.className = mainText.className;
+                    }
+                }, 1000);
+            });
+
+            // Theme toggle functionality for light/dark theme across the entire app
+            document.addEventListener('DOMContentLoaded', function() {
+                const themeToggle = document.getElementById('themeToggle');
+                
+                if (!themeToggle) return; // Exit if button doesn't exist
+                
+                // Check for saved theme preference or use device preference
+                const savedTheme = localStorage.getItem('theme');
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                
+                // Set initial theme
+                if (savedTheme) {
+                    document.documentElement.setAttribute('data-theme', savedTheme);
+                } else if (prefersDark) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                }
+                
+                // Toggle theme when button is clicked with animation
+                themeToggle.addEventListener('click', function() {
+                    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    
+                    // Add animation class
+                    themeToggle.classList.add('animating');
+                    
+                    // Set a timeout to change the theme after the animation starts
+                    setTimeout(() => {
+                        document.documentElement.setAttribute('data-theme', newTheme);
+                        localStorage.setItem('theme', newTheme);
+                        
+                        // Remove animation class after icon changes
+                        setTimeout(() => {
+                            themeToggle.classList.remove('animating');
+                        }, 300);
+                    }, 150);
+                });
+            });
+        </script>
+        {% block scripts %}
+            {% block page_scripts %}
+            {% endblock page_scripts %}
+            <!-- Control panel toggle functionality -->
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    // Trading controls panel
+                    const controlPanel = document.getElementById('controlPanel');
+                    const controlPanelHeader = document.getElementById('controlPanelHeader');
+                    const toggleIcon = document.getElementById('toggleIcon');
+
+                    // Check if we have a saved state
+                    const isPanelCollapsed = localStorage.getItem('controlPanelCollapsed') === 'true';
+
+                    // Set initial state
+                    if (isPanelCollapsed && controlPanel) {
+                        controlPanel.classList.add('collapsed');
+                    }
+
+                    // Toggle panel on header click
+                    if (controlPanelHeader) {
+                        controlPanelHeader.addEventListener('click', function () {
+                            controlPanel.classList.toggle('collapsed');
+
+                            // Save state to localStorage
+                            localStorage.setItem(
+                                'controlPanelCollapsed',
+                                controlPanel.classList.contains('collapsed')
+                            );
+                        });
+                    }
+
+                    // System status panel
+                    const statusPanel = document.getElementById('statusPanel');
+                    const statusPanelHeader = document.getElementById('statusPanelHeader');
+                    const statusToggleIcon = document.getElementById('statusToggleIcon');
+
+                    // Check if we have a saved state for status panel
+                    const isStatusPanelCollapsed = localStorage.getItem('statusPanelCollapsed') === 'true';
+
+                    // Set initial state for status panel
+                    if (isStatusPanelCollapsed && statusPanel) {
+                        statusPanel.classList.add('collapsed');
+                    }
+
+                    // Toggle status panel on header click
+                    if (statusPanelHeader) {
+                        statusPanelHeader.addEventListener('click', function () {
+                            statusPanel.classList.toggle('collapsed');
+
+                            // Save state to localStorage
+                            localStorage.setItem(
+                                'statusPanelCollapsed',
+                                statusPanel.classList.contains('collapsed')
+                            );
+                        });
+                    }
+                });
+            </script>
+        {% endblock scripts %}
+        <!-- Add this just before the end of the body tag in your base template -->
+        {% if debug %}
+            <div class="fixed bottom-0 left-0 w-full bg-gray-900 text-gray-300 p-4 opacity-80 text-xs">
+                <details>
+                    <summary class="cursor-pointer">Debug Info (click to expand)</summary>
+                    <div class="mt-2">
+                        <p>
+                            <strong>Current URL:</strong> {{ request.path }}
+                        </p>
+                        <p>
+                            <strong>Strategy ID:</strong> {{ strategy.id if strategy is defined else 'Not available' }}
+                        </p>
+                        <p>
+                            <strong>Strategy Name:</strong> {{ strategy.name if strategy is defined else 'Not available' }}
+                        </p>
+                        <p>
+                            <strong>Route endpoint:</strong> {{ request.endpoint }}
+                        </p>
+                    </div>
+                </details>
+            </div>
+        {% endif %}
+    </body>
+</html>

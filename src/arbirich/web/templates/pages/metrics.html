@@ -1,0 +1,115 @@
+{% extends "layouts/base.html" %}
+{% block title %}ArbiRich - Performance Metrics{% endblock %}
+{% block content %}
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-lime-green">Strategy Performance Metrics</h1>
+        <a href="/"
+           class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300">
+            Back to Dashboard
+        </a>
+    </div>
+    <!-- Recalculate buttons -->
+    <div class="flex justify-end space-x-4 mb-6">
+        <a href="/metrics/recalculate?period_days=30"
+           class="inline-flex items-center px-4 py-2 bg-dollar-green hover:bg-money-dark text-dark-bg rounded-md transition-colors duration-300">
+            <i class="fas fa-sync-alt mr-2"></i>
+            Recalculate Last 30 Days
+        </a>
+        <a href="/metrics/recalculate?period_days=all"
+           class="inline-flex items-center px-4 py-2 bg-dark-element hover:bg-dark-card text-dollar-green border border-dollar-green rounded-md transition-colors duration-300">
+            <i class="fas fa-sync-alt mr-2"></i>
+            Recalculate All Time
+        </a>
+    </div>
+    <!-- Summary Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div class="dashboard-card rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-bold text-dollar-green mb-2">Total Strategies</h2>
+            <p class="text-3xl font-bold">{{ strategies|length }}</p>
+        </div>
+        <div class="dashboard-card rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-bold text-dollar-green mb-2">Total Trades</h2>
+            <p class="text-3xl font-bold">{{ total_trades }}</p>
+        </div>
+        <div class="dashboard-card rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-bold text-dollar-green mb-2">Total P&L</h2>
+            <p class="text-3xl font-bold {% if total_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                ${{ total_profit|round(2) }}
+            </p>
+        </div>
+    </div>
+    <!-- Strategy Metrics Table -->
+    <div class="dashboard-card rounded-lg shadow-md p-4 mb-8">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-dollar-green">Strategy Performance</h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full table-auto">
+                <thead class="bg-dark-element">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-dollar-green">Strategy</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Status</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Net Profit</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Trades</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Win Rate</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Profit Factor</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">ROI</th>
+                        <th class="px-4 py-2 text-center text-dollar-green">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for strategy in strategies %}
+                        <tr class="border-t border-dark-element hover:bg-dark-element">
+                            <td class="px-4 py-2 font-medium">
+                                {% if loop.first and strategies|length > 0 and strategy.net_profit > 0 %}
+                                    <span class="text-xl mr-1" title="Top Performer">🏆</span>
+                                {% endif %}
+                                {{ strategy.name }}
+                            </td>
+                            <td class="px-4 py-2">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {% if strategy.is_active %}bg-green-100 text-green-800{% else %}bg-gray-100 text-gray-800{% endif %}">
+                                    {% if strategy.is_active %}
+                                        Active
+                                    {% else %}
+                                        Inactive
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td class="px-4 py-2 text-right {% if strategy.net_profit > 0 %}text-profit-green{% else %}text-loss-red{% endif %}">
+                                ${{ strategy.net_profit | round(2) }}
+                            </td>
+                            <td class="px-4 py-2 text-right">{{ strategy.trade_count }}</td>
+                            <td class="px-4 py-2 text-right">
+                                {% if strategy_metrics and strategy.id in strategy_metrics %}
+                                    {{ strategy_metrics[strategy.id].win_rate | round(2) }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                                {% if strategy_metrics and strategy.id in strategy_metrics %}
+                                    {{ strategy_metrics[strategy.id].profit_factor | round(2) }}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2 text-right">
+                                {% if strategy.starting_capital > 0 %}
+                                    {{ ((strategy.net_profit / strategy.starting_capital) * 100) | round(2) }}%
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2 text-center">
+                                <a href="/metrics/{{ strategy.id }}"
+                                   class="text-lime-green hover:text-lime-700 hover:underline mr-2">Details</a>
+                                <a href="/strategies/{{ strategy.id }}/calculate-metrics"
+                                   class="text-lime-green hover:text-lime-700 hover:underline">Recalculate</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}

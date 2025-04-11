@@ -1,0 +1,199 @@
+<!-- System status indicator and trading controls -->
+<div class="flex justify-between items-center bg-dark-element rounded-lg p-4 mb-6 border border-gray-800">
+    <div class="flex items-center">
+        <span id="trading-control-dot"
+              class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
+        <span class="text-sm">System Status:</span>
+        <span id="trading-control-text" class="ml-2 font-medium text-gray-300">Checking...</span>
+    </div>
+    <div class="flex space-x-2">
+        <!-- Settings icon added here, linking to strategies page -->
+        <a href="/strategies"
+           class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-3 rounded transition-all flex items-center border border-dollar-green/30"
+           title="Trading Strategy Settings">
+            <i class="fas fa-cog"></i>
+        </a>
+        <button id="page-start-trading-btn"
+                class="bg-dark-card hover:bg-gray-700 text-profit-green py-2 px-4 rounded transition-all flex items-center border border-profit-green/30">
+            <i class="fas fa-play mr-2"></i> Start Trading
+        </button>
+        <button id="page-stop-trading-btn"
+                class="bg-dark-card hover:bg-gray-700 text-loss-red py-2 px-4 rounded transition-all flex items-center border border-loss-red/30">
+            <i class="fas fa-stop mr-2"></i> Stop Trading
+        </button>
+        <button id="page-restart-trading-btn"
+                class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-4 rounded transition-all flex items-center border border-dollar-green/30">
+            <i class="fas fa-sync-alt mr-2"></i> Restart Trading
+        </button>
+    </div>
+</div>
+<!-- Trading Controls JS -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Connect page buttons to the main control buttons (which have the event handlers)
+        const startBtn = document.getElementById('page-start-trading-btn');
+        const stopBtn = document.getElementById('page-stop-trading-btn');
+        const restartBtn = document.getElementById('page-restart-trading-btn');
+        
+        // Initialize status indicators
+        const statusDot = document.getElementById('trading-control-dot');
+        const statusText = document.getElementById('trading-control-text');
+        
+        // Set up trading status check
+        function checkTradingStatus() {
+            fetch('/api/trading/status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const isActive = data.overall === true || data.status === 'operational';
+
+                    // Update trading status indicator
+                    if (isActive) {
+                        statusDot.className = 'h-3 w-3 rounded-full bg-profit-green mr-2 pulse-green';
+                        statusText.className = 'ml-2 font-medium text-profit-green';
+                        statusText.textContent = 'Trading Active';
+
+                        startBtn.disabled = true;
+                        stopBtn.disabled = false;
+                        startBtn.classList.add('opacity-50');
+                        stopBtn.classList.remove('opacity-50');
+                    } else {
+                        statusDot.className = 'h-3 w-3 rounded-full bg-gray-500 mr-2';
+                        statusText.className = 'ml-2 font-medium';
+                        statusText.textContent = 'Trading Inactive';
+
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+                        startBtn.classList.remove('opacity-50');
+                        stopBtn.classList.add('opacity-50');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching trading status:', error);
+                    statusDot.className = 'h-3 w-3 rounded-full bg-loss-red mr-2';
+                    statusText.className = 'ml-2 font-medium text-loss-red';
+                    statusText.textContent = 'Status Error';
+                });
+        }
+        
+        if (startBtn) {
+            startBtn.addEventListener('click', function() {
+                startTrading();
+            });
+        }
+        
+        if (stopBtn) {
+            stopBtn.addEventListener('click', function() {
+                if (confirm('Are you sure you want to stop all trading activities?')) {
+                    stopTrading();
+                }
+            });
+        }
+        
+        if (restartBtn) {
+            restartBtn.addEventListener('click', function() {
+                if (confirm('Are you sure you want to restart the trading system?')) {
+                    restartTrading();
+                }
+            });
+        }
+        
+        // Check status immediately and then periodically
+        checkTradingStatus();
+        setInterval(checkTradingStatus, 10000);
+    });
+    
+    // Trading API functions
+    function startTrading() {
+        fetch('/api/trading/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Trading started:', data);
+            showNotification('Trading started successfully', 'success');
+        })
+        .catch(error => {
+            console.error('Error starting trading:', error);
+            showNotification('Failed to start trading: ' + error.message, 'error');
+        });
+    }
+    
+    function stopTrading() {
+        fetch('/api/trading/stop', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Trading stopped:', data);
+            showNotification('Trading stopped successfully', 'success');
+        })
+        .catch(error => {
+            console.error('Error stopping trading:', error);
+            showNotification('Failed to stop trading: ' + error.message, 'error');
+        });
+    }
+    
+    function restartTrading() {
+        fetch('/api/trading/restart', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Trading restarted:', data);
+            showNotification('Trading system restarted successfully', 'success');
+        })
+        .catch(error => {
+            console.error('Error restarting trading:', error);
+            showNotification('Failed to restart trading: ' + error.message, 'error');
+        });
+    }
+    
+    // Notification function (copied from strategies page)
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-300 ${
+            type === 'error' ? 'bg-loss-red/90 text-white' :
+            type === 'success' ? 'bg-profit-green/90 text-white' :
+            'bg-dark-element text-white'
+        }`;
+
+        notification.innerHTML = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                document.body.removeChild(notification);
+            }, 300);
+        }, 3000);
+    }
+</script>

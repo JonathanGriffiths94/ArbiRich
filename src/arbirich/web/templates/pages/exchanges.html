@@ -1,0 +1,241 @@
+{% extends "layouts/base.html" %}
+{% block title %}ArbiRich - Exchanges & Pairs{% endblock %}
+{% block content %}
+    <!-- Page Header with Info text -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-dollar-green">Exchanges & Pairs</h1>
+        <!-- Info text explaining configuration is managed via backend -->
+        <div class="text-sm text-text-dim bg-dark-element px-4 py-2 rounded-lg">
+            <i class="fas fa-info-circle mr-2"></i>
+            Exchanges and pairs are configured via active strategies
+        </div>
+    </div>
+    <!-- Tab Navigation -->
+    <div class="border-b border-gray-800 mb-6">
+        <nav class="flex space-x-8">
+            <button id="exchangesTabBtn"
+                    class="tab-btn border-b-2 border-dollar-green py-2 px-1 text-dollar-green font-medium">
+                Exchanges
+            </button>
+            <button id="pairsTabBtn"
+                    class="tab-btn border-b-2 border-transparent py-2 px-1 text-gray-400 hover:text-gray-300">
+                Trading Pairs
+            </button>
+        </nav>
+    </div>
+    <!-- Exchanges Tab Content - Remove toggle functionality -->
+    <div id="exchangesTab" class="tab-content">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+             id="exchangesList">
+            {% for exchange in exchanges %}
+                <div class="dashboard-card rounded-lg shadow-md p-6 relative exchange-card"
+                     data-id="{{ exchange.id }}">
+                    <!-- Exchange Status Badge -->
+                    <div class="absolute top-4 right-4">
+                        <span class="px-2 py-1 rounded-full text-xs font-semibold {% if exchange.is_active %}bg-green-900 text-profit-green{% else %}bg-gray-800 text-gray-400{% endif %}">
+                            {{ 'Active' if exchange.is_active else 'Inactive' }}
+                        </span>
+                    </div>
+                    <div class="flex items-center mb-4">
+                        <div class="bg-dark-element rounded-full p-3 mr-4">
+                            <i class="fas fa-exchange-alt text-dollar-green text-xl"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-xl font-bold">{{ exchange.name }}</h2>
+                            <p class="text-text-dim text-sm">{{ exchange.rest_url }}</p>
+                        </div>
+                    </div>
+                    <div class="space-y-3 mb-6">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-text-dim">Trade Fee:</span>
+                            <span>{{ exchange.trade_fees * 100 }}%</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-text-dim">API Rate Limit:</span>
+                            <span>{{ exchange.api_rate_limit }} req/min</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-text-dim">API Response Time:</span>
+                            <span>{{ exchange.api_response_time or 0 }}ms</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-text-dim">Delimiter:</span>
+                            <span>"{{ exchange.delimiter }}"</span>
+                        </div>
+                    </div>
+                    <!-- Remove toggle functionality, replace with explanatory text -->
+                    <div class="text-xs text-gray-400 mt-4 italic">Exchange status is controlled by active strategies</div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+    <!-- Trading Pairs Tab Content - Remove toggle functionality -->
+    <div id="pairsTab" class="tab-content hidden">
+        <!-- Trading Pairs Filter -->
+        <div class="flex flex-wrap items-center gap-3 mb-6">
+            <div class="flex items-center">
+                <span class="text-sm text-text-dim mr-2">Filter by:</span>
+                <select id="pairFilterSelect"
+                        class="bg-dark-element border border-gray-700 text-gray-300 rounded-lg px-3 py-1.5 text-sm">
+                    <option value="all">All Pairs</option>
+                    <option value="active">Active Only</option>
+                    <option value="inactive">Inactive Only</option>
+                </select>
+            </div>
+            <div class="flex items-center ml-auto">
+                <div class="relative">
+                    <input type="text"
+                           id="pairSearchInput"
+                           placeholder="Search pairs..."
+                           class="bg-dark-element border border-gray-700 text-gray-300 rounded-lg pl-8 pr-3 py-1.5 text-sm w-full">
+                    <i class="fas fa-search absolute left-3 top-2 text-gray-500"></i>
+                </div>
+            </div>
+        </div>
+        <!-- Trading Pairs List -->
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-gray-400 border-b border-gray-800">
+                        <th class="text-left py-3 px-4">Symbol</th>
+                        <th class="text-left py-3">Base</th>
+                        <th class="text-left py-3">Quote</th>
+                        <th class="text-center py-3">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="pairsList">
+                    {% if pairs %}
+                        {% for pair in pairs %}
+                            <tr class="border-b border-gray-800 hover:bg-dark-element pair-row"
+                                data-id="{{ pair.id }}">
+                                <td class="py-3 px-4 font-medium">{{ pair.symbol }}</td>
+                                <td class="py-3">{{ pair.base_currency }}</td>
+                                <td class="py-3">{{ pair.quote_currency }}</td>
+                                <td class="py-3 text-center">
+                                    <span class="px-2 py-1 rounded-full text-xs font-semibold inline-block min-w-[70px] text-center {% if pair.is_active %}bg-green-900 text-profit-green{% else %}bg-gray-800 text-gray-400{% endif %}">
+                                        {{ 'Active' if pair.is_active else 'Inactive' }}
+                                    </span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="py-6 text-center text-gray-400">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                No trading pairs found
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+        <!-- Add explanation about pair activation -->
+        <div class="mt-6 bg-dark-element p-4 rounded-lg text-center text-text-dim text-sm">
+            <i class="fas fa-info-circle mr-2"></i>
+            Trading pairs are activated automatically when used by active strategies
+        </div>
+    </div>
+    <!-- Toast Notification -->
+    <div id="toast"
+         class="toast hidden fixed bottom-4 right-4 bg-dark-element text-white p-4 rounded-lg shadow-lg z-50 border-l-4 border-green-500 transition-opacity duration-300">
+        <div class="flex items-center">
+            <i class="fas fa-check-circle text-profit-green mr-3 text-xl"></i>
+            <div>
+                <p class="font-medium" id="toastMessage"></p>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+{% block scripts %}
+    {{ super() }}
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Tab functionality
+        const exchangesTabBtn = document.getElementById('exchangesTabBtn');
+        const pairsTabBtn = document.getElementById('pairsTabBtn');
+        const exchangesTab = document.getElementById('exchangesTab');
+        const pairsTab = document.getElementById('pairsTab');
+
+        // Tab switching code
+        exchangesTabBtn.addEventListener('click', () => {
+            // Show exchanges tab
+            exchangesTabBtn.classList.add('border-dollar-green', 'text-dollar-green');
+            exchangesTabBtn.classList.remove('border-transparent', 'text-gray-400');
+
+            pairsTabBtn.classList.add('border-transparent', 'text-gray-400');
+            pairsTabBtn.classList.remove('border-dollar-green', 'text-dollar-green');
+
+            exchangesTab.classList.remove('hidden');
+            pairsTab.classList.add('hidden');
+        });
+
+        pairsTabBtn.addEventListener('click', () => {
+            // Show pairs tab
+            pairsTabBtn.classList.add('border-dollar-green', 'text-dollar-green');
+            pairsTabBtn.classList.remove('border-transparent', 'text-gray-400');
+
+            exchangesTabBtn.classList.add('border-transparent', 'text-gray-400');
+            exchangesTabBtn.classList.remove('border-dollar-green', 'text-dollar-green');
+
+            pairsTab.classList.remove('hidden');
+            exchangesTab.classList.add('hidden');
+        });
+
+        // Toast functionality
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toastMessage');
+
+        // Remove toggle event handlers since we no longer have toggles
+
+        // Pair search functionality
+        const pairSearchInput = document.getElementById('pairSearchInput');
+        pairSearchInput.addEventListener('input', filterPairs);
+
+        const pairFilterSelect = document.getElementById('pairFilterSelect');
+        pairFilterSelect.addEventListener('change', filterPairs);
+
+        // Functions
+        function filterPairs() {
+            const searchTerm = pairSearchInput.value.toLowerCase();
+            const filterValue = pairFilterSelect.value;
+            const pairRows = document.querySelectorAll('.pair-row');
+
+            pairRows.forEach(row => {
+                const symbol = row.querySelector('td:first-child').textContent.toLowerCase();
+                // Check active status from the status badge text
+                const statusText = row.querySelector('td:nth-child(4) span').textContent.trim();
+                const isActive = statusText === 'Active';
+
+                // Apply filter based on search and status
+                const matchesSearch = symbol.includes(searchTerm);
+                const matchesFilter =
+                    filterValue === 'all' ||
+                    (filterValue === 'active' && isActive) ||
+                    (filterValue === 'inactive' && !isActive);
+
+                if (matchesSearch && matchesFilter) {
+                    row.classList.remove('hidden');
+                } else {
+                    row.classList.add('hidden');
+                }
+            });
+        }
+
+        function showToast(message, type = 'success') {
+            toastMessage.textContent = message;
+
+            if (type === 'error') {
+                toast.style.borderColor = '#e15d5d';
+            } else {
+                toast.style.borderColor = '#3abe78';
+            }
+
+            toast.classList.remove('hidden');
+
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+    });
+    </script>
+{% endblock %}

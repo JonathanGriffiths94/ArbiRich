@@ -21,11 +21,15 @@ install:
 format:
     poetry run ruff check . --select I --fix # sort imports
     poetry run ruff format .
-    poetry run black .
+    poetry run djlint src/arbirich/web/templates --reformat --indent 4
 
 # Run linter for python
 lint:
     poetry run ruff check src tests
+
+# Add a command to check HTML files with djLint
+lint-html:
+    poetry run djlint src/arbirich/web/templates --lint
 
 # Run tests
 test:
@@ -65,18 +69,7 @@ setup-local-db:
 
 # Run the application (dev) with Redis check
 run-bot: setup-local-db
-    RUST_BACKTRACE=1 {{ python }} -m main
-
-# Stop running ArbiRich application
-stop-bot:
-    bash -c "$(poetry run python -c 'import sys; from src.arbirich.tools.stop_app import stop_arbirich_processes; stop_arbirich_processes(); sys.exit(0)')"
-
-force-kill:
-    {{ python }} -m src.arbirich.tools.force_kill
-
-# Emergency abort - kills all ArbiRich processes forcibly (LAST RESORT)
-abort:
-    pkill -f "arbirich|main.py" || echo "No ArbiRich processes found"
+    RUST_BACKTRACE=1 {{ python }} -m src.arbirich.main
 
 # Check database connection
 check-db:
@@ -88,6 +81,7 @@ docker-check-db:
 
 # Create database migrations
 migrations message="auto":
+    rm -rf src/arbirich/migrations/versions/*
     {{ alembic }} revision --autogenerate -m "{{ message }}"
 
 # Apply database migrations
@@ -95,7 +89,7 @@ migrate:
     {{ alembic }} upgrade head
 
 # Docker database reset command with volume cleanup
-docker-reset-db:
+docker-db-reset:
     # Stop any running containers and remove the volume
     docker compose down -v
     # Recreate and start postgres container
@@ -155,3 +149,16 @@ clean-cache:
 
 # Clean everything
 clean: clean-cache clean-venv
+
+# Reset the local database and rerun migrations
+reset-db:
+    chmod +x ./scripts/reset_local_db.sh
+    ./scripts/reset_local_db.sh
+
+# Create seed data for development
+prefill-db *arguments:
+    {{ python }} -m src.arbirich.services.database.prefill_database {{arguments}}
+
+seed-db:
+    {{ python }} ./scripts/create_seed_data.py
+    {{ python }} ./scripts/recalculate_metrics.py

@@ -1,0 +1,117 @@
+{% extends "layouts/base.html" %}
+{% block title %}About ArbiRich - Cryptocurrency Arbitrage Platform{% endblock %}
+{% block content %}
+    <div class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Header with logo -->
+        <div class="flex flex-col items-center mb-12">
+            <div class="ascii-logo-container mb-6">
+                <pre class="ascii-art inline-block text-left font-mono text-sm md:text-xl leading-tight">
+ $$$$$$\            $$\       $$\$$$$$$$$\  $$\           $$\       
+$$  __$$\           $$ |      \__|$$  __$$\ \__|          $$ |      
+$$ /  $$ | $$$$$$\  $$$$$$$\  $$\ $$ |  $$ |$$\  $$$$$$$\ $$$$$$$\  
+$$$$$$$$ |$$  __$$\ $$  __$$\ $$ |$$$$$$$  |$$ |$$  _____|$$  __$$\ 
+$$  __$$ |$$ |  \__|$$ |  $$ |$$ |$$  __$$< $$ |$$ /      $$ |  $$ |
+$$ |  $$ |$$ |      $$ |  $$ |$$ |$$ |  $$ |$$ |$$ |      $$ |  $$ |
+$$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
+\__|  \__|\__|      \_______/ \__|\__|  \__|\__| \_______|\__|  \__|
+                </pre>
+            </div>
+            <h1 class="text-3xl md:text-4xl font-bold mb-2 text-dollar-green font-mono">About ArbiRich</h1>
+            <p class="text-lg text-text-dim font-mono">Automated Cryptocurrency Arbitrage Platform</p>
+        </div>
+        <!-- About content -->
+        <div class="space-y-8 text-text-primary font-mono">
+            <section>
+                <h2 class="text-2xl font-semibold mb-4 text-dollar-green font-mono">Project Overview</h2>
+                <p class="mb-4 font-mono text-sm">
+                    ArbiRich is a sophisticated cryptocurrency arbitrage platform capable of running multiple trading strategies simultaneously. The system continuously monitors price discrepancies across various exchanges and automatically executes profitable arbitrage opportunities based on predefined criteria.
+                </p>
+                <p class="font-mono text-sm">
+                    By leveraging parallel strategy execution, ArbiRich maximizes profit potential while distributing risk across different market conditions and exchange combinations. Each strategy is independently configurable with its own risk parameters and execution logic.
+                </p>
+            </section>
+            <section>
+                <h2 class="text-2xl font-semibold mb-4 text-dollar-green font-mono">Key Features</h2>
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="p-5 bg-dark-card rounded-lg shadow-md border border-gray-700">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-robot text-dollar-green text-2xl mr-3"></i>
+                            <h3 class="text-xl font-medium font-mono">Multi-Strategy Engine</h3>
+                        </div>
+                        <p class="font-mono text-sm">
+                            Concurrent execution of diverse arbitrage strategies across multiple cryptocurrency pairs and exchanges.
+                        </p>
+                    </div>
+                    <div class="p-5 bg-dark-card rounded-lg shadow-md border border-gray-700">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-chart-line text-dollar-green text-2xl mr-3"></i>
+                            <h3 class="text-xl font-medium font-mono">Performance Analytics</h3>
+                        </div>
+                        <p class="font-mono text-sm">
+                            Comprehensive metrics and visualizations tracking performance of individual strategies and the overall portfolio.
+                        </p>
+                    </div>
+                    <div class="p-5 bg-dark-card rounded-lg shadow-md border border-gray-700">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-balance-scale text-dollar-green text-2xl mr-3"></i>
+                            <h3 class="text-xl font-medium font-mono">Risk Management</h3>
+                        </div>
+                        <p class="font-mono text-sm">
+                            Sophisticated risk controls including position sizing, execution timing, and automated circuit breakers for each strategy.
+                        </p>
+                    </div>
+                    <div class="p-5 bg-dark-card rounded-lg shadow-md border border-gray-700">
+                        <div class="flex items-center mb-3">
+                            <i class="fas fa-server text-dollar-green text-2xl mr-3"></i>
+                            <h3 class="text-xl font-medium font-mono">High-Performance Infrastructure</h3>
+                        </div>
+                        <p class="font-mono text-sm">
+                            Low-latency execution system built with Bytewax data processing pipelines for real-time market monitoring and efficient trade execution across exchanges.
+                        </p>
+                    </div>
+                </div>
+            </section>
+            <section class="py-8">
+                <div class="text-center">
+                    <a href="/dashboard"
+                       class="inline-block px-6 py-3 bg-dollar-green hover:bg-money-dark text-dark-element font-mono rounded-lg transition-colors duration-300">
+                        &gt; View Strategy Dashboard _
+                    </a>
+                </div>
+            </section>
+        </div>
+    </div>
+    <style>
+        /* Terminal-style styling for the about page */
+        .font-mono {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Source Code Pro', monospace;
+        }
+        
+        pre {
+            font-family: 'Fira Code', 'JetBrains Mono', monospace;
+        }
+        
+        .ascii-art {
+            font-family: 'Fira Code', 'JetBrains Mono', 'Source Code Pro', 'Courier New', monospace;
+            color: var(--color-accent);
+            text-shadow: 0 0 10px rgba(133, 187, 101, 0.5);
+            letter-spacing: -0.05em;
+        }
+        
+        /* Blinking cursor effect for terminal feel */
+        a[href="/dashboard"]:after {
+            content: "";
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background-color: currentColor;
+            margin-left: 5px;
+            animation: blink 1s step-end infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+    </style>
+{% endblock %}

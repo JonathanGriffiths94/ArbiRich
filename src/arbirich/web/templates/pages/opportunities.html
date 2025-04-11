@@ -1,0 +1,88 @@
+{% extends "layouts/base.html" %}
+{% block title %}ArbiRich - Trade Opportunities{% endblock %}
+{% block content %}
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold text-lime-green">Trade Opportunities</h1>
+        <a href="/"
+           class="bg-dark-element hover:bg-dark-card text-dollar-green py-2 px-4 rounded-lg transition-colors duration-300">
+            Back to Dashboard
+        </a>
+    </div>
+    <!-- Search/Filter Form -->
+    <div class="dashboard-card rounded-lg shadow-md p-4 mb-6">
+        <form action="/opportunities"
+              method="get"
+              class="flex flex-col md:flex-row gap-4">
+            <div class="flex-1">
+                <label for="strategy" class="block text-sm font-medium text-gray-300 mb-1">Strategy</label>
+                <select id="strategy"
+                        name="strategy"
+                        class="w-full bg-dark-element text-gray-200 border border-dark-element rounded-lg p-2">
+                    <option value="">All Strategies</option>
+                    {% for strategy in strategies %}
+                        <option value="{{ strategy.name }}"
+                                {% if selected_strategy==strategy.name %}selected{% endif %}>
+                            {{ strategy.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex-1">
+                <label for="days" class="block text-sm font-medium text-gray-300 mb-1">Time Period</label>
+                <select id="days"
+                        name="days"
+                        class="w-full bg-dark-element text-gray-200 border border-dark-element rounded-lg p-2">
+                    <option value="1" {% if days==1 %}selected{% endif %}>Last 24 Hours</option>
+                    <option value="7" {% if days==7 %}selected{% endif %}>Last 7 Days</option>
+                    <option value="30" {% if days==30 %}selected{% endif %}>Last 30 Days</option>
+                    <option value="all" {% if days=='all' %}selected{% endif %}>All Time</option>
+                </select>
+            </div>
+            <div class="flex-none self-end">
+                <button type="submit"
+                        class="bg-dollar-green hover:bg-money-dark text-dark-bg font-medium py-2 px-6 rounded-lg">
+                    Filter
+                </button>
+            </div>
+        </form>
+    </div>
+    <!-- Opportunities Table -->
+    <div class="dashboard-card rounded-lg shadow-md p-4">
+        <div class="overflow-x-auto">
+            <table class="w-full table-auto">
+                <thead class="bg-dark-element">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-dollar-green">ID</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Strategy</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Trading Pair</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Buy Exchange</th>
+                        <th class="px-4 py-2 text-left text-dollar-green">Sell Exchange</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Buy Price</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Sell Price</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Spread %</th>
+                        <th class="px-4 py-2 text-right text-dollar-green">Volume</th>
+                        <th class="px-4 py-2 text-center text-dollar-green">Timestamp</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for opportunity in opportunities %}
+                        <tr class="border-t border-dark-element hover:bg-dark-element">
+                            <td class="px-4 py-2 font-mono text-xs">{{ opportunity.id[:8] }}...</td>
+                            <td class="px-4 py-2">{{ opportunity.strategy }}</td>
+                            <td class="px-4 py-2 font-medium">{{ opportunity.pair }}</td>
+                            <td class="px-4 py-2">{{ opportunity.buy_exchange }}</td>
+                            <td class="px-4 py-2">{{ opportunity.sell_exchange }}</td>
+                            <td class="px-4 py-2 text-right">${{ opportunity.buy_price | round(4) }}</td>
+                            <td class="px-4 py-2 text-right">${{ opportunity.sell_price | round(4) }}</td>
+                            <td class="px-4 py-2 text-right text-profit-green">{{ opportunity.profit_percent | default(0) | round(4) }}%</td>
+                            <td class="px-4 py-2 text-right">{{ opportunity.volume | round(4) }}</td>
+                            <td class="px-4 py-2 text-center text-gray-300">
+                                {{ opportunity.created_at.strftime("%Y-%m-%d %H:%M:%S") if opportunity.created_at else 'N/A' }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}
