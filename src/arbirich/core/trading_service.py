@@ -601,11 +601,19 @@ class TradingService:
                     )
                     tasks.append(task)
 
-                # Wait for all strategy pipelines to complete or cancel
+                # Monitor the tasks instead of awaiting them directly
                 try:
-                    await asyncio.gather(*tasks)
+                    # Create a monitoring task
+                    monitor_task = asyncio.create_task(
+                        self._monitor_strategy_tasks(tasks, "arbitrage"), name="arbitrage-monitor"
+                    )
+
+                    # Wait for cancellation or any unexpected failure
+                    await asyncio.gather(monitor_task)
                 except asyncio.CancelledError:
                     # Cancel all tasks if this task is cancelled
+                    self.logger.info("Arbitrage process stopping, cancelling all strategy tasks")
+                    monitor_task.cancel()
                     for task in tasks:
                         if not task.done():
                             task.cancel()
@@ -619,6 +627,66 @@ class TradingService:
         except Exception as e:
             self.logger.error(f"Error in arbitrage process: {e}", exc_info=True)
             # Sleep briefly to avoid rapid restart loop
+            await asyncio.sleep(5)
+
+    async def _monitor_strategy_tasks(self, tasks, process_name):
+        """
+        Monitor strategy tasks and restart them if they fail unexpectedly.
+
+        Args:
+            tasks: List of asyncio tasks to monitor
+            process_name: Name of the process (e.g., "arbitrage", "execution")
+        """
+        while True:
+            # Check each task
+            for i, task in enumerate(tasks[:]):  # Use a copy of the list for iteration
+                if task.done():
+                    try:
+                        # Get the result to see if there was an exception
+                        result = task.result()
+                        self.logger.warning(
+                            f"{process_name} task {task.get_name()} completed unexpectedly with result: {result}"
+                        )
+                    except asyncio.CancelledError:
+                        self.logger.info(f"{process_name} task {task.get_name()} was cancelled")
+                    except Exception as e:
+                        self.logger.error(f"{process_name} task {task.get_name()} failed with error: {e}")
+
+                        # Try to restart the task
+                        try:
+                            # Extract strategy name from task name
+                            task_name = task.get_name()
+                            if "-" in task_name:
+                                strategy_name = task_name.split("-", 1)[1]
+
+                                if process_name == "arbitrage":
+                                    from arbirich.flows.arbitrage.arbitrage_flow import run_arbitrage_flow
+
+                                    new_task = asyncio.create_task(
+                                        run_arbitrage_flow(strategy_name=strategy_name, debug_mode=True),
+                                        name=f"arbitrage-{strategy_name}",
+                                    )
+                                elif process_name == "execution":
+                                    from arbirich.flows.execution.execution_flow import run_execution_flow
+
+                                    new_task = asyncio.create_task(
+                                        run_execution_flow(strategy_name), name=f"execution-{strategy_name}"
+                                    )
+
+                                # Replace the task in the list
+                                tasks[i] = new_task
+                                self.logger.info(f"Restarted {process_name} task for strategy {strategy_name}")
+                        except Exception as restart_error:
+                            self.logger.error(f"Failed to restart {process_name} task: {restart_error}")
+
+            # Check system shutdown
+            from src.arbirich.core.system_state import is_system_shutting_down
+
+            if is_system_shutting_down():
+                self.logger.info(f"System shutdown detected in {process_name} monitor, stopping")
+                break
+
+            # Sleep before checking again
             await asyncio.sleep(5)
 
     async def _run_execution(self):
@@ -678,11 +746,19 @@ class TradingService:
                     )
                     tasks.append(task)
 
-                # Wait for all strategy pipelines to complete or cancel
+                # Monitor the tasks instead of awaiting them directly
                 try:
-                    await asyncio.gather(*tasks)
+                    # Create a monitoring task
+                    monitor_task = asyncio.create_task(
+                        self._monitor_strategy_tasks(tasks, "execution"), name="execution-monitor"
+                    )
+
+                    # Wait for cancellation or any unexpected failure
+                    await asyncio.gather(monitor_task)
                 except asyncio.CancelledError:
                     # Cancel all tasks if this task is cancelled
+                    self.logger.info("Execution process stopping, cancelling all strategy tasks")
+                    monitor_task.cancel()
                     for task in tasks:
                         if not task.done():
                             task.cancel()
