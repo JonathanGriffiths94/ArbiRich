@@ -12,7 +12,6 @@ from fastapi.templating import Jinja2Templates
 
 from arbirich.api.router import main_router
 from src.arbirich.core.app_lifecyle import lifespan
-from src.arbirich.utils.banner import display_banner
 from src.arbirich.web.controllers.dashboard_controller import router as dashboard_controller_router
 from src.arbirich.web.controllers.exchange_controller import router as exchange_router
 from src.arbirich.web.controllers.monitor_controller import router as monitor_router
@@ -30,16 +29,6 @@ def make_app() -> FastAPI:
     # Load environment variables
     load_dotenv()
 
-    # Display the banner at startup if available
-    try:
-        display_banner(
-            f"Environment: {os.getenv('ENV', 'development').upper()}",
-            log_only=False,
-            console_only=True,
-        )
-    except Exception as e:
-        logger.warning(f"Banner display not available: {e}")
-
     app = FastAPI(
         title="ArbiRich API",
         description="Cryptocurrency Arbitrage Platform API",
@@ -49,7 +38,6 @@ def make_app() -> FastAPI:
         redoc_url=None,  # Disable default redoc
     )
 
-    # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],  # In production, restrict this to specific origins
@@ -58,7 +46,6 @@ def make_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Create API router with its own docs
     api_app = FastAPI(
         title="ArbiRich API",
         description="Cryptocurrency Arbitrage Platform API",
@@ -68,26 +55,17 @@ def make_app() -> FastAPI:
     )
 
     api_app.include_router(main_router)
-
     app.mount("/api", api_app)
-
-    # Include WebSocket routes
     app.include_router(websocket_router)
-
-    # Include frontend routes
     app.include_router(frontend_router)
-
-    # Include controller routes (from original paste.txt)
     app.include_router(dashboard_controller_router)
     app.include_router(strategy_router)
     app.include_router(monitor_router)
     app.include_router(setup_router)
     app.include_router(exchange_router)
 
-    # Include dashboard routes (from app.py)
     app.include_router(dashboard_router)
 
-    # Custom OpenAPI documentation endpoints for the main app
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui_html():
         return get_swagger_ui_html(
@@ -103,15 +81,12 @@ def make_app() -> FastAPI:
             title=app.title + " - ReDoc",
         )
 
-    # Mount static files - Improved mounting with more explicit path resolution
     base_dir = Path(__file__).resolve().parent
     static_dir = base_dir / "web" / "static"
     logger.info(f"Static files directory: {static_dir}")
 
-    # Ensure the directory exists
     if not static_dir.exists():
         logger.error(f"Static directory does not exist: {static_dir}")
-        # Try to create it if it doesn't exist
         try:
             static_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"Created static directory: {static_dir}")
@@ -141,7 +116,6 @@ def run_app():
     """Start the application server"""
     app = make_app()
 
-    # Start the server
     host = os.getenv("WEB_HOST", "0.0.0.0")
     port = int(os.getenv("WEB_PORT", 8080))
 
@@ -149,7 +123,6 @@ def run_app():
 
 
 if __name__ == "__main__":
-    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
