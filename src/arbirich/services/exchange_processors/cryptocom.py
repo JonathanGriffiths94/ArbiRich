@@ -51,9 +51,25 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
         return self.formatted_product
 
     async def connect(self):
-        """Connect to the Crypto.com WebSocket endpoint."""
-        logger.info(f"Connecting to {self.ws_url}...")
-        return await websockets.connect(self.ws_url)
+        """Connect to the Crypto.com WebSocket endpoint with retry logic."""
+        max_retries = 5
+        base_delay = 2.0  # seconds
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"Connection attempt {attempt}/{max_retries} to {self.ws_url}...")
+                return await websockets.connect(self.ws_url)
+            except websockets.exceptions.InvalidStatus as e:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** (attempt - 1))  # Exponential backoff
+                    logger.warning(f"Connection failed with {e}. Retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"Failed to connect after {max_retries} attempts: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"Unexpected error during connection: {e}")
+                raise
 
     async def subscribe(self, websocket):
         """Subscribe to the order book channel."""
