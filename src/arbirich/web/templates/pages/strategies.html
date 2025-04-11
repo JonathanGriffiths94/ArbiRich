@@ -437,17 +437,31 @@
     {{ super() }}
     <script>
     document.addEventListener('DOMContentLoaded', function () {
+        // Add debounce mechanism
+        let isProcessingToggle = false;
+        
         const toggles = document.querySelectorAll('.strategy-toggle');
 
         toggles.forEach(toggle => {
             toggle.addEventListener('change', function (event) {
-                // Prevent default behavior and propagation
-                event.preventDefault();
+                // Prevent double clicks
+                if (isProcessingToggle) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+                
+                isProcessingToggle = true;
+                
+                // Stop propagation but don't prevent default for change event
                 event.stopPropagation();
                 
                 const strategyId = this.dataset.id;
                 const strategyName = this.dataset.name;
                 const isActive = this.checked;
+                
+                // Disable toggle during API call
+                this.disabled = true;
 
                 // Call API to update strategy status
                 const endpoint = isActive ?
@@ -482,6 +496,12 @@
 
                         // Revert toggle state
                         this.checked = !isActive;
+                        
+                        // Re-enable toggle
+                        this.disabled = false;
+                        
+                        // Reset processing flag
+                        isProcessingToggle = false;
 
                         // Show error message
                         showNotification('Error updating strategy status', 'error');
@@ -561,15 +581,11 @@
             toggle.addEventListener('click', function (event) {
                 event.preventDefault();
                 event.stopPropagation();
-
-                // ...existing toggle functionality...
             });
         });
 
         // Initialize trading control buttons and status indicator
         initTradingControls();
-
-        // ...existing code...
     });
 
     function initTradingControls() {
