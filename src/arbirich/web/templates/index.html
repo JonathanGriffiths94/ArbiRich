@@ -1,17 +1,16 @@
 {% extends "layouts/base.html" %}
-
-{% block title %}
-    ArbiRich - Cryptocurrency Arbitrage Platform
-{% endblock %}
-
+{% block title %}ArbiRich - Cryptocurrency Arbitrage Platform{% endblock %}
 {% block content %}
     <!-- Centered across entire page width (sidebar included) -->
     <div class="flex flex-col items-center justify-center min-h-[90vh] w-screen ml-[-16rem] md:ml-[-16rem] md:pl-[8rem]">
-        <div class="text-center max-w-6xl"> <!-- Increased max width for larger logo -->
+        <div class="text-center max-w-6xl">
+            <!-- Increased max width for larger logo -->
             <!-- Further reduced top margin to accommodate larger logo -->
             <div class="mb-12 mt-[-5rem] flex justify-center ascii-logo-container">
                 <!-- Added link to the about page -->
-                <a href="/about" class="block hover:opacity-90 transition-opacity" title="About ArbiRich">
+                <a href="/about"
+                   class="block hover:opacity-90 transition-opacity"
+                   title="About ArbiRich">
                     <pre class="ascii-art inline-block text-left font-mono text-md md:text-2xl lg:text-3xl leading-tight ascii-logo">
  $$$$$$\            $$\       $$\$$$$$$$$\  $$\           $$\       
 $$  __$$\           $$ |      \__|$$  __$$\ \__|          $$ |      
@@ -24,7 +23,6 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
                     </pre>
                 </a>
             </div>
-
             <!-- Round buttons section - adjusted margin for larger logo -->
             <div class="mt-28 flex flex-wrap justify-center gap-12 mb-16">
                 <!-- Left Money bag button - Changed to route to opportunities -->
@@ -33,28 +31,24 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
                         <span class="text-4xl group-hover:scale-110 transition-transform">💰</span>
                     </div>
                 </a>
-                
                 <!-- Strategies Button -->
                 <a href="/strategies" class="group">
                     <div class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green group-hover:scale-105 money-bag-glow">
                         <i class="fas fa-chess text-4xl group-hover:scale-110 transition-transform"></i>
                     </div>
                 </a>
-
                 <!-- Dashboard Button -->
                 <a href="/dashboard" class="group">
                     <div class="inline-flex items-center justify-center w-24 h-24 bg-dollar-green hover:bg-money-dark text-dark-bg font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-money-dark group-hover:scale-105 money-bag-glow">
                         <i class="fas fa-chart-line text-4xl group-hover:scale-110 transition-transform"></i>
                     </div>
                 </a>
-
                 <!-- Control Panel Button - Changed to route to monitor -->
                 <a href="/monitor" class="group">
                     <div class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green group-hover:scale-105 money-bag-glow">
                         <i class="fas fa-sliders-h text-4xl group-hover:scale-110 transition-transform"></i>
                     </div>
                 </a>
-                
                 <!-- Right Money bag button - Changed to route to executions -->
                 <a href="/executions" class="group">
                     <div class="inline-flex items-center justify-center w-24 h-24 bg-transparent hover:bg-dollar-green/10 text-dollar-green font-bold rounded-full transition-all duration-300 shadow-lg hover:shadow-xl border-4 border-dollar-green group-hover:scale-105 money-bag-glow">
@@ -63,7 +57,6 @@ $$ |  $$ |$$ |      $$$$$$$  |$$ |$$ |  $$ |$$ |\$$$$$$$\ $$ |  $$ |
                 </a>
             </div>
         </div>
-
         <!-- Add a style to hide horizontal scrollbar that might appear due to negative margin -->
         <style>
         body {

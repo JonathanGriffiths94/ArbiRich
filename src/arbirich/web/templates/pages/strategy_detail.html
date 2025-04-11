@@ -1,98 +1,106 @@
 {% extends "base.html" %}
-
 {% block title %}{{ strategy.name }} - Details{% endblock %}
-
 {% block content %}
-<div class="container mt-4">
-    <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/strategies">Strategies</a></li>
-            <li class="breadcrumb-item"><a href="/strategy/{{ strategy.name }}">{{ strategy.name }}</a></li>
-            <li class="breadcrumb-item active">Details</li>
-        </ol>
-    </nav>
-
-    <h1>{{ strategy.name }} - Details</h1>
-    
-    <div class="row mt-4">
-        <div class="col-md-4">
-            <div class="card mb-4">
-                <div class="card-header">Strategy Information</div>
-                <div class="card-body">
-                    <p><strong>Name:</strong> {{ strategy.name }}</p>
-                    <p><strong>Type:</strong> {{ strategy.type }}</p>
-                    <p><strong>Status:</strong> {{ strategy.status }}</p>
-                    <p><strong>Net Profit:</strong> {{ "%.2f"|format(strategy.net_profit) }}</p>
-                    <p><strong>Created:</strong> {{ strategy.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+    <div class="container mt-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="/strategies">Strategies</a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="/strategy/{{ strategy.name }}">{{ strategy.name }}</a>
+                </li>
+                <li class="breadcrumb-item active">Details</li>
+            </ol>
+        </nav>
+        <h1>{{ strategy.name }} - Details</h1>
+        <div class="row mt-4">
+            <div class="col-md-4">
+                <div class="card mb-4">
+                    <div class="card-header">Strategy Information</div>
+                    <div class="card-body">
+                        <p>
+                            <strong>Name:</strong> {{ strategy.name }}
+                        </p>
+                        <p>
+                            <strong>Type:</strong> {{ strategy.type }}
+                        </p>
+                        <p>
+                            <strong>Status:</strong> {{ strategy.status }}
+                        </p>
+                        <p>
+                            <strong>Net Profit:</strong> {{ "%.2f"|format(strategy.net_profit) }}
+                        </p>
+                        <p>
+                            <strong>Created:</strong> {{ strategy.created_at.strftime("%Y-%m-%d %H:%M:%S") }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-header">Recent Executions</div>
+                    <div class="card-body">
+                        {% if executions %}
+                            <div class="table-responsive">
+                                <table class="table table-striped table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Trading Pair</th>
+                                            <th>Profit</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for execution in executions %}
+                                            <tr>
+                                                <td>{{ execution.execution_timestamp.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                                                <td>{{ execution.trading_pair }}</td>
+                                                <td>{{ "%.2f"|format(execution.profit) }}</td>
+                                                <td>{{ execution.status }}</td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p>No executions found.</p>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
-        
-        <div class="col-md-8">
+        {% if pair_metrics %}
             <div class="card mb-4">
-                <div class="card-header">Recent Executions</div>
+                <div class="card-header">Trading Pair Metrics</div>
                 <div class="card-body">
-                    {% if executions %}
-                        <div class="table-responsive">
-                            <table class="table table-striped table-sm">
-                                <thead>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Trading Pair</th>
+                                    <th>Total Profit</th>
+                                    <th>Success Rate</th>
+                                    <th>Average Profit</th>
+                                    <th>Total Executions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for metric in pair_metrics %}
                                     <tr>
-                                        <th>Time</th>
-                                        <th>Trading Pair</th>
-                                        <th>Profit</th>
-                                        <th>Status</th>
+                                        <td>{{ metric.trading_pair }}</td>
+                                        <td>{{ "%.2f"|format(metric.total_profit) }}</td>
+                                        <td>{{ "%.1f"|format(metric.success_rate * 100) }}%</td>
+                                        <td>{{ "%.2f"|format(metric.average_profit) }}</td>
+                                        <td>{{ metric.execution_count }}</td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    {% for execution in executions %}
-                                    <tr>
-                                        <td>{{ execution.execution_timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                                        <td>{{ execution.trading_pair }}</td>
-                                        <td>{{ "%.2f"|format(execution.profit) }}</td>
-                                        <td>{{ execution.status }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    {% else %}
-                        <p>No executions found.</p>
-                    {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
+        {% endif %}
     </div>
-    
-    {% if pair_metrics %}
-    <div class="card mb-4">
-        <div class="card-header">Trading Pair Metrics</div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-striped table-sm">
-                    <thead>
-                        <tr>
-                            <th>Trading Pair</th>
-                            <th>Total Profit</th>
-                            <th>Success Rate</th>
-                            <th>Average Profit</th>
-                            <th>Total Executions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for metric in pair_metrics %}
-                        <tr>
-                            <td>{{ metric.trading_pair }}</td>
-                            <td>{{ "%.2f"|format(metric.total_profit) }}</td>
-                            <td>{{ "%.1f"|format(metric.success_rate * 100) }}%</td>
-                            <td>{{ "%.2f"|format(metric.average_profit) }}</td>
-                            <td>{{ metric.execution_count }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-</div>
 {% endblock %}

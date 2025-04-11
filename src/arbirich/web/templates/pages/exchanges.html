@@ -1,22 +1,15 @@
 {% extends "layouts/base.html" %}
-
-{% block title %}
-    ArbiRich - Exchanges & Pairs
-{% endblock %}
-
+{% block title %}ArbiRich - Exchanges & Pairs{% endblock %}
 {% block content %}
     <!-- Page Header with Info text -->
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-dollar-green">
-            Exchanges & Pairs
-        </h1>
+        <h1 class="text-3xl font-bold text-dollar-green">Exchanges & Pairs</h1>
         <!-- Info text explaining configuration is managed via backend -->
         <div class="text-sm text-text-dim bg-dark-element px-4 py-2 rounded-lg">
             <i class="fas fa-info-circle mr-2"></i>
             Exchanges and pairs are configured via active strategies
         </div>
     </div>
-
     <!-- Tab Navigation -->
     <div class="border-b border-gray-800 mb-6">
         <nav class="flex space-x-8">
@@ -30,7 +23,6 @@
             </button>
         </nav>
     </div>
-
     <!-- Exchanges Tab Content - Remove toggle functionality -->
     <div id="exchangesTab" class="tab-content">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
@@ -44,21 +36,15 @@
                             {{ 'Active' if exchange.is_active else 'Inactive' }}
                         </span>
                     </div>
-
                     <div class="flex items-center mb-4">
                         <div class="bg-dark-element rounded-full p-3 mr-4">
                             <i class="fas fa-exchange-alt text-dollar-green text-xl"></i>
                         </div>
                         <div>
-                            <h2 class="text-xl font-bold">
-                                {{ exchange.name }}
-                            </h2>
-                            <p class="text-text-dim text-sm">
-                                {{ exchange.rest_url }}
-                            </p>
+                            <h2 class="text-xl font-bold">{{ exchange.name }}</h2>
+                            <p class="text-text-dim text-sm">{{ exchange.rest_url }}</p>
                         </div>
                     </div>
-
                     <div class="space-y-3 mb-6">
                         <div class="flex justify-between text-sm">
                             <span class="text-text-dim">Trade Fee:</span>
@@ -77,16 +63,12 @@
                             <span>"{{ exchange.delimiter }}"</span>
                         </div>
                     </div>
-
                     <!-- Remove toggle functionality, replace with explanatory text -->
-                    <div class="text-xs text-gray-400 mt-4 italic">
-                        Exchange status is controlled by active strategies
-                    </div>
+                    <div class="text-xs text-gray-400 mt-4 italic">Exchange status is controlled by active strategies</div>
                 </div>
             {% endfor %}
         </div>
     </div>
-
     <!-- Trading Pairs Tab Content - Remove toggle functionality -->
     <div id="pairsTab" class="tab-content hidden">
         <!-- Trading Pairs Filter -->
@@ -95,18 +77,11 @@
                 <span class="text-sm text-text-dim mr-2">Filter by:</span>
                 <select id="pairFilterSelect"
                         class="bg-dark-element border border-gray-700 text-gray-300 rounded-lg px-3 py-1.5 text-sm">
-                    <option value="all">
-                        All Pairs
-                    </option>
-                    <option value="active">
-                        Active Only
-                    </option>
-                    <option value="inactive">
-                        Inactive Only
-                    </option>
+                    <option value="all">All Pairs</option>
+                    <option value="active">Active Only</option>
+                    <option value="inactive">Inactive Only</option>
                 </select>
             </div>
-
             <div class="flex items-center ml-auto">
                 <div class="relative">
                     <input type="text"
@@ -117,7 +92,6 @@
                 </div>
             </div>
         </div>
-
         <!-- Trading Pairs List -->
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
@@ -155,14 +129,12 @@
                 </tbody>
             </table>
         </div>
-        
         <!-- Add explanation about pair activation -->
         <div class="mt-6 bg-dark-element p-4 rounded-lg text-center text-text-dim text-sm">
             <i class="fas fa-info-circle mr-2"></i>
             Trading pairs are activated automatically when used by active strategies
         </div>
     </div>
-
     <!-- Toast Notification -->
     <div id="toast"
          class="toast hidden fixed bottom-4 right-4 bg-dark-element text-white p-4 rounded-lg shadow-lg z-50 border-l-4 border-green-500 transition-opacity duration-300">
@@ -174,10 +146,8 @@
         </div>
     </div>
 {% endblock %}
-
 {% block scripts %}
     {{ super() }}
-
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Tab functionality

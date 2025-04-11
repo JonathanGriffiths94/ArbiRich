@@ -1,27 +1,32 @@
 <!-- System status indicator and trading controls -->
 <div class="flex justify-between items-center bg-dark-element rounded-lg p-4 mb-6 border border-gray-800">
     <div class="flex items-center">
-        <span id="trading-control-dot" class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
+        <span id="trading-control-dot"
+              class="h-3 w-3 rounded-full bg-gray-500 mr-2"></span>
         <span class="text-sm">System Status:</span>
         <span id="trading-control-text" class="ml-2 font-medium text-gray-300">Checking...</span>
     </div>
     <div class="flex space-x-2">
         <!-- Settings icon added here, linking to strategies page -->
-        <a href="/strategies" class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-3 rounded transition-all flex items-center border border-dollar-green/30" title="Trading Strategy Settings">
+        <a href="/strategies"
+           class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-3 rounded transition-all flex items-center border border-dollar-green/30"
+           title="Trading Strategy Settings">
             <i class="fas fa-cog"></i>
         </a>
-        <button id="page-start-trading-btn" class="bg-dark-card hover:bg-gray-700 text-profit-green py-2 px-4 rounded transition-all flex items-center border border-profit-green/30">
+        <button id="page-start-trading-btn"
+                class="bg-dark-card hover:bg-gray-700 text-profit-green py-2 px-4 rounded transition-all flex items-center border border-profit-green/30">
             <i class="fas fa-play mr-2"></i> Start Trading
         </button>
-        <button id="page-stop-trading-btn" class="bg-dark-card hover:bg-gray-700 text-loss-red py-2 px-4 rounded transition-all flex items-center border border-loss-red/30">
+        <button id="page-stop-trading-btn"
+                class="bg-dark-card hover:bg-gray-700 text-loss-red py-2 px-4 rounded transition-all flex items-center border border-loss-red/30">
             <i class="fas fa-stop mr-2"></i> Stop Trading
         </button>
-        <button id="page-restart-trading-btn" class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-4 rounded transition-all flex items-center border border-dollar-green/30">
+        <button id="page-restart-trading-btn"
+                class="bg-dark-card hover:bg-gray-700 text-dollar-green py-2 px-4 rounded transition-all flex items-center border border-dollar-green/30">
             <i class="fas fa-sync-alt mr-2"></i> Restart Trading
         </button>
     </div>
 </div>
-
 <!-- Trading Controls JS -->
 <script>
     document.addEventListener('DOMContentLoaded', function() {

@@ -1,14 +1,8 @@
 {% extends "layouts/base.html" %}
-
-{% block title %}
-    ArbiRich - System Setup
-{% endblock %}
-
+{% block title %}ArbiRich - System Setup{% endblock %}
 {% block content %}
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-dollar-green">
-            System Setup
-        </h1>
+        <h1 class="text-3xl font-bold text-dollar-green">System Setup</h1>
         <!-- Trading control buttons moved under heading -->
         <div class="flex space-x-2">
             <button id="start-trading-btn"
@@ -25,7 +19,6 @@
             </button>
         </div>
     </div>
-
     <!-- System status indicator for current page -->
     <div class="bg-dark-element rounded-lg p-4 mb-6 border border-gray-800">
         <div class="flex items-center">
@@ -35,46 +28,32 @@
             <span id="page-system-trading-text" class="ml-2 font-medium text-gray-300">Checking...</span>
         </div>
     </div>
-
     <!-- Strategy Setup Card -->
     <div class="dashboard-card rounded-lg shadow-md p-6 max-w-3xl mx-auto">
         <div class="flex justify-between items-center mb-6">
             <div>
-                <h2 class="text-xl font-bold text-dollar-green">
-                    Strategy Configuration
-                </h2>
-                <p class="text-gray-400">
-                    Configure and activate trading strategies.
-                </p>
+                <h2 class="text-xl font-bold text-dollar-green">Strategy Configuration</h2>
+                <p class="text-gray-400">Configure and activate trading strategies.</p>
             </div>
             <button id="btn-toggle-all-strategies"
                     class="bg-dark-element hover:bg-dark-card text-dollar-green font-semibold py-2 px-4 rounded-lg border border-dollar-green/30 transition-colors duration-300">
                 Activate All
             </button>
         </div>
-
         <div id="strategies-container" class="space-y-4">
             <!-- Loading placeholder -->
             <div id="strategies-loading" class="text-center py-8">
-                <div class="inline-block refresh-indicator">
-                </div>
-                <p class="text-gray-400 mt-3">
-                    Loading strategies...
-                </p>
+                <div class="inline-block refresh-indicator"></div>
+                <p class="text-gray-400 mt-3">Loading strategies...</p>
             </div>
-
             <!-- Debug information to help diagnose loading issues -->
             <div id="strategy-debug"
                  class="hidden mt-4 p-3 bg-dark-element/50 rounded-lg text-xs border border-gray-700">
-                <p class="text-yellow-400 font-mono mb-2">
-                    Debug Information:
-                </p>
-                <div id="strategy-debug-content" class="font-mono text-gray-400">
-                </div>
+                <p class="text-yellow-400 font-mono mb-2">Debug Information:</p>
+                <div id="strategy-debug-content" class="font-mono text-gray-400"></div>
             </div>
         </div>
     </div>
-
     <style>
     /* Toggle Switch Styles */
     .switch {
@@ -141,7 +120,6 @@
         color: #e15241;
     }
     </style>
-
     {% block scripts %}
         {{ super() }}
         <script>
