@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import time
 from typing import Any, Dict, List
 
 from fastapi import WebSocket
@@ -167,37 +166,12 @@ async def websocket_broadcast_task():
 
 
 async def broadcast_to_connections(channel: str, data: str):
-    """
-    Broadcast a message to all connected WebSocket clients.
-
-    Args:
-        channel: The Redis channel the message came from
-        data: The message data (usually JSON string)
-    """
     try:
-        # Parse the data to a dictionary if it's a string
-        if isinstance(data, str):
-            try:
-                import json
-
-                data_dict = json.loads(data)
-            except json.JSONDecodeError:
-                data_dict = {"raw": data}
-        else:
-            data_dict = {"raw": str(data)}
-
-        # Add channel information to the message
-        message = {
-            "type": channel.replace(":", "_"),  # Clean channel name for the frontend
-            "channel": channel,
-            "data": data_dict,
-            "timestamp": time.time(),
-        }
-
-        # Broadcast the message to all connected clients
         for connection in manager.active_connections:
             try:
-                await connection.send_text(json.dumps(message))
+                # Send the message to the client if they're subscribed to this channel
+                if channel in connection.channels:
+                    await connection.websocket.send_text(data)
             except Exception as e:
                 logger.error(f"Error sending message to client: {e}")
                 # Don't remove the connection here - do that only when receive_text throws

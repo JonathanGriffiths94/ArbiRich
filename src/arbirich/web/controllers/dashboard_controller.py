@@ -4,9 +4,11 @@ Dashboard Controller - Handles dashboard UI and API endpoints
 
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.web.dependencies import get_db_service
@@ -15,8 +17,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Templates will be registered in main.py
-templates = None
+# Use the consistent approach for template directory
+base_dir = Path(__file__).resolve().parent.parent
+templates_dir = base_dir / "templates"
+logger.info(f"Dashboard controller templates directory: {templates_dir}")
+templates = Jinja2Templates(directory=str(templates_dir))
 
 
 def get_db():
@@ -25,11 +30,26 @@ def get_db():
     return get_db_service()
 
 
+@router.get("/", response_class=HTMLResponse)
+async def index(request: Request):
+    """Render the index page."""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@router.get("/about", response_class=HTMLResponse)
+async def about(request: Request):
+    """Render the about page."""
+    return templates.TemplateResponse("about.html", {"request": request})
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(request: Request, db: DatabaseService = Depends(get_db)):
+async def dashboard_page(request: Request, db_gen: DatabaseService = Depends(get_db)):
     """Render the dashboard page"""
     # Get stats for dashboard
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         # Get time period for recent stats (last 24 hours)
         since_time = datetime.now() - timedelta(hours=24)
 
@@ -83,9 +103,12 @@ async def dashboard_page(request: Request, db: DatabaseService = Depends(get_db)
 
 
 @router.get("/api/dashboard/stats")
-async def dashboard_stats(db: DatabaseService = Depends(get_db)):
+async def dashboard_stats(db_gen: DatabaseService = Depends(get_db)):
     """Get dashboard statistics"""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         # Get time period for recent stats (last 24 hours)
         since_time = datetime.now() - timedelta(hours=24)
 
@@ -107,9 +130,12 @@ async def dashboard_stats(db: DatabaseService = Depends(get_db)):
 
 
 @router.get("/api/dashboard/recent-opportunities")
-async def recent_opportunities(limit: int = 5, db: DatabaseService = Depends(get_db)):
+async def recent_opportunities(limit: int = 5, db_gen: DatabaseService = Depends(get_db)):
     """Get recent trade opportunities"""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         opportunities = db.get_recent_opportunities(limit=limit)
         return opportunities
     except Exception as e:
@@ -118,9 +144,12 @@ async def recent_opportunities(limit: int = 5, db: DatabaseService = Depends(get
 
 
 @router.get("/api/dashboard/recent-executions")
-async def recent_executions(limit: int = 5, db: DatabaseService = Depends(get_db)):
+async def recent_executions(limit: int = 5, db_gen: DatabaseService = Depends(get_db)):
     """Get recent trade executions"""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         executions = db.get_recent_executions(limit=limit)
         return executions
     except Exception as e:

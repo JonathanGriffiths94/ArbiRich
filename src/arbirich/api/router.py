@@ -269,8 +269,6 @@ async def stop_trading(request: Request, stop_request: TradingStopRequest = None
         set_processors_shutting_down(True)
         disable_processor_startup()
 
-        # Modified: Call mark_system_shutdown without the emergency parameter
-        # If necessary, log that this is an emergency shutdown
         mark_system_shutdown(True)
         if emergency:
             logger.warning("Emergency shutdown completed")
@@ -375,10 +373,13 @@ async def get_strategies(services: Tuple[DatabaseService, RedisService] = Depend
 @strategies_router.get("/{strategy_name}", response_model=Strategy)
 async def get_strategy(
     strategy_name: str = Path(..., description="The name of the strategy to retrieve"),
-    db: DatabaseService = Depends(get_db),
+    db_gen: DatabaseService = Depends(get_db),
 ):
     """Get detailed information about a specific strategy."""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         strategy = db.get_strategy_by_name(strategy_name)
         if not strategy:
             raise HTTPException(status_code=404, detail=f"Strategy '{strategy_name}' not found")
@@ -463,11 +464,14 @@ async def stop_strategy(strategy_name: str, services: Tuple[DatabaseService, Red
 @strategies_router.put("/{strategy_name}/activate")
 async def activate_strategy(
     strategy_name: str = Path(..., description="The name of the strategy to activate"),
-    db: DatabaseService = Depends(get_db),
+    db_gen: DatabaseService = Depends(get_db),
 ):
     """Activate a strategy in the database and update relevant exchanges and pairs."""
     try:
-        success = db.activate_strategy_by_name(strategy_name)
+        # Extract the database service from the generator
+        db = next(db_gen)
+
+        success = db.update_strategy_status_by_name(strategy_name, is_active=True)
         if not success:
             raise HTTPException(status_code=404, detail=f"Strategy '{strategy_name}' not found")
 
@@ -493,10 +497,13 @@ async def activate_strategy(
 @strategies_router.put("/{strategy_name}/deactivate")
 async def deactivate_strategy(
     strategy_name: str = Path(..., description="The name of the strategy to deactivate"),
-    db: DatabaseService = Depends(get_db),
+    db_gen: DatabaseService = Depends(get_db),
 ):
     """Deactivate a strategy in the database and update relevant exchanges and pairs."""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         success = db.deactivate_strategy_by_name(strategy_name)
         if not success:
             raise HTTPException(status_code=404, detail=f"Strategy '{strategy_name}' not found")
@@ -522,11 +529,13 @@ async def deactivate_strategy(
         raise HTTPException(status_code=500, detail="Failed to deactivate strategy")
 
 
-# Add route for API recalculate metrics to avoid template rendering
 @strategies_router.get("/{strategy_name}/recalculate-metrics", response_model=Dict[str, Any])
-async def api_recalculate_metrics(strategy_name: str, period_days: int = 30, db: DatabaseService = Depends(get_db)):
+async def api_recalculate_metrics(strategy_name: str, period_days: int = 30, db_gen: DatabaseService = Depends(get_db)):
     """Recalculate metrics for a strategy via API."""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         strategy = db.get_strategy_by_name(strategy_name)
         if not strategy:
             raise HTTPException(status_code=404, detail=f"Strategy '{strategy_name}' not found")
@@ -544,6 +553,7 @@ async def api_recalculate_metrics(strategy_name: str, period_days: int = 30, db:
             "success": True,
             "message": f"Metrics calculated successfully for {strategy_name}",
             "period_days": period_days,
+            "metrics": metrics,
         }
 
     except Exception as e:
@@ -620,25 +630,22 @@ async def get_recent_executions(
 async def get_dashboard_stats():
     """Get dashboard statistics."""
     try:
-        with DatabaseService() as db:
+        with DatabaseService() as db_service:
             stats = DashboardStats()
 
-            # Get all executions using a fallback method if get_all_executions doesn't exist
+            # Collect executions from all strategies
+            logger.info("Collecting executions by strategy for dashboard stats")
+            executions = []
             try:
-                executions = db.get_all_executions()
-            except AttributeError:
-                # Fallback: Collect executions from all strategies
-                logger.warning("get_all_executions not available, using fallback")
-                executions = []
-                try:
-                    # Get all strategies
-                    strategies = db.get_all_strategies()
-                    # Get executions for each strategy
-                    for strategy in strategies:
-                        strategy_executions = db.get_executions_by_strategy(strategy.name)
-                        executions.extend(strategy_executions)
-                except Exception as e:
-                    logger.error(f"Error in fallback execution retrieval: {e}")
+                # Get all strategies
+                strategies = db_service.get_all_strategies()
+                # Get executions for each strategy
+                for strategy in strategies:
+                    strategy_executions = db_service.get_executions_by_strategy(strategy.name)
+                    executions.extend(strategy_executions)
+                logger.info(f"Collected {len(executions)} executions across all strategies")
+            except Exception as e:
+                logger.error(f"Error collecting executions: {e}")
 
             # Calculate total profit and trades
             if executions:
@@ -670,21 +677,39 @@ async def get_dashboard_stats():
             # Get recent executions (last 24 hours)
             now = datetime.now()
             yesterday = now - timedelta(days=1)
-            stats.executions_24h = sum(
-                1 for e in executions if e.execution_timestamp and e.execution_timestamp > yesterday
-            )
+
+            # Fixed comparison between timestamp and datetime
+            stats.executions_24h = 0
+            for e in executions:
+                try:
+                    # Check if execution_timestamp exists and is a datetime object
+                    if hasattr(e, "execution_timestamp") and e.execution_timestamp:
+                        # Handle different timestamp formats
+                        if isinstance(e.execution_timestamp, (int, float)):
+                            # Convert Unix timestamp to datetime
+                            exec_time = datetime.fromtimestamp(e.execution_timestamp)
+                        else:
+                            # Already a datetime object
+                            exec_time = e.execution_timestamp
+
+                        # Now compare datetime objects
+                        if exec_time > yesterday:
+                            stats.executions_24h += 1
+                except Exception as e:
+                    logger.warning(f"Error processing execution timestamp: {e}")
+                    continue
 
             # Get opportunities count
             from src.arbirich.models.schema import trade_opportunities
 
-            with db.engine.begin() as conn:
+            with db_service.engine.begin() as conn:
                 import sqlalchemy as sa
 
                 result = conn.execute(sa.select(sa.func.count()).select_from(trade_opportunities))
                 stats.opportunities_count = result.scalar() or 0
 
             # Get active strategies
-            strategies = db.get_all_strategies()
+            strategies = db_service.get_all_strategies()
             stats.active_strategies = sum(1 for s in strategies if getattr(s, "is_active", False))
 
             return stats
@@ -697,9 +722,20 @@ async def get_dashboard_stats():
 async def get_profit_chart():
     """Get profit chart data."""
     try:
-        with DatabaseService() as db:
-            # Get all executions
-            executions = db.get_all_executions()
+        with DatabaseService() as db_service:
+            # Collect executions from all strategies instead of using get_all_executions
+            logger.info("Collecting executions for profit chart")
+            executions = []
+            try:
+                # Get all strategies
+                strategies = db_service.get_all_strategies()
+                # Get executions for each strategy
+                for strategy in strategies:
+                    strategy_executions = db_service.get_executions_by_strategy(strategy.name)
+                    executions.extend(strategy_executions)
+                logger.info(f"Collected {len(executions)} executions for profit chart")
+            except Exception as e:
+                logger.error(f"Error collecting executions for profit chart: {e}")
 
             # Group executions by day and calculate daily profit
             daily_profits = {}
@@ -707,11 +743,23 @@ async def get_profit_chart():
                 if not execution.execution_timestamp:
                     continue
 
+                # Convert to datetime if needed
+                timestamp = execution.execution_timestamp
+                if isinstance(timestamp, (int, float)):
+                    timestamp = datetime.fromtimestamp(timestamp)
+
                 # Get the date part only
-                date_key = execution.execution_timestamp.date()
+                date_key = timestamp.date()
 
                 # Calculate profit
-                profit = (execution.executed_sell_price - execution.executed_buy_price) * execution.volume
+                try:
+                    buy_price = float(execution.executed_buy_price)
+                    sell_price = float(execution.executed_sell_price)
+                    volume = float(execution.volume)
+                    profit = (sell_price - buy_price) * volume
+                except (TypeError, AttributeError):
+                    logger.warning("Skipping execution with invalid price/volume data")
+                    continue
 
                 # Add to daily profits
                 if date_key in daily_profits:
@@ -820,9 +868,12 @@ async def get_metrics(
 
 
 @pairs_router.get("/", response_model=List[Dict[str, Any]])
-async def get_pairs(db: DatabaseService = Depends(get_db)):
+async def get_pairs(db_gen: DatabaseService = Depends(get_db)):
     """Get all trading pairs."""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         pairs = db.get_all_pairs()
         return [pair.model_dump() for pair in pairs]
     except Exception as e:
@@ -831,9 +882,12 @@ async def get_pairs(db: DatabaseService = Depends(get_db)):
 
 
 @pairs_router.get("/{symbol}", response_model=Dict[str, Any])
-async def get_pair(symbol: str, db: DatabaseService = Depends(get_db)):
+async def get_pair(symbol: str, db_gen: DatabaseService = Depends(get_db)):
     """Get details of a specific trading pair."""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         pair = db.get_pair_by_symbol(symbol)
         if not pair:
             raise HTTPException(status_code=404, detail=f"Pair '{symbol}' not found")
@@ -849,9 +903,12 @@ async def get_pair(symbol: str, db: DatabaseService = Depends(get_db)):
 
 
 @exchanges_router.get("/", response_model=List[Dict[str, Any]])
-async def get_exchanges(db: DatabaseService = Depends(get_db)):
+async def get_exchanges(db_gen: DatabaseService = Depends(get_db)):
     """Get all exchanges."""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         exchanges = db.get_all_exchanges()
         return [exchange.model_dump() for exchange in exchanges]
     except Exception as e:
@@ -860,9 +917,12 @@ async def get_exchanges(db: DatabaseService = Depends(get_db)):
 
 
 @exchanges_router.get("/{name}", response_model=Dict[str, Any])
-async def get_exchange(name: str, db: DatabaseService = Depends(get_db)):
+async def get_exchange(name: str, db_gen: DatabaseService = Depends(get_db)):
     """Get details of a specific exchange."""
     try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
         exchange = db.get_exchange_by_name(name)
         if not exchange:
             raise HTTPException(status_code=404, detail=f"Exchange '{name}' not found")
@@ -877,7 +937,6 @@ async def get_exchange(name: str, db: DatabaseService = Depends(get_db)):
 # -------------------- MONITOR ENDPOINTS --------------------
 
 
-# Add these monitor API endpoints
 @monitor_api_router.get("/system")
 async def get_monitor_system():
     """Get system monitoring data."""
@@ -899,12 +958,14 @@ async def get_monitor_processes():
         return [{"name": "Error loading processes", "status": "Error", "pid": "N/A"}]
 
 
-# @monitor_api_router.get("/exchanges")
-# async def get_monitor_exchanges(db: DatabaseService = Depends(get_db)):
-#     """Get exchange status monitoring data."""
-#     from src.arbirich.web.controllers.monitor_controller import get_exchange_status
+@monitor_api_router.get("/exchanges")
+async def get_monitor_exchanges(db_gen: DatabaseService = Depends(get_db)):
+    """Get exchange status monitoring data."""
+    from src.arbirich.web.controllers.monitor_controller import get_exchange_status
 
-#     return await get_exchange_status(db)
+    # Extract the database service from the generator
+    db = next(db_gen)
+    return await get_exchange_status(db)
 
 
 @monitor_api_router.get("/activity")

@@ -263,7 +263,7 @@ async def get_about(request: Request):
 @handle_errors()
 async def catch_all(request: Request, path: str):
     """Catch all other routes and display 404 page if template doesn't exist."""
-    template_path = base_dir / "templates" / "pages" / f"{path}.html"
+    template_path = templates_dir / "pages" / f"{path}.html"
 
     if not template_path.exists():
         return templates.TemplateResponse(
