@@ -3,6 +3,10 @@ import json
 import logging
 from abc import ABC, abstractmethod
 
+import websockets
+
+from src.arbirich.core.system_state import is_system_shutting_down, mark_component_notified
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -23,6 +27,8 @@ class BaseOrderBookProcessor(ABC):
     ):
         self.exchange = exchange
         self.product = product
+        self.mapping = {}
+        self.delimiter = ""
         self.subscription_type = subscription_type  # "snapshot" or "delta"
         self.use_rest_snapshot = use_rest_snapshot
         self.order_book = {"bids": {}, "asks": {}}
@@ -39,13 +45,25 @@ class BaseOrderBookProcessor(ABC):
          6. Process live delta updates continuously.
          7. If sequence gaps occur, re-subscribe.
         """
-        while True:
+        while not is_system_shutting_down():
             try:
+                if is_system_shutting_down():
+                    processor_id = f"{self.exchange}:{self.product}"
+                    mark_component_notified("processor", processor_id)
+                    logger.info(f"OrderBookProcessor for {processor_id} shutting down")
+                    break
+
                 async with await self.connect() as websocket:
+                    if is_system_shutting_down():
+                        break
                     await self.subscribe(websocket)
 
                     # Buffer initial events and record the first event.
                     buffered_events, first_event = await self.buffer_events(websocket)
+
+                    if is_system_shutting_down():
+                        break
+
                     snapshot = self.fetch_snapshot() if self.use_rest_snapshot else first_event
                     logger.debug(f"Snapshot: {snapshot}")
 
@@ -123,6 +141,8 @@ class BaseOrderBookProcessor(ABC):
 
                     # Process live updates continuously.
                     async for message in self.live_updates(websocket):
+                        if is_system_shutting_down():
+                            break
                         event = json.loads(message)
 
                         # For delta subscriptions, if a previous update ID is provided, check it.
@@ -141,12 +161,37 @@ class BaseOrderBookProcessor(ABC):
                         self.local_update_id = self.get_snapshot_update_id(event)
                         if self.order_book:
                             yield self.order_book
+            except websockets.exceptions.ConnectionClosedOK:
+                # Normal WebSocket closure - check if it's due to shutdown
+                if is_system_shutting_down():
+                    processor_id = f"{self.exchange}:{self.product}"
+                    mark_component_notified("processor", processor_id)
+                    logger.info(f"WebSocket connection closed normally during shutdown for {processor_id}")
+                    break
+                else:
+                    # Brief reconnection delay for normal closures
+                    logger.info(
+                        f"WebSocket connection closed normally for {self.exchange}:{self.product}. Reconnecting..."
+                    )
+                    await asyncio.sleep(1)
+
             except Exception as e:
+                if is_system_shutting_down():
+                    processor_id = f"{self.exchange}:{self.product}"
+                    mark_component_notified("processor", processor_id)
+                    logger.info(f"OrderBookProcessor for {processor_id} shutting down during exception handling")
+                    break
+
                 logger.error(
                     f"Error in order book processor: {e}. Retrying in 5 seconds...",
                     exc_info=True,
                 )
                 await asyncio.sleep(5)
+
+        # Cleanup when exiting the loop
+        processor_id = f"{self.exchange}:{self.product}"
+        mark_component_notified("processor", processor_id)
+        logger.info(f"OrderBookProcessor for {processor_id} has shut down")
 
     def process_asset(self) -> str:
         try:
@@ -155,12 +200,10 @@ class BaseOrderBookProcessor(ABC):
             # If splitting fails, fall back to using the product as-is.
             return self.product.upper()
         # Check if quote currency has a mapping for the product
-        mapping = self.cfg.get("mapping", {})
-        if quote in mapping.keys():
-            quote = mapping[quote]
+        if quote in self.mapping.keys():
+            quote = self.mapping[quote]
         # Return symbol with exchange specific format
-        delimiter = self.cfg.get("delimiter", "")
-        return delimiter.join((quote, base))
+        return self.delimiter.join((quote, base))
 
     def asset_map(self):
         pass

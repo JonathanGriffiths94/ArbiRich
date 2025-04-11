@@ -112,6 +112,11 @@ python -m src.arbirich.prefill_database
   just db-reset
   ```
 
+- Reset database (docker):
+  ```
+  just docker-db-reset
+  ```
+
 ## Usage
 
 Run the app with:
@@ -120,4 +125,6 @@ Run the app with:
 poetry run python main.py
 ```
 
-You can access the Swagger App to play with the API at `http://0.0.0.0:8088/docs`
+Swagger App: `http://0.0.0.0:8080/docs`
+
+Web Dashboard: `http://0.0.0.0:8080/`

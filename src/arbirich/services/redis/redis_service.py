@@ -8,10 +8,68 @@ import redis
 from redis.exceptions import ConnectionError, RedisError
 
 from src.arbirich.config.config import REDIS_CONFIG
-from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
+
+_redis_clients = []
+_redis_lock = threading.RLock()
+
+_shared_redis_client = None
+
+# Global registry of Redis clients to reset
+_redis_clients_registry = {}
+
+
+def register_redis_client(module_name, reset_function):
+    """Register a module's Redis client reset function."""
+    _redis_clients_registry[module_name] = reset_function
+
+
+def reset_all_registered_redis_clients():
+    """Reset all registered Redis clients across modules."""
+    for module_name, reset_function in _redis_clients_registry.items():
+        try:
+            reset_function()
+            logger.info(f"Reset Redis client for {module_name}")
+        except Exception as e:
+            logger.error(f"Error resetting Redis client for {module_name}: {e}")
+
+    # Also reset the channel manager
+    try:
+        from src.arbirich.services.redis.redis_channel_manager import reset_channel_manager
+
+        reset_channel_manager()
+    except Exception as e:
+        logger.error(f"Error resetting channel manager: {e}")
+
+
+def get_shared_redis_client():
+    """Get or create a shared Redis client for the application."""
+    global _shared_redis_client
+    with _redis_lock:
+        if _shared_redis_client is None:
+            try:
+                _shared_redis_client = RedisService()
+                logger.info("Created shared Redis client")
+            except Exception as e:
+                logger.error(f"Error creating shared Redis client: {e}")
+                return None
+        return _shared_redis_client
+
+
+def reset_shared_redis_client():
+    """Reset the shared Redis client for clean restarts."""
+    global _shared_redis_client
+    with _redis_lock:
+        if _shared_redis_client is not None:
+            try:
+                _shared_redis_client.close()
+                logger.info("Closed shared Redis client")
+            except Exception as e:
+                logger.warning(f"Error closing shared Redis client: {e}")
+            _shared_redis_client = None
 
 
 class RedisService:
@@ -31,7 +89,14 @@ class RedisService:
         self.retry_delay = retry_delay
         self.pubsub = None
         self.client = None
+        self._closed = False  # Add this to track if client was closed
+
+        # Connect and register this client
         self._connect()
+
+        # Register this instance in the global registry
+        with _redis_lock:
+            _redis_clients.append(self)
 
     def _connect(self) -> None:
         """Establish connection to Redis with retries"""
@@ -101,9 +166,66 @@ class RedisService:
                 self.client.close()
                 self.client = None
 
+            # Mark as closed
+            self._closed = True
+
+            # Remove from registry
+            with _redis_lock:
+                if self in _redis_clients:
+                    _redis_clients.remove(self)
+
             logger.info("Redis connection closed")
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
+
+    @staticmethod
+    def close_all_connections():
+        """Close all Redis connections across the application"""
+        logger.info("Closing all Redis connections")
+
+        with _redis_lock:
+            # Make a copy since we'll be modifying the list during iteration
+            clients_to_close = _redis_clients.copy()
+
+            for client in clients_to_close:
+                try:
+                    client.close()
+                except Exception as e:
+                    logger.error(f"Error closing Redis client: {e}")
+
+            # Clear the list
+            _redis_clients.clear()
+
+        logger.info("All Redis connections closed")
+
+        # Try to clear any remaining connection pools at the package level
+        try:
+            # Close connection pools more carefully
+            try:
+                # Get all connection pools from redis package
+                from redis.connection import ConnectionPool
+
+                pools = ConnectionPool.connection_pools.copy() if hasattr(ConnectionPool, "connection_pools") else {}
+
+                # Reset each pool individually
+                for key, pool in pools.items():
+                    try:
+                        pool.disconnect()
+                        logger.debug(f"Disconnected pool: {key}")
+                    except Exception as e:
+                        logger.warning(f"Error disconnecting pool {key}: {e}")
+
+                # Also try to reset the pools dictionary
+                if hasattr(ConnectionPool, "connection_pools"):
+                    ConnectionPool.connection_pools.clear()
+
+                logger.info("Disconnected all Redis connection pools")
+            except Exception as e:
+                logger.warning(f"Error while disconnecting connection pools: {e}")
+        except Exception as e:
+            logger.error(f"Error during Redis cleanup: {e}")
+
+        # === Order Book Methods ===
 
     def store_order_book(self, order_book: OrderBookUpdate) -> None:
         """
@@ -138,18 +260,18 @@ class RedisService:
 
     def publish_order_book(self, exchange: str, symbol: str, order_book):
         """
-        Publish an order book update to Redis.
+        Publish an order book update to Redis using multiple channel formats
+        for maximum compatibility.
 
         Parameters:
             exchange: The exchange name
             symbol: The trading pair symbol
             order_book: The order book data to publish (can be dict or OrderBookUpdate model)
+
+        Returns:
+            Total number of subscribers reached
         """
         try:
-            # Create channel name
-            channel = "order_book"
-            logger.debug(f"Publishing to channel: {channel}")
-
             # Convert Pydantic model to dict if needed
             if hasattr(order_book, "model_dump"):
                 order_data = order_book.model_dump()
@@ -169,16 +291,27 @@ class RedisService:
             if "timestamp" not in order_data:
                 order_data["timestamp"] = time.time()
 
-            # Convert to JSON and publish
+            # Convert to JSON for publishing
             message_json = json.dumps(order_data)
-            result = self.client.publish(channel, message_json)
 
-            if result > 0:
-                logger.debug(f"Published order book for {exchange}:{symbol} to {result} subscribers")
+            # Publish to the channel format that matches arbitrage subscriptions
+            total_subscribers = 0
+
+            # Primary channel format: "order_book:{exchange}:{symbol}"
+            primary_channel = f"{ORDER_BOOK_CHANNEL}:{exchange}:{symbol}"
+            primary_subs = self.client.publish(primary_channel, message_json)
+
+            # Also publish to legacy format for backward compatibility
+            legacy_subs = self.client.publish("order_book", message_json)
+
+            total_subscribers = primary_subs + legacy_subs
+
+            if total_subscribers > 0:
+                logger.debug(f"Published order book for {exchange}:{symbol} to {total_subscribers} subscribers")
             else:
-                logger.debug(f"Published order book for {exchange}:{symbol} but no subscribers")
+                logger.warning(f"Published order book for {exchange}:{symbol} but no subscribers")
 
-            return result
+            return total_subscribers
         except Exception as e:
             logger.error(f"Error publishing order book to Redis: {e}", exc_info=True)
             return 0
@@ -240,7 +373,7 @@ class RedisService:
             return self._shared_pubsub
 
     def subscribe_to_order_book_updates(
-        self, channel: str = "trade_opportunities", callback: Optional[Callable] = None
+        self, channel: str, callback: Optional[Callable] = None
     ) -> Generator[Dict[str, Any], None, None]:
         """
         Subscribe to a Redis Pub/Sub channel and yield messages indefinitely.
@@ -282,6 +415,7 @@ class RedisService:
                     time.sleep(5)  # Wait longer before retrying
 
     # === Trade Opportunity Methods ===
+
     def publish_trade_opportunity(self, opportunity: TradeOpportunity, strategy_name=None, retries_left=None) -> dict:
         """
         Store a trade opportunity in Redis with an expiration of 300 seconds and publish it.
@@ -473,7 +607,7 @@ class RedisService:
                 self.client.set(key, execution_data.model_dump_json(), ex=expiry_seconds)
 
                 # Publish to strategy-specific channel if provided, ensuring the channel exists
-                channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}" if strategy_name else TRADE_EXECUTIONS_CHANNEL
+                channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}" if strategy_name else TRADE_EXECIONS_CHANNEL
                 # self._ensure_subscribed(channel)  # Ensure channel exists
                 self.client.publish(channel, execution_data.model_dump_json())
 
@@ -627,8 +761,20 @@ class RedisService:
             return []
 
     # === Health Check Methods ===
+
     def is_healthy(self) -> bool:
         """Check if Redis connection is healthy"""
+        # First check system shutdown state
+        try:
+            from src.arbirich.core.system_state import is_system_shutting_down
+
+            if is_system_shutting_down():
+                # During shutdown, return False without attempting reconnection
+                return False
+        except ImportError:
+            # If import fails, continue with normal health check
+            pass
+
         try:
             return bool(self.client.ping())
         except Exception:
@@ -636,6 +782,17 @@ class RedisService:
 
     def reconnect_if_needed(self) -> bool:
         """Reconnect to Redis if connection is unhealthy"""
+        # Check system shutdown state first
+        try:
+            from src.arbirich.core.system_state import is_system_shutting_down
+
+            if is_system_shutting_down():
+                # Don't attempt reconnection during shutdown
+                logger.debug("System is shutting down, skipping Redis reconnection")
+                return False
+        except ImportError:
+            pass
+
         if not self.is_healthy():
             try:
                 logger.info("Redis connection unhealthy, attempting reconnection...")
@@ -662,3 +819,54 @@ class RedisService:
             strategy_channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}"
             self._ensure_subscribed(strategy_channel)
             logger.info(f"Ensured execution channel exists: {strategy_channel}")
+
+
+def reset_redis_pool():
+    """Reset all Redis connection pools"""
+    global _redis_clients, _redis_lock
+
+    # First ensure no new pubsubs are being created during cleanup
+    RedisService._pubsub_lock.acquire()
+    try:
+        # Reset class-level shared pubsub
+        if hasattr(RedisService, "_shared_pubsub") and RedisService._shared_pubsub:
+            try:
+                RedisService._shared_pubsub.close()
+                RedisService._shared_pubsub = None
+            except Exception as e:
+                logger.warning(f"Error closing shared pubsub: {e}")
+
+        # Clear subscribed channels tracking
+        if hasattr(RedisService, "_subscribed_channels"):
+            RedisService._subscribed_channels.clear()
+    finally:
+        RedisService._pubsub_lock.release()
+
+    with _redis_lock:
+        # Close all existing connections
+        clients_to_close = _redis_clients.copy()  # Create a copy since we'll modify the list
+
+        for client in clients_to_close:
+            if hasattr(client, "close") and callable(client.close):
+                try:
+                    client.close()
+                except Exception as e:
+                    logging.getLogger(__name__).warning(f"Error closing Redis client: {e}")
+
+        # Clear the clients list
+        _redis_clients.clear()
+
+        # Also try to reset connection pools at the package level
+        try:
+            from redis.connection import ConnectionPool
+
+            if hasattr(ConnectionPool, "connection_pools"):
+                for key, pool in ConnectionPool.connection_pools.items():
+                    try:
+                        pool.disconnect()
+                    except Exception as e:
+                        logger.warning(f"Error disconnecting pool {key}: {e}")
+                ConnectionPool.connection_pools.clear()
+                logger.info("Redis connection pools reset")
+        except Exception as e:
+            logger.error(f"Error resetting Redis connection pools: {e}")

@@ -7,6 +7,7 @@ from src.arbirich.models.models import TradeOpportunity
 from src.arbirich.services.redis.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # Maintain a cache of recently seen opportunities to avoid duplicates
 opportunity_cache = {}
@@ -80,6 +81,8 @@ def publish_trade_opportunity(opportunity: TradeOpportunity, strategy_name=None)
         opportunity: The opportunity to publish
         strategy_name: Optional strategy name
     """
+    logger.debug(f"Publishing opportunity: {opportunity}")
+    logger.debug(f"Strategy name: {strategy_name}")
     if not opportunity:
         return "No opportunity to publish"
 

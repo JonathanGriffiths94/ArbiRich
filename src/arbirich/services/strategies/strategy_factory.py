@@ -6,6 +6,7 @@ from typing import Dict
 from src.arbirich.config.config import STRATEGIES
 from src.arbirich.services.strategies.base_strategy import ArbitrageStrategy
 from src.arbirich.services.strategies.basic_arbitrage_strategy import BasicArbitrageStrategy
+from src.arbirich.services.strategies.high_frequency_strategy import HighFrequencyStrategy
 from src.arbirich.services.strategies.mid_price_arbitrage_strategy import MidPriceArbitrageStrategy
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 STRATEGY_CLASSES = {
     "basic": BasicArbitrageStrategy,
     "mid_price": MidPriceArbitrageStrategy,
-    # Add more strategy types here
+    "hft": HighFrequencyStrategy,
 }
 
 # Cache of initialized strategy instances

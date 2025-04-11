@@ -1,4 +1,5 @@
 import logging
+import threading
 from typing import Dict, Optional
 
 from src.arbirich.services.redis.redis_service import RedisService
@@ -7,7 +8,56 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Set to DEBUG for more detailed logs
 
 # Create a singleton instance of RedisService to be shared by all functions
-_redis_service = RedisService()
+_shared_redis_client = None
+_is_shutting_down = False
+_shutdown_lock = threading.Lock()
+_redis_lock = threading.Lock()
+
+
+def get_shared_redis_client():
+    """Get or create a shared Redis client for this module"""
+    global _shared_redis_client
+    with _redis_lock:
+        if _shared_redis_client is None:
+            try:
+                _shared_redis_client = RedisService()
+                logger.debug("Created new Redis client for ingestion sink")
+            except Exception as e:
+                logger.error(f"Error creating Redis client: {e}")
+                return None
+        return _shared_redis_client
+
+
+def reset_shared_redis_client():
+    """Reset the shared Redis client for clean restarts"""
+    global _shared_redis_client
+    with _redis_lock:
+        if _shared_redis_client is not None:
+            try:
+                _shared_redis_client.close()
+                logger.info("Closed shared Redis client in ingestion sink")
+            except Exception as e:
+                logger.warning(f"Error closing Redis client: {e}")
+            _shared_redis_client = None
+
+
+def mark_shutdown_started():
+    """Mark the system as shutting down to prevent new publishes"""
+    global _is_shutting_down
+    with _shutdown_lock:
+        _is_shutting_down = True
+        logger.info("Ingestion sink marked as shutting down")
+
+
+def is_shutting_down():
+    """Check if system is in shutdown mode"""
+    with _shutdown_lock:
+        return _is_shutting_down
+
+
+def get_order_book_channel(exchange, symbol):
+    """Get standardized channel name for order book data"""
+    return f"order_book:{exchange}:{symbol}"
 
 
 def publish_order_book(exchange: str, symbol: str, order_book):
@@ -17,11 +67,24 @@ def publish_order_book(exchange: str, symbol: str, order_book):
     Parameters:
         exchange: The exchange name
         symbol: The trading pair symbol
-        order_book: The order book data to publish (dict or Pydantic model)
+        order_book: The order book data to publish
 
     Returns:
         True if publishing was successful, False otherwise
     """
+    # Check global shutdown flag first - fast early return
+    if is_shutting_down():
+        logger.debug(f"System shutting down, skipping publish for {exchange}:{symbol}")
+        return False
+
+    # Get the shared Redis client
+    redis_service = get_shared_redis_client()
+
+    # Check if Redis service is available
+    if not redis_service or hasattr(redis_service, "_closed") and redis_service._closed:
+        logger.debug(f"Skipping publish for {exchange}:{symbol} - Redis service is closed")
+        return False
+
     try:
         logger.debug(f"Publishing order book for {exchange}:{symbol}")
 
@@ -51,19 +114,30 @@ def publish_order_book(exchange: str, symbol: str, order_book):
 
             # Now publish
             logger.debug(f"Publishing data to Redis: {exchange}:{symbol}")
-            result = _redis_service.publish_order_book(exchange, symbol, data_to_publish)
+            result = redis_service.publish_order_book(exchange, symbol, order_book)
 
             if result > 0:
                 logger.info(f"Successfully published order book for {exchange}:{symbol} to {result} subscribers")
                 return True
             else:
-                logger.warning(f"Order book published but no subscribers for {exchange}:{symbol}")
+                # Reduce warning level since this is normal during testing/development
+                logger.debug(f"Order book published but no subscribers for {exchange}:{symbol}")
                 return True  # Still consider it a success even without subscribers
         else:
             logger.error(f"Data to publish is not a dictionary: {type(data_to_publish)}")
             return False
+    except AttributeError as e:
+        # This is likely due to Redis shutdown - handle gracefully
+        if "NoneType" in str(e) and ("publish" in str(e) or "feed" in str(e)):
+            logger.debug(f"Redis connection closed, skipping publish for {exchange}:{symbol}")
+        else:
+            logger.error(f"Error publishing order book: {e}")
+        return False
     except Exception as e:
-        logger.error(f"Error publishing order book: {e}", exc_info=True)
+        if "Bad file descriptor" in str(e) or "Connection reset" in str(e):
+            logger.debug(f"Redis connection closed during publish: {e}")
+        else:
+            logger.error(f"Error publishing order book: {e}", exc_info=True)
         return False
 
 
@@ -71,7 +145,7 @@ class RedisOrderBookSink:
     """Sink for publishing order book updates to Redis."""
 
     def __init__(self):
-        self.redis_service = _redis_service  # Use the singleton instance
+        self.redis_service = get_shared_redis_client()
 
     def __call__(self, item: Optional[Dict] = None):
         """

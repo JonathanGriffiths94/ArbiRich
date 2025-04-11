@@ -1,129 +1,126 @@
-import logging
-from typing import Any, Dict, List, Optional, Tuple
+"""
+Strategy Manager for handling strategy configuration and management.
+"""
 
-from src.arbirich.config.config import STRATEGIES
-from src.arbirich.services.strategies.strategy_configs import (
-    get_all_strategy_names,
-    get_strategy_config,
-)
+import logging
+from typing import Dict, List, Tuple
+
+from src.arbirich.config.config import STRATEGIES, get_strategy_config
+from src.arbirich.constants import ORDER_BOOK_CHANNEL
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class StrategyManager:
-    """Utility class to manage strategy configurations and mapping"""
+    """
+    Manager for strategy configuration and operations.
+    Provides static methods for accessing strategy-specific settings.
+    """
 
     @staticmethod
-    def get_strategy_config(strategy_name: str) -> Optional[Dict[str, Any]]:
+    def get_exchange_channels(strategy_name: str) -> Dict[str, List[str]]:
         """
-        Get the configuration for a specific strategy
+        Get the exchanges and channels for a specific strategy.
 
-        Parameters:
-            strategy_name: The name of the strategy to get the configuration for
+        Args:
+            strategy_name: Name of the strategy
 
         Returns:
-            The strategy configuration or None if not found
+            Dictionary mapping exchange names to channel lists
         """
-        if strategy_name in STRATEGIES:
-            return STRATEGIES[strategy_name]
+        logger.info(f"Getting exchange channels for strategy: {strategy_name}")
 
-        # If not in active strategies, try to get it from ALL_STRATEGIES
-        config = get_strategy_config(strategy_name)
-        if config:
-            return config
+        # Get strategy configuration
+        strategy_config = get_strategy_config(strategy_name)
+        if not strategy_config:
+            logger.warning(f"No configuration found for strategy: {strategy_name}")
+            return {}
 
-        logger.warning(f"Strategy '{strategy_name}' not found in configured strategies")
-        return None
+        # Get exchanges from strategy configuration
+        exchanges = strategy_config.get("exchanges", [])
+        if not exchanges:
+            logger.warning(f"No exchanges configured for strategy: {strategy_name}")
+            return {}
 
-    @staticmethod
-    def get_all_strategy_names() -> List[str]:
-        """Get a list of all configured strategy names"""
-        return get_all_strategy_names()
+        # Get pairs for this strategy
+        pairs = strategy_config.get("pairs", [])
+        if not pairs:
+            logger.warning(f"No pairs configured for strategy: {strategy_name}")
+            return {}
 
-    @staticmethod
-    def get_threshold(strategy_name: str) -> float:
-        """Get the threshold value for a specific strategy"""
-        config = StrategyManager.get_strategy_config(strategy_name)
-        if config:
-            return config.get("threshold", 0.001)
+        # Create exchange to channels mapping
+        exchange_channels = {}
+        for exchange in exchanges:
+            # Format channel names to match Redis publishing format: "order_book:{exchange}:{pair}"
+            channels = [f"{ORDER_BOOK_CHANNEL}:{exchange}:{base}-{quote}" for base, quote in pairs]
+            exchange_channels[exchange] = channels
 
-        logger.warning(f"Strategy {strategy_name} not found in configuration. Using default threshold.")
-        return 0.001  # 0.1% default threshold
-
-    @staticmethod
-    def get_exchanges_for_strategy(strategy_name: str) -> List[str]:
-        """Get the list of exchanges used by a specific strategy"""
-        config = StrategyManager.get_strategy_config(strategy_name)
-        if config and "exchanges" in config:
-            return config["exchanges"]
-
-        logger.warning(f"No exchanges found for strategy '{strategy_name}', using all exchanges")
-        from src.arbirich.config.config import EXCHANGES
-
-        return EXCHANGES  # Default to all exchanges if not specified
+        logger.info(f"Exchange channels for {strategy_name}: {exchange_channels}")
+        return exchange_channels
 
     @staticmethod
     def get_pairs_for_strategy(strategy_name: str) -> List[Tuple[str, str]]:
-        """Get the list of trading pairs used by a specific strategy"""
-        config = StrategyManager.get_strategy_config(strategy_name)
-        if config and "pairs" in config:
-            return config["pairs"]
-
-        logger.warning(f"No pairs found for strategy '{strategy_name}', using default pairs")
-        return [("BTC", "USDT")]  # Default pair if not specified
-
-    @staticmethod
-    def get_exchange_channels(strategy_name: str) -> Dict[str, str]:
         """
-        Get a dictionary of exchange to channel mappings for a strategy.
-        This is useful for configuring what data sources each strategy subscribes to.
-        """
-        exchanges = StrategyManager.get_exchanges_for_strategy(strategy_name)
-        # Create a mapping of exchange -> channel name
-        # Currently all exchanges use the same 'order_book' channel
-        return {exchange: "order_book" for exchange in exchanges}
+        Get the trading pairs for a specific strategy.
 
-    @staticmethod
-    def enable_debug_for_strategy(strategy_name: str) -> bool:
-        """
-        Check if debug mode should be enabled for a strategy.
-
-        Parameters:
-            strategy_name: The name of the strategy
+        Args:
+            strategy_name: Name of the strategy
 
         Returns:
-            True if debug should be enabled, False otherwise
+            List of trading pairs (as tuples of base and quote currencies)
         """
-        config = StrategyManager.get_strategy_config(strategy_name)
-        if config:
-            return config.get("debug", False)
-        return False
+        logger.info(f"Getting pairs for strategy: {strategy_name}")
+
+        # Get strategy configuration
+        strategy_config = get_strategy_config(strategy_name)
+        if not strategy_config:
+            logger.warning(f"No configuration found for strategy: {strategy_name}")
+            return []
+
+        # Get pairs from strategy configuration
+        pairs = strategy_config.get("pairs", [])
+
+        logger.info(f"Pairs for strategy {strategy_name}: {pairs}")
+        return pairs
 
     @staticmethod
-    def get_opportunity_channel(strategy_name: str) -> str:
+    def get_threshold(strategy_name: str) -> float:
         """
-        Get the Redis channel name to publish trade opportunities for a strategy.
+        Get the minimum spread threshold for a specific strategy.
 
-        Parameters:
-            strategy_name: The name of the strategy
+        Args:
+            strategy_name: Name of the strategy
 
         Returns:
-            Redis channel name
+            Minimum spread threshold as a float
         """
-        return f"trade_opportunities_{strategy_name}"
+        logger.info(f"Getting threshold for strategy: {strategy_name}")
+
+        # Get strategy configuration
+        strategy_config = get_strategy_config(strategy_name)
+        if not strategy_config:
+            logger.warning(f"No configuration found for strategy: {strategy_name}")
+            return 0.001  # Default threshold
+
+        # Get threshold from strategy configuration
+        threshold = strategy_config.get("min_spread", 0.001)
+
+        logger.info(f"Threshold for strategy {strategy_name}: {threshold}")
+        return threshold
 
     @staticmethod
-    def get_strategy_type(strategy_name: str) -> str:
+    def get_active_strategies() -> List[str]:
         """
-        Get the type of the strategy (basic, mid_price, etc.)
-
-        Parameters:
-            strategy_name: The name of the strategy
+        Get a list of active strategy names.
 
         Returns:
-            Strategy type as a string
+            List of active strategy names
         """
-        config = StrategyManager.get_strategy_config(strategy_name)
-        if config:
-            return config.get("type", "basic")
-        return "basic"  # Default to basic if not specified
+        logger.info("Getting active strategies")
+
+        # For now, all strategies in STRATEGIES are considered active
+        active_strategies = list(STRATEGIES.keys())
+
+        logger.info(f"Active strategies: {active_strategies}")
+        return active_strategies

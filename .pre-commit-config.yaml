@@ -8,3 +8,11 @@ repos:
       args: [--select, I, --fix]
     # Run the formatter.
     - id: ruff-format
+      args: [--update]
+- repo: https://github.com/Riverside-Healthcare/djLint
+  rev: v1.34.0
+  hooks:
+    - id: djlint-reformat
+      types_or: [html, jinja]
+    - id: djlint
+      types_or: [html, jinja]

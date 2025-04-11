@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}{{ strategy.name }} - Metrics{% endblock %}
+{% block content %}
+    <div class="container mt-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="/strategies">Strategies</a>
+                </li>
+                <li class="breadcrumb-item">
+                    <a href="/strategy/{{ strategy.name }}">{{ strategy.name }}</a>
+                </li>
+                <li class="breadcrumb-item active">Metrics</li>
+            </ol>
+        </nav>
+        <h1>{{ strategy.name }} - Metrics</h1>
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Metrics Overview</span>
+                            <div>
+                                <div class="btn-group" role="group">
+                                    <a href="/strategy/{{ strategy.name }}/metrics?period=7d"
+                                       class="btn btn-sm btn-outline-primary {% if period == '7d' %}active{% endif %}">7 Days</a>
+                                    <a href="/strategy/{{ strategy.name }}/metrics?period=30d"
+                                       class="btn btn-sm btn-outline-primary {% if period == '30d' %}active{% endif %}">30 Days</a>
+                                    <a href="/strategy/{{ strategy.name }}/metrics?period=90d"
+                                       class="btn btn-sm btn-outline-primary {% if period == '90d' %}active{% endif %}">90 Days</a>
+                                    <a href="/strategy/{{ strategy.name }}/metrics?period=all"
+                                       class="btn btn-sm btn-outline-primary {% if period == 'all' %}active{% endif %}">All Time</a>
+                                </div>
+                                <a href="/strategy/{{ strategy.name }}/recalculate-metrics"
+                                   class="btn btn-sm btn-primary ml-2">Recalculate</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        {% if metrics %}
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="card text-white bg-primary mb-3">
+                                        <div class="card-header">Net Profit</div>
+                                        <div class="card-body">
+                                            <h5 class="card-title">{{ "%.2f"|format(metrics.net_profit) }}</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-white bg-success mb-3">
+                                        <div class="card-header">Success Rate</div>
+                                        <div class="card-body">
+                                            <h5 class="card-title">{{ "%.1f"|format(metrics.success_rate * 100) }}%</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-white bg-info mb-3">
+                                        <div class="card-header">Total Executions</div>
+                                        <div class="card-body">
+                                            <h5 class="card-title">{{ metrics.total_executions }}</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="card text-white bg-warning mb-3">
+                                        <div class="card-header">Average Profit</div>
+                                        <div class="card-body">
+                                            <h5 class="card-title">{{ "%.2f"|format(metrics.average_profit) }}</h5>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-warning">No metrics data available. Try recalculating metrics.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% if pair_metrics %}
+            <div class="card mb-4">
+                <div class="card-header">Trading Pair Performance</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Trading Pair</th>
+                                    <th>Total Profit</th>
+                                    <th>Success Rate</th>
+                                    <th>Average Profit</th>
+                                    <th>Total Executions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for metric in pair_metrics %}
+                                    <tr>
+                                        <td>{{ metric.trading_pair }}</td>
+                                        <td>{{ "%.2f"|format(metric.total_profit) }}</td>
+                                        <td>{{ "%.1f"|format(metric.success_rate * 100) }}%</td>
+                                        <td>{{ "%.2f"|format(metric.average_profit) }}</td>
+                                        <td>{{ metric.execution_count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+        {% if exchange_metrics %}
+            <div class="card mb-4">
+                <div class="card-header">Exchange Performance</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Exchange</th>
+                                    <th>Total Profit</th>
+                                    <th>Success Rate</th>
+                                    <th>Average Profit</th>
+                                    <th>Total Executions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for metric in exchange_metrics %}
+                                    <tr>
+                                        <td>{{ metric.exchange_name }}</td>
+                                        <td>{{ "%.2f"|format(metric.total_profit) }}</td>
+                                        <td>{{ "%.1f"|format(metric.success_rate * 100) }}%</td>
+                                        <td>{{ "%.2f"|format(metric.average_profit) }}</td>
+                                        <td>{{ metric.execution_count }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+{% endblock %}
