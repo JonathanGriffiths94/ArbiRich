@@ -178,6 +178,40 @@ class RedisService:
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
 
+    async def close(self) -> None:
+        """Close Redis connection safely async version"""
+        # Rename this method to avoid conflict with the synchronous close method
+        return await self.async_close()
+
+    async def async_close(self) -> None:
+        """Close Redis connection safely async version"""
+        try:
+            with self._pubsub_lock:
+                if self._shared_pubsub:
+                    self._shared_pubsub.close()
+                    self._shared_pubsub = None
+                    self._subscribed_channels.clear()
+
+            if self.pubsub:
+                self.pubsub.close()
+                self.pubsub = None
+
+            if self.client:
+                self.client.close()
+                self.client = None
+
+            # Mark as closed
+            self._closed = True
+
+            # Remove from registry
+            with _redis_lock:
+                if self in _redis_clients:
+                    _redis_clients.remove(self)
+
+            logger.info("Redis connection closed")
+        except Exception as e:
+            logger.error(f"Error closing Redis connection: {e}")
+
     @staticmethod
     def close_all_connections():
         """Close all Redis connections across the application"""
@@ -248,7 +282,7 @@ class RedisService:
             # pipeline.expire(key, 60)
 
             # Execute all commands atomically.
-            results = pipeline.execute()
+            pipeline.execute()
 
             # Check the results if needed (typically, an exception would be raised on error)
             logger.debug(f"Successfully stored order book update to Redis at key {key}")
@@ -326,26 +360,71 @@ class RedisService:
             logger.error(f"Error retrieving order book: {e}")
         return None
 
-    def get_message(self, channel: str) -> Optional[str]:
+    async def get_message(self, timeout=0.01) -> Optional[Dict[str, Any]]:
         """
-        Get a message from a Redis Pub/Sub channel using shared PubSub client.
+        Async wrapper for getting a message from a Redis Pub/Sub channel.
+
+        Args:
+            timeout: How long to wait for a message
+
+        Returns:
+            The message or None if no message is available
         """
         try:
-            # Subscribe to the channel if not already subscribed
-            self._ensure_subscribed(channel)
+            # Ensure we have a pubsub client
+            if not hasattr(self, "pubsub") or self.pubsub is None:
+                if hasattr(self, "_get_shared_pubsub"):
+                    self.pubsub = self._get_shared_pubsub()
+                else:
+                    self.pubsub = self.client.pubsub(ignore_subscribe_messages=True)
 
-            # Get message from the shared pubsub client with timeout
-            message = self._get_shared_pubsub().get_message(ignore_subscribe_messages=True, timeout=0.01)
-
-            if message and message.get("type") == "message":
-                # Only return messages from the requested channel
-                if message.get("channel") == channel.encode() or message.get("channel") == channel:
-                    return message.get("data")
-
-            return None
+            # Get message from pubsub client
+            # Use non-blocking mode so it works in async context
+            message = self.pubsub.get_message(ignore_subscribe_messages=True, timeout=timeout)
+            return message
         except Exception as e:
-            logger.error(f"Error getting message from channel {channel}: {e}")
+            logger.error(f"Error getting message: {e}")
             return None
+
+    async def subscribe(self, channel: str) -> bool:
+        """
+        Async wrapper for subscribing to a Redis Pub/Sub channel.
+
+        Args:
+            channel: The channel to subscribe to
+
+        Returns:
+            True if subscription was successful, False otherwise
+        """
+        try:
+            # Ensure we have a pubsub client
+            if not hasattr(self, "pubsub") or self.pubsub is None:
+                self.pubsub = self.client.pubsub(ignore_subscribe_messages=True)
+
+            # Subscribe to channel
+            self.pubsub.subscribe(channel)
+            logger.info(f"Subscribed to channel: {channel}")
+            return True
+        except Exception as e:
+            logger.error(f"Error subscribing to channel {channel}: {e}")
+            return False
+
+    async def publish(self, channel: str, message: str) -> int:
+        """
+        Async wrapper for publishing a message to a Redis Pub/Sub channel.
+
+        Args:
+            channel: The channel to publish to
+            message: The message to publish
+
+        Returns:
+            Number of clients that received the message
+        """
+        try:
+            return self.client.publish(channel, message)
+        except Exception as e:
+            logger.error(f"Error publishing to channel {channel}: {e}")
+            return 0
 
     def _ensure_subscribed(self, channel: str) -> None:
         """
@@ -371,6 +450,55 @@ class RedisService:
                 self._shared_pubsub = self.client.pubsub(ignore_subscribe_messages=True)
                 logger.info("Created shared PubSub client")
             return self._shared_pubsub
+
+    async def create_subscriber(self, channel_name):
+        """
+        Create a Redis pubsub subscriber for the given channel.
+
+        Args:
+            channel_name (str): The name of the channel to subscribe to
+
+        Returns:
+            redis.client.PubSub: A pubsub object subscribed to the channel
+        """
+        try:
+            # Use channel manager for consistent channel naming if available
+            try:
+                from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
+
+                channel_manager = get_channel_manager()
+
+                # Check if this is a known channel type and format it correctly
+                if channel_name == "trade_opportunities":
+                    channel_name = channel_manager.get_opportunity_channel()
+                elif channel_name == "trade_executions":
+                    channel_name = channel_manager.get_execution_channel()
+                elif channel_name == "order_books":
+                    channel_name = channel_manager.ORDER_BOOK
+            except ImportError:
+                # If channel manager not available, use constants
+                from src.arbirich.constants import (
+                    ORDER_BOOK_CHANNEL,
+                    TRADE_EXECUTIONS_CHANNEL,
+                    TRADE_OPPORTUNITIES_CHANNEL,
+                )
+
+                if channel_name == "trade_opportunities":
+                    channel_name = TRADE_OPPORTUNITIES_CHANNEL
+                elif channel_name == "trade_executions":
+                    channel_name = TRADE_EXECUTIONS_CHANNEL
+                elif channel_name == "order_books":
+                    channel_name = ORDER_BOOK_CHANNEL
+
+            # Use synchronous pubsub since we're using synchronous Redis client
+            pubsub = self.client.pubsub()
+            # Synchronous subscribe (no await)
+            pubsub.subscribe(channel_name)
+            logger.info(f"Subscribed to Redis channel: {channel_name}")
+            return pubsub
+        except Exception as e:
+            logger.error(f"Failed to create subscriber for channel {channel_name}: {str(e)}")
+            raise
 
     def subscribe_to_order_book_updates(
         self, channel: str, callback: Optional[Callable] = None

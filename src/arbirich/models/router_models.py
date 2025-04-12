@@ -11,6 +11,14 @@ class StatusResponse(BaseModel):
     timestamp: str
     environment: str
     components: Dict[str, str] = {}
+    active_strategies: List[str] = []
+    active_pairs: List[str] = []
+    active_exchanges: List[str] = []
+    active_trading: bool = False
+    trading_start_time: Optional[str] = None
+    trading_stop_time: Optional[str] = None
+    trading_stop_reason: Optional[str] = None
+    trading_stop_emergency: Optional[bool] = None
 
 
 class HealthResponse(BaseModel):

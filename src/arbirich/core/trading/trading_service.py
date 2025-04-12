@@ -2,6 +2,18 @@ import asyncio
 import logging
 import threading
 import time
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+from src.arbirich.core.config.validator import (
+    BasicStrategyConfig,
+    ConfigValidator,
+    DetectionComponentConfig,
+    ExecutionComponentConfig,
+    IngestionComponentConfig,
+    MidPriceStrategyConfig,
+    ReportingComponentConfig,
+)
 
 # Singleton instance and lock
 _trading_service_instance = None
@@ -18,6 +30,10 @@ def get_trading_service():
 
 
 class TradingService:
+    """
+    Main trading service that coordinates all trading components
+    """
+
     def __new__(cls):
         """Ensure only one instance exists"""
         global _trading_service_instance
@@ -32,21 +48,52 @@ class TradingService:
             return
 
         self.logger = logging.getLogger(__name__)
-        self.components = {
-            "ingestion": {"active": False, "task": None},
-            "arbitrage": {"active": False, "task": None},
-            "execution": {"active": False, "task": None},
-            "reporting": {"active": False, "task": None},
-        }
-        self.strategies = {}  # Will be populated from database
-        self.db = None  # Will be set during initialization
+        self._initialized = False
+
+        # Components
+        self.components = {}
+
+        # Strategy registry
+        self.strategies = {}
+
+        # Database connection
+        self.db = None
 
     async def initialize(self, db=None):
         """Initialize the trading system with data from the database"""
         try:
             self.logger.info("TradingService initialization started")
-            self._initialized = True  # Set flag to avoid repeated initialization
+            self._initialized = True
 
+            # Set up database connection
+            await self._initialize_db(db)
+
+            # Initialize components
+            await self._initialize_components()
+
+            # Load strategies
+            await self._load_strategies()
+
+            # Initialize timing and status fields
+            self.start_time = None
+            self.stop_time = None
+            self.stop_reason = None
+            self.emergency_stop = False
+            self.active_pairs = []
+            self.active_exchanges = []
+
+            self.logger.info(f"Loaded {len(self.strategies)} strategies")
+            self.logger.info("TradingService initialization completed successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error initializing trading service: {e}", exc_info=True)
+            self._initialized = False
+            return False
+
+    async def _initialize_db(self, db=None):
+        """Initialize database connection"""
+        try:
             # If no db is provided, try to create one
             if db is None:
                 self.logger.info("No database provided, creating new connection")
@@ -56,93 +103,234 @@ class TradingService:
             else:
                 self.db = db
 
-            # Load strategies using try/except to handle both sync and async database interfaces
-            try:
-                self.logger.info("Loading strategies from database")
-                # Try using async fetch_all if available
-                if hasattr(self.db, "fetch_all") and callable(self.db.fetch_all):
-                    if asyncio.iscoroutinefunction(self.db.fetch_all):
-                        strategies = await self.db.fetch_all("SELECT * FROM strategies")
-                    else:
-                        strategies = self.db.fetch_all("SELECT * FROM strategies")
-                # Fallback to direct query using DatabaseService
-                elif hasattr(self.db, "engine"):
-                    with self.db.engine.connect() as conn:
-                        result = conn.execute(self.db.tables.strategies.select())
-                        strategies = [dict(row._mapping) for row in result]
-                else:
-                    raise ValueError("Invalid database connection or fetch_all method not available")
-            except Exception as e:
-                self.logger.warning(f"Error loading strategies from database: {e}", exc_info=True)
-                strategies = []
+        except Exception as e:
+            self.logger.error(f"Error initializing database: {e}", exc_info=True)
+            raise
 
-            # Process loaded strategies
+    async def _initialize_components(self):
+        """Initialize trading components"""
+        try:
+            from src.arbirich.core.trading.components.detection import DetectionComponent
+            from src.arbirich.core.trading.components.execution import ExecutionComponent
+            from src.arbirich.core.trading.components.ingestion import IngestionComponent
+            from src.arbirich.core.trading.components.reporting import ReportingComponent
+
+            # Create components with default configs
+            self.components = {
+                "ingestion": IngestionComponent("ingestion", self._get_component_config("ingestion")),
+                "detection": DetectionComponent("detection", self._get_component_config("detection")),
+                "execution": ExecutionComponent("execution", self._get_component_config("execution")),
+                "reporting": ReportingComponent("reporting", self._get_component_config("reporting")),
+            }
+
+            self.logger.info(f"Initialized {len(self.components)} components")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing components: {e}", exc_info=True)
+            raise
+
+    def _get_component_config(self, component_name: str) -> Dict[str, Any]:
+        """Get configuration for a component"""
+        # This would typically load from a config file or database
+        # For now, return default configs
+        configs = {
+            "ingestion": {"update_interval": 1.0, "buffer_size": 100},
+            "detection": {"scan_interval": 0.5, "opportunity_threshold": 0.001},
+            "execution": {
+                "listen_interval": 0.1,
+                "max_concurrent_executions": 3,
+                "execution_timeout": 10.0,
+                "dry_run": False,  # Set to True for testing without real trades
+            },
+            "reporting": {"persistence_interval": 60, "health_check_interval": 300, "report_generation_interval": 3600},
+        }
+
+        config = configs.get(component_name, {})
+
+        # Validate the config using Pydantic models
+        try:
+            if component_name == "detection":
+                return DetectionComponentConfig(**config).model_dump()
+            elif component_name == "execution":
+                return ExecutionComponentConfig(**config).model_dump()
+            elif component_name == "reporting":
+                return ReportingComponentConfig(**config).model_dump()
+            elif component_name == "ingestion":
+                return IngestionComponentConfig(**config).model_dump()
+            else:
+                return config
+        except Exception as e:
+            self.logger.warning(f"Error validating {component_name} config: {e}. Using raw config instead.")
+            return config
+
+    async def _load_strategies(self):
+        """Load strategies from the database."""
+        try:
+            # Get active strategies from the database service
+            if not hasattr(self.db, "get_active_strategies"):
+                raise AttributeError("DatabaseService does not have 'get_active_strategies' method")
+
+            strategies = self.db.get_active_strategies()
+
+            if not strategies:
+                self.logger.warning("No active strategies found in database")
+                return []
+
+            loaded_strategies = []
             for strategy in strategies:
-                # Handle strategies from different sources
-                strategy_id = strategy.get("id") or strategy.get("strategy_id")
-                strategy_name = strategy.get("name") or strategy.get("strategy_name")
-                is_active = strategy.get("is_active", False)
+                try:
+                    strategy_id = str(strategy.id)
+                    # Preprocess strategy data
+                    if hasattr(strategy, "additional_info") and isinstance(strategy.additional_info, str):
+                        import json
 
-                if not strategy_id or not strategy_name:
-                    self.logger.warning(f"Skipping invalid strategy: {strategy}")
+                        try:
+                            strategy.additional_info = json.loads(strategy.additional_info)
+                        except json.JSONDecodeError:
+                            strategy.additional_info = {}
+
+                    # Create a dict to track this strategy
+                    self.strategies[strategy_id] = {
+                        "id": strategy_id,
+                        "name": strategy.name,
+                        "active": strategy.is_active,
+                        "config": strategy.additional_info or {},
+                        "task": None,
+                        "instance": None,
+                    }
+
+                    self.logger.info(f"Loaded strategy: {strategy.name} (ID: {strategy.id})")
+                    loaded_strategies.append(strategy)
+                except Exception as e:
+                    self.logger.error(f"Error processing strategy {strategy.name}: {e}")
                     continue
 
-                self.strategies[strategy_id] = {
-                    "id": strategy_id,
-                    "name": strategy_name,
-                    "active": is_active,
-                    "task": None,
-                }
-
-            self.logger.info(f"Loaded {len(self.strategies)} strategies")
-            self.logger.info("TradingService initialization completed successfully")
+            return loaded_strategies
         except Exception as e:
-            self.logger.error(f"Error initializing trading service: {e}", exc_info=True)
-            # Set initialized flag to false to allow retry
-            self._initialized = False
-            # Don't re-raise the exception, just log it and continue
+            self.logger.warning(f"Error loading strategies from database: {e}", exc_info=True)
+            return []
 
-    async def get_status(self):
+    async def get_status(self) -> Dict[str, Any]:
         """Get the current status of all system components"""
-        status = {component: data["active"] for component, data in self.components.items()}
-        status["overall"] = all(data["active"] for data in self.components.values())
-        return status
+        component_status = {}
 
-    async def start_all(self, activate_strategies=False):
+        # Get status from each component
+        for name, component in self.components.items():
+            component_status[name] = {
+                "active": getattr(component, "active", False),
+                "status": component.get_status() if hasattr(component, "get_status") else {},
+            }
+
+        # Get strategy status
+        strategy_status = {}
+        active_strategy_names = []
+        for strategy_id, strategy in self.strategies.items():
+            strategy_status[strategy_id] = {
+                "name": strategy["name"],
+                "active": strategy["active"],
+                "running": strategy["task"] is not None and not strategy["task"].done() if strategy["task"] else False,
+            }
+            if strategy["active"]:
+                active_strategy_names.append(strategy["name"])
+
+        # Collect active pairs and exchanges
+        active_pairs = getattr(self, "active_pairs", [])
+        active_exchanges = getattr(self, "active_exchanges", [])
+
+        # Get current active pairs and exchanges from strategies if not already set
+        if not active_pairs or not active_exchanges:
+            active_pairs = []
+            active_exchanges = []
+
+            # Get pairs and exchanges from active strategies
+            for strategy_id, strategy in self.strategies.items():
+                if strategy["active"]:
+                    try:
+                        from src.arbirich.config.config import get_strategy_config
+
+                        config = get_strategy_config(strategy["name"])
+                        if config:
+                            # Add exchanges to active list if not already there
+                            for exchange in config.get("exchanges", []):
+                                if exchange not in active_exchanges:
+                                    active_exchanges.append(exchange)
+
+                            # Add pairs to active list if not already there
+                            for pair in config.get("pairs", []):
+                                if pair not in active_pairs:
+                                    active_pairs.append(pair)
+                    except Exception as e:
+                        self.logger.warning(f"Error getting config for strategy {strategy['name']}: {e}")
+
+            # Store these for future reference
+            self.active_pairs = active_pairs
+            self.active_exchanges = active_exchanges
+
+        # Get timing information with proper formatting
+        trading_start_time = getattr(self, "start_time", None)
+        trading_start_time_str = datetime.fromtimestamp(trading_start_time).isoformat() if trading_start_time else None
+
+        trading_stop_time = getattr(self, "stop_time", None)
+        trading_stop_time_str = datetime.fromtimestamp(trading_stop_time).isoformat() if trading_stop_time else None
+
+        trading_stop_reason = getattr(self, "stop_reason", None)
+        emergency_stop = getattr(self, "emergency_stop", False) if trading_stop_time else None
+
+        # Overall system status
+        overall_active = all(status["active"] for status in component_status.values())
+
+        return {
+            "overall": overall_active,
+            "components": component_status,
+            "strategies": strategy_status,
+            "active_pairs": active_pairs,
+            "active_exchanges": active_exchanges,
+            "start_time": trading_start_time_str,
+            "stop_time": trading_stop_time_str,
+            "stop_reason": trading_stop_reason,
+            "emergency_stop": emergency_stop,
+        }
+
+    async def start_all(self, activate_strategies=False) -> bool:
         """Start all system components"""
         try:
             self.logger.info("Starting all system components")
+            self.start_time = time.time()
+            self.stop_time = None
+            self.stop_reason = None
+            self.emergency_stop = False
 
             # If requested, activate strategies in database
             if activate_strategies:
                 self.logger.info("Activating all strategies in database")
-                try:
-                    from src.arbirich.services.database.database_service import DatabaseService
+                await self._activate_all_strategies_in_db()
 
-                    with DatabaseService() as db:
-                        # Get all strategy IDs
-                        with db.engine.connect() as conn:
-                            import sqlalchemy as sa
+            # Start components in order
+            success = True
+            for component_name in ["reporting", "execution", "detection", "ingestion"]:
+                if not await self.start_component(component_name):
+                    success = False
+                    self.logger.error(f"Failed to start component: {component_name}")
 
-                            result = conn.execute(sa.text("UPDATE strategies SET is_active = TRUE"))
-                            self.logger.info(f"Activated {result.rowcount} strategies in database")
-                except Exception as e:
-                    self.logger.error(f"Failed to activate strategies: {e}")
+            if success:
+                self.logger.info("All system components started successfully")
+            else:
+                self.logger.warning("Some components failed to start")
 
-            await self.start_component("reporting")
-            await self.start_component("execution")
-            await self.start_component("arbitrage")
-            await self.start_component("ingestion")
+            return success
 
-            self.logger.info("All system components started")
-            return True  # Explicitly return True to indicate success
         except Exception as e:
-            self.logger.error(f"Error starting all components: {e}")
-            return False  # Return False if there was an error
+            self.logger.error(f"Error starting all components: {e}", exc_info=True)
+            return False
 
-    async def stop_all(self):
+    async def stop_all(self, emergency=False, reason="user_requested") -> bool:
         """Stop all system components with extra cleanup"""
-        self.logger.info("Stopping all system components")
+        self.logger.info(f"Stopping all system components. Emergency: {emergency}, Reason: {reason}")
+
+        # Record stop information
+        self.stop_time = time.time()
+        self.stop_reason = reason
+        self.emergency_stop = emergency
 
         # Set system-wide shutdown flag
         try:
@@ -153,742 +341,303 @@ class TradingService:
         except Exception as e:
             self.logger.error(f"Error setting system shutdown flag: {e}")
 
-        # Then shutdown all processors
-        try:
-            from src.arbirich.services.exchange_processors.registry import shutdown_all_processors
+        # Stop components in reverse order
+        success = True
+        for component_name in ["ingestion", "detection", "execution", "reporting"]:
+            if not await self.stop_component(component_name):
+                success = False
+                self.logger.error(f"Failed to stop component: {component_name}")
 
-            shutdown_all_processors()
-            self.logger.info("All exchange processors signaled to stop")
-        except Exception as e:
-            self.logger.error(f"Error signaling exchange processors to stop: {e}")
-
-        # Add a small delay to allow processors to notice the shutdown
-        await asyncio.sleep(0.5)
-
-        # Signal shutdown early to prevent new publishes
-        try:
-            from src.arbirich.flows.ingestion.ingestion_sink import mark_shutdown_started
-
-            mark_shutdown_started()
-        except Exception as e:
-            self.logger.error(f"Error marking ingestion sink as shutting down: {e}")
-
-        # 1. Stop components in the correct order
-        for component in ["ingestion", "arbitrage", "execution", "reporting"]:
-            try:
-                await self.stop_component(component)
-                self.logger.info(f"Stopped {component} component")
-            except Exception as e:
-                self.logger.error(f"Error stopping {component}: {e}")
-
-        # 2. Give components time to completely finish their work
+        # Give components time to clean up
         self.logger.info("Waiting for components to finish cleanup...")
         await asyncio.sleep(2.5)
 
-        # 3. Clean up any orphaned processes
+        # Clean up any orphaned processes
         self._kill_orphaned_processes()
 
-        # 4. Finally, close all Redis connections
-        from src.arbirich.services.redis.redis_service import RedisService
+        # Close Redis connections
+        try:
+            from src.arbirich.services.redis.redis_service import RedisService
 
-        RedisService.close_all_connections()
+            RedisService.close_all_connections()
+        except Exception as e:
+            self.logger.error(f"Error closing Redis connections: {e}")
 
-        # 5. Ensure all components are marked as inactive
+        # Reset component states
         self._reset_all_component_states()
         self.logger.info("All component states reset to inactive")
 
-        self.logger.info("All system components stopped")
-        return True
+        if success:
+            self.logger.info("All system components stopped successfully")
+        else:
+            self.logger.warning("Some components failed to stop cleanly")
 
-    # Add a new helper method to reset all component states
+        return success
+
     def _reset_all_component_states(self):
         """Reset all component states to inactive"""
-        for component_name in self.components:
-            self.components[component_name]["active"] = False
-            self.components[component_name]["task"] = None
+        # Reset component states
+        for component_name, component in self.components.items():
+            component.active = False
+            if hasattr(component, "task"):
+                component.task = None
 
-        # Also mark all strategies as inactive
+        # Reset strategy states
         for strategy_id in self.strategies:
             self.strategies[strategy_id]["active"] = False
             self.strategies[strategy_id]["task"] = None
+            self.strategies[strategy_id]["instance"] = None
 
         self.logger.info("All component and strategy states reset to inactive")
 
-    async def restart_all_components(self):
+    async def restart_all_components(self) -> Dict[str, Any]:
         """Restart all trading components with clean state"""
         self.logger.info("Restarting all trading components with clean state...")
 
         # First stop everything
         await self.stop_all()
 
-        # Reset processor states
-        from src.arbirich.flows.ingestion.ingestion_source import reset_processor_states
-
-        reset_processor_states()
-
         # Reset system state
-        from arbirich.core.state.system_state import mark_system_shutdown, reset_notification_state
+        try:
+            from arbirich.core.state.system_state import mark_system_shutdown, reset_notification_state
 
-        mark_system_shutdown(False)
-        reset_notification_state()
+            mark_system_shutdown(False)
+            reset_notification_state()
+        except Exception as e:
+            self.logger.error(f"Error resetting system state: {e}")
 
+        # Re-initialize service
         self.logger.info("Refreshing trading service state from database...")
-        # Clear existing strategy data
-        self.strategies = {}
-        # Re-initialize (will reload strategies from DB)
-        await self.initialize()
-
-        # Clear global flow manager registry
-        from src.arbirich.flows.common.flow_manager import _flow_managers, _registry_lock
-
-        with _registry_lock:
-            self.logger.info("Clearing flow managers registry")
-            _flow_managers.clear()
+        self.strategies = {}  # Clear existing strategy data
+        await self.initialize()  # Re-initialize (will reload strategies from DB)
 
         # Reset Redis connections
-        from src.arbirich.services.redis.redis_service import reset_redis_pool
+        try:
+            from src.arbirich.services.redis.redis_service import reset_redis_pool
 
-        reset_redis_pool()
-        self.logger.info("Redis connection pools reset")
-
-        # Reset the channel maintenance service
-        from arbirich.utils.channel_maintenance import reset_channel_maintenance_service
-
-        reset_channel_maintenance_service()
-
-        # Reset the background subscriber
-        from arbirich.utils.background_subscriber import reset as reset_background_subscriber
-
-        reset_background_subscriber()
+            reset_redis_pool()
+            self.logger.info("Redis connection pools reset")
+        except Exception as e:
+            self.logger.error(f"Error resetting Redis pools: {e}")
 
         # Wait a moment to ensure clean state
         await asyncio.sleep(1)
 
         # Now start everything fresh
         self.logger.info("Starting all components with fresh state...")
-        await self.start_all()
-        self.logger.info("All components restarted successfully")
+        success = await self.start_all()
 
-        return {"status": "restarted", "components": list(self.components.keys())}
+        self.logger.info("All components restarted")
+        return {"status": "restarted" if success else "partial_restart", "components": list(self.components.keys())}
 
-    async def start_component(self, component_name):
+    async def start_component(self, component_name: str) -> bool:
         """Start a specific component"""
         if component_name not in self.components:
-            raise ValueError(f"Unknown component: {component_name}")
+            self.logger.error(f"Unknown component: {component_name}")
+            return False
 
         component = self.components[component_name]
-        if component["active"]:
-            return {"status": "already_running"}
+        if component.active:
+            self.logger.info(f"Component {component_name} is already active")
+            return True
 
         self.logger.info(f"Starting component: {component_name}")
 
-        # Start the appropriate background task based on component type
-        if component_name == "ingestion":
-            component["task"] = asyncio.create_task(self._run_ingestion())
-        elif component_name == "arbitrage":
-            component["task"] = asyncio.create_task(self._run_arbitrage())
-        elif component_name == "execution":
-            component["task"] = asyncio.create_task(self._run_execution())
-        elif component_name == "reporting":
-            component["task"] = asyncio.create_task(self._run_reporting())
+        try:
+            success = await component.start()
+            return success
+        except Exception as e:
+            self.logger.error(f"Error starting component {component_name}: {e}", exc_info=True)
+            return False
 
-        component["active"] = True
-        return {"status": "started"}
-
-    async def stop_component(self, component_name):
+    async def stop_component(self, component_name: str) -> bool:
         """Stop a specific component"""
         if component_name not in self.components:
-            raise ValueError(f"Unknown component: {component_name}")
+            self.logger.error(f"Unknown component: {component_name}")
+            return False
 
         component = self.components[component_name]
-        if not component["active"]:
-            return {"status": "not_running"}
+        if not component.active:
+            self.logger.info(f"Component {component_name} is not active")
+            return True
 
         self.logger.info(f"Stopping component: {component_name}")
 
-        # Cancel the component task if it's running
-        if component["task"] and not component["task"].done():
-            # Log more details for debugging
-            self.logger.info(f"Cancelling task for component {component_name}")
+        try:
+            success = await component.stop()
+            return success
+        except Exception as e:
+            self.logger.error(f"Error stopping component {component_name}: {e}", exc_info=True)
+            component.active = False
+            component.task = None
+            return False
 
-            # Force cleanup based on component type
-            if component_name == "reporting":
-                from arbirich.flows.reporting.reporting_flow import stop_reporting_flow_async
-
-                try:
-                    await stop_reporting_flow_async()
-                    self.logger.info("Reporting flow stopped via dedicated function")
-                except Exception as e:
-                    self.logger.error(f"Error stopping reporting flow: {e}")
-
-            # Then cancel the task
-            component["task"].cancel()
-            try:
-                # Wait with timeout for the task to cancel
-                await asyncio.wait_for(asyncio.shield(component["task"]), timeout=3.0)
-            except asyncio.TimeoutError:
-                self.logger.warning(f"Timeout waiting for {component_name} to stop, forcing cleanup")
-            except asyncio.CancelledError:
-                self.logger.info(f"Task for {component_name} cancelled successfully")
-            except Exception as e:
-                self.logger.error(f"Error while stopping {component_name}: {e}")
-
-        # Always mark as inactive, even if there were errors
-        component["active"] = False
-        component["task"] = None
-
-        self.logger.info(f"Component {component_name} marked as inactive")
-        return {"status": "stopped"}
-
-    async def start_strategy(self, strategy_id):
+    async def start_strategy(self, strategy_id: str) -> bool:
         """Start a specific strategy"""
         if strategy_id not in self.strategies:
-            raise ValueError(f"Unknown strategy: {strategy_id}")
+            self.logger.error(f"Unknown strategy: {strategy_id}")
+            return False
 
         strategy = self.strategies[strategy_id]
-        if strategy["active"]:
-            return {"status": "already_running"}
+        if strategy["active"] and strategy["task"] and not strategy["task"].done():
+            self.logger.info(f"Strategy {strategy['name']} is already active")
+            return True
 
         self.logger.info(f"Starting strategy: {strategy['name']} (ID: {strategy_id})")
 
-        # Update database
-        await self.db.execute("UPDATE strategies SET is_active = TRUE WHERE id = :id", {"id": strategy_id})
-
-        # Start the strategy task
-        strategy["task"] = asyncio.create_task(self._run_strategy(strategy_id))
-        strategy["active"] = True
-
-        # After starting the strategy, verify its subscriptions
-        subscription_verified = await self.verify_strategy_subscriptions(strategy["name"])
-
-        if not subscription_verified:
-            self.logger.warning(f"Strategy {strategy['name']} started but subscriptions could not be verified")
-
-        # Refresh subscriptions if verification failed
-        if not subscription_verified:
-            self.logger.info(f"Attempting to refresh subscriptions for {strategy['name']}")
-            # Trigger a restart of the specific flows for this strategy
-            await asyncio.gather(self._restart_arbitrage_flow(), self._restart_execution_flow())
-
-            # Verify again
-            subscription_verified = await self.verify_strategy_subscriptions(strategy["name"], timeout=10)
-            if subscription_verified:
-                self.logger.info(f"Successfully refreshed subscriptions for {strategy['name']}")
+        try:
+            # Update database
+            if hasattr(self.db, "execute") and asyncio.iscoroutinefunction(self.db.execute):
+                await self.db.execute("UPDATE strategies SET is_active = TRUE WHERE id = :id", {"id": strategy_id})
             else:
-                self.logger.error(f"Failed to establish subscriptions for {strategy['name']} after refresh")
+                # Fallback to SQLAlchemy
+                import sqlalchemy as sa
 
-        return True
+                with self.db.engine.connect() as conn:
+                    conn.execute(sa.text("UPDATE strategies SET is_active = TRUE WHERE id = :id"), {"id": strategy_id})
+                    conn.commit()
 
-    async def stop_strategy(self, strategy_id):
+            # Create strategy instance if needed
+            if not strategy["instance"]:
+                strategy["instance"] = await self._create_strategy(
+                    strategy_id, strategy["name"], strategy.get("config", {})
+                )
+
+            if not strategy["instance"]:
+                self.logger.error(f"Failed to create strategy instance for {strategy['name']}")
+                return False
+
+            # Start the strategy
+            if hasattr(strategy["instance"], "start") and asyncio.iscoroutinefunction(strategy["instance"].start):
+                await strategy["instance"].start()
+                strategy["active"] = True
+
+                # Update active pairs and exchanges
+                try:
+                    from src.arbirich.config.config import get_strategy_config
+
+                    config = get_strategy_config(strategy["name"])
+                    if config:
+                        # Add exchanges to active list if not already there
+                        for exchange in config.get("exchanges", []):
+                            if exchange not in getattr(self, "active_exchanges", []):
+                                self.active_exchanges = getattr(self, "active_exchanges", []) + [exchange]
+
+                        # Add pairs to active list if not already there
+                        for pair in config.get("pairs", []):
+                            if pair not in getattr(self, "active_pairs", []):
+                                self.active_pairs = getattr(self, "active_pairs", []) + [pair]
+                except Exception as e:
+                    self.logger.warning(f"Error updating active pairs/exchanges for strategy {strategy['name']}: {e}")
+
+                return True
+            else:
+                self.logger.error(f"Strategy {strategy['name']} has no start method")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error starting strategy {strategy['name']}: {e}", exc_info=True)
+            return False
+
+    async def stop_strategy(self, strategy_id: str) -> bool:
         """Stop a specific strategy"""
         if strategy_id not in self.strategies:
-            raise ValueError(f"Unknown strategy: {strategy_id}")
+            self.logger.error(f"Unknown strategy: {strategy_id}")
+            return False
 
         strategy = self.strategies[strategy_id]
         if not strategy["active"]:
-            return {"status": "not_running"}
+            self.logger.info(f"Strategy {strategy['name']} is not active")
+            return True
 
         self.logger.info(f"Stopping strategy: {strategy['name']} (ID: {strategy_id})")
 
-        # Update database
-        await self.db.execute("UPDATE strategies SET is_active = FALSE WHERE id = :id", {"id": strategy_id})
+        try:
+            # Update database
+            if hasattr(self.db, "execute") and asyncio.iscoroutinefunction(self.db.execute):
+                await self.db.execute("UPDATE strategies SET is_active = FALSE WHERE id = :id", {"id": strategy_id})
+            else:
+                # Fallback to SQLAlchemy
+                import sqlalchemy as sa
 
-        # Cancel the strategy task
-        if strategy["task"] and not strategy["task"].done():
-            strategy["task"].cancel()
-            try:
-                await strategy["task"]
-            except asyncio.CancelledError:
-                pass
+                with self.db.engine.connect() as conn:
+                    conn.execute(sa.text("UPDATE strategies SET is_active = FALSE WHERE id = :id"), {"id": strategy_id})
+                    conn.commit()
 
-        strategy["active"] = False
-        strategy["task"] = None
+            # Stop the strategy instance
+            if (
+                strategy["instance"]
+                and hasattr(strategy["instance"], "stop")
+                and asyncio.iscoroutinefunction(strategy["instance"].stop)
+            ):
+                await strategy["instance"].stop()
 
-        return {"status": "stopped"}
+            strategy["active"] = False
 
-    async def verify_strategy_subscriptions(self, strategy_name, timeout=30):
-        """
-        Verify that a strategy is properly subscribed to its required channels.
+            # Update active pairs and exchanges list by recalculating
+            self._recalculate_active_resources()
 
-        Args:
-            strategy_name: Name of the strategy to verify
-            timeout: Maximum time to wait in seconds
+            return True
 
-        Returns:
-            True if subscriptions are verified, False otherwise
-        """
-        from src.arbirich.config.config import get_strategy_config
-        from src.arbirich.utils.channel_diagnostics import get_channel_subscribers
-
-        self.logger.info(f"Verifying subscriptions for strategy: {strategy_name}")
-
-        # Get the strategy config to determine which pairs it needs
-        strategy_config = get_strategy_config(strategy_name)
-        if not strategy_config:
-            self.logger.error(f"Strategy config not found for {strategy_name}")
+        except Exception as e:
+            self.logger.error(f"Error stopping strategy {strategy['name']}: {e}", exc_info=True)
+            strategy["active"] = False
             return False
 
-        # Get the exchanges and pairs this strategy needs
-        exchanges = strategy_config.get("exchanges", [])
-        pairs = strategy_config.get("pairs", [])
+    def _recalculate_active_resources(self):
+        """Recalculate active pairs and exchanges based on currently active strategies"""
+        active_pairs = []
+        active_exchanges = []
 
-        # Calculate the expected channels
-        expected_channels = []
-        for exchange in exchanges:
-            for base, quote in pairs:
-                pair_symbol = f"{base}-{quote}"
-                expected_channels.append(f"{exchange}:{pair_symbol}")
-
-        self.logger.info(f"Expected channels for {strategy_name}: {expected_channels}")
-
-        # Poll until we see subscriptions or timeout
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            # Get current subscribers
-            channel_subscribers = get_channel_subscribers()
-
-            # Check if all expected channels have subscribers
-            all_subscribed = True
-            missing_channels = []
-
-            for channel in expected_channels:
-                if channel not in channel_subscribers or channel_subscribers[channel] == 0:
-                    all_subscribed = False
-                    missing_channels.append(channel)
-
-            if all_subscribed:
-                self.logger.info(f"All channels for {strategy_name} have subscribers")
-                return True
-
-            self.logger.warning(f"Still waiting for subscriptions to {missing_channels}")
-            await asyncio.sleep(1.0)
-
-        self.logger.error(f"Timeout waiting for {strategy_name} subscriptions. Missing: {missing_channels}")
-        return False
-
-    async def _run_ingestion(self):
-        """Run the ingestion process"""
-        self.logger.info("Ingestion process started")
-        try:
-            # Import here to avoid circular imports
-            from arbirich.flows.ingestion.ingestion_flow import run_ingestion_flow
-            from src.arbirich.config.config import EXCHANGES, PAIRS, get_strategy_config
-
-            # Get exchanges and pairs for all active strategies
-            exchanges_and_pairs = {}
-
-            # First, get active strategies
-            active_strategies = []
-            for sid, strategy in self.strategies.items():
-                if strategy.get("active", False):
-                    active_strategies.append(strategy["name"])
-
-            self.logger.info(f"Finding exchanges and pairs for active strategies: {active_strategies}")
-
-            # For each active strategy, get the exchanges and pairs from config
-            for strategy_name in active_strategies:
-                # Get strategy config
+        for strategy_id, strategy in self.strategies.items():
+            if strategy["active"]:
                 try:
-                    strategy_config = get_strategy_config(strategy_name)
-                    if not strategy_config:
-                        self.logger.warning(f"No config found for strategy {strategy_name}")
-                        continue
+                    from src.arbirich.config.config import get_strategy_config
 
-                    # Extract exchanges and pairs from config
-                    strategy_exchanges = strategy_config.get("exchanges", [])
-                    strategy_pairs = strategy_config.get("pairs", [])
+                    config = get_strategy_config(strategy["name"])
+                    if config:
+                        # Add exchanges to active list if not already there
+                        for exchange in config.get("exchanges", []):
+                            if exchange not in active_exchanges:
+                                active_exchanges.append(exchange)
 
-                    # Use consistent format for all exchanges
-                    for exchange in strategy_exchanges:
-                        if exchange not in exchanges_and_pairs:
-                            exchanges_and_pairs[exchange] = []
-
-                        # Format pairs with consistent base-quote format
-                        for base, quote in strategy_pairs:
-                            # Always use the consistent format with hyphen
-                            formatted_pair = f"{base}-{quote}"
-                            if formatted_pair not in exchanges_and_pairs[exchange]:
-                                exchanges_and_pairs[exchange].append(formatted_pair)
-
-                        self.logger.info(
-                            f"Added exchanges and pairs for strategy {strategy_name}: {exchange} with pairs {exchanges_and_pairs[exchange]}"
-                        )
+                        # Add pairs to active list if not already there
+                        for pair in config.get("pairs", []):
+                            if pair not in active_pairs:
+                                active_pairs.append(pair)
                 except Exception as e:
-                    self.logger.error(f"Error loading config for strategy {strategy_name}: {e}")
+                    self.logger.warning(f"Error getting config for strategy {strategy['name']}: {e}")
 
-            # If no exchanges found from active strategies, use defaults
-            if not exchanges_and_pairs:
-                self.logger.warning("No exchanges found from active strategies, using defaults")
+        # Update stored values
+        self.active_pairs = active_pairs
+        self.active_exchanges = active_exchanges
 
-                # Use consistent format for all exchanges
-                for exchange_name in EXCHANGES.keys():
-                    exchanges_and_pairs[exchange_name] = []
-                    # Format each pair with consistent base-quote format
-                    for base, quote in PAIRS:
-                        formatted_pair = f"{base}-{quote}"
-                        exchanges_and_pairs[exchange_name].append(formatted_pair)
-
-            # Start the ingestion pipeline
-            self.logger.info(f"Starting ingestion pipeline with {len(exchanges_and_pairs)} exchanges...")
-            self.logger.info(f"Exchanges and pairs: {exchanges_and_pairs}")
-
-            # Run the ingestion flow with the gathered exchanges and pairs
-            await run_ingestion_flow(exchanges_and_pairs=exchanges_and_pairs)
-
-        except Exception as e:
-            self.logger.error(f"Error in ingestion process: {e}", exc_info=True)
-            # Sleep briefly to avoid rapid restart loop
-            await asyncio.sleep(1)
-
-    async def _run_arbitrage(self):
-        """Run the arbitrage process"""
-        self.logger.info("Arbitrage process started")
+    async def _create_strategy(self, strategy_id: str, strategy_name: str, config: Dict[str, Any]) -> Optional[Any]:
+        """Create a strategy instance based on configuration"""
         try:
-            # Reload strategies from the database to get current active status
-            self.logger.info("Reloading strategies from database")
-            try:
-                # Check if we have a valid database connection
-                if self.db is None:
-                    self.logger.warning("Database connection not initialized, creating new connection")
-                    from src.arbirich.services.database.database_service import DatabaseService
+            from src.arbirich.core.trading.strategy.types.basic import BasicArbitrage
+            from src.arbirich.core.trading.strategy.types.mid_price import MidPriceArbitrage
 
-                    self.db = DatabaseService()
+            strategy_type = config.get("type")
 
-                # Get fresh strategy data from database
-                with self.db.engine.connect() as conn:
-                    result = conn.execute(self.db.tables.strategies.select())
-                    strategies = [dict(row._mapping) for row in result]
+            errors = ConfigValidator.validate_strategy_config(strategy_type, config)
+            if errors:
+                self.logger.error(f"Invalid configuration for strategy {strategy_name}: {errors}")
+                return None
 
-                    # Update in-memory strategy data
-                    for db_strategy in strategies:
-                        strategy_id = db_strategy.get("id")
-                        if strategy_id in self.strategies:
-                            self.strategies[strategy_id]["active"] = db_strategy.get("is_active", False)
-                            self.logger.info(
-                                f"Strategy {self.strategies[strategy_id]['name']} active status: {self.strategies[strategy_id]['active']}"
-                            )
-            except Exception as e:
-                self.logger.error(f"Error reloading strategies: {e}")
-
-            # Launch arbitrage pipelines for all active strategies
-            from arbirich.flows.arbitrage.arbitrage_flow import run_arbitrage_flow
-
-            # Find active strategies
-            active_strategies = []
-            for sid, strategy in self.strategies.items():
-                if strategy.get("active", False):
-                    active_strategies.append({"id": sid, "name": strategy["name"]})
-                    self.logger.info(f"Found active strategy: {strategy['name']} with ID {sid}")
-
-            if not active_strategies:
-                self.logger.warning("No active strategies found for arbitrage process")
-                # Fall back to a default strategy
-                self.logger.info("Starting arbitrage pipeline with default strategy")
-                await run_arbitrage_flow(strategy_name="basic_arbitrage", debug_mode=True)
+            if strategy_type == "basic":
+                validated_config = BasicStrategyConfig(**config).model_dump()
+                return BasicArbitrage(strategy_id=strategy_id, name=strategy_name, config=validated_config)
+            elif strategy_type == "mid_price":
+                validated_config = MidPriceStrategyConfig(**config).model_dump()
+                return MidPriceArbitrage(strategy_id=strategy_id, name=strategy_name, config=validated_config)
             else:
-                # Start a pipeline for each active strategy
-                self.logger.info(f"Starting arbitrage pipelines for {len(active_strategies)} strategies")
+                self.logger.warning(f"Unknown strategy type: {strategy_type}")
+                return None
 
-                # Create tasks for each strategy pipeline
-                tasks = []
-                for strategy in active_strategies:
-                    strategy_name = strategy["name"]
-                    self.logger.info(f"Starting arbitrage pipeline for strategy: {strategy_name}")
-                    # Create and store the task
-                    task = asyncio.create_task(
-                        run_arbitrage_flow(strategy_name=strategy_name, debug_mode=True),
-                        name=f"arbitrage-{strategy_name}",
-                    )
-                    tasks.append(task)
-
-                # Monitor the tasks instead of awaiting them directly
-                try:
-                    # Create a monitoring task
-                    monitor_task = asyncio.create_task(
-                        self._monitor_strategy_tasks(tasks, "arbitrage"), name="arbitrage-monitor"
-                    )
-
-                    # Wait for cancellation or any unexpected failure
-                    await asyncio.gather(monitor_task)
-                except asyncio.CancelledError:
-                    # Cancel all tasks if this task is cancelled
-                    self.logger.info("Arbitrage process stopping, cancelling all strategy tasks")
-                    monitor_task.cancel()
-                    for task in tasks:
-                        if not task.done():
-                            task.cancel()
-                    # Wait for all cancellations
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                    raise
-
-        except asyncio.CancelledError:
-            self.logger.info("Arbitrage process stopped")
-            raise
         except Exception as e:
-            self.logger.error(f"Error in arbitrage process: {e}", exc_info=True)
-            # Sleep briefly to avoid rapid restart loop
-            await asyncio.sleep(5)
-
-    async def _monitor_strategy_tasks(self, tasks, process_name):
-        """
-        Monitor strategy tasks and restart them if they fail unexpectedly.
-
-        Args:
-            tasks: List of asyncio tasks to monitor
-            process_name: Name of the process (e.g., "arbitrage", "execution")
-        """
-        while True:
-            # Check each task
-            for i, task in enumerate(tasks[:]):  # Use a copy of the list for iteration
-                if task.done():
-                    try:
-                        # Get the result to see if there was an exception
-                        result = task.result()
-                        self.logger.warning(
-                            f"{process_name} task {task.get_name()} completed unexpectedly with result: {result}"
-                        )
-                    except asyncio.CancelledError:
-                        self.logger.info(f"{process_name} task {task.get_name()} was cancelled")
-                    except Exception as e:
-                        self.logger.error(f"{process_name} task {task.get_name()} failed with error: {e}")
-
-                        # Try to restart the task
-                        try:
-                            # Extract strategy name from task name
-                            task_name = task.get_name()
-                            if "-" in task_name:
-                                strategy_name = task_name.split("-", 1)[1]
-
-                                if process_name == "arbitrage":
-                                    from arbirich.flows.arbitrage.arbitrage_flow import run_arbitrage_flow
-
-                                    new_task = asyncio.create_task(
-                                        run_arbitrage_flow(strategy_name=strategy_name, debug_mode=True),
-                                        name=f"arbitrage-{strategy_name}",
-                                    )
-                                elif process_name == "execution":
-                                    from arbirich.flows.execution.execution_flow import run_execution_flow
-
-                                    new_task = asyncio.create_task(
-                                        run_execution_flow(strategy_name), name=f"execution-{strategy_name}"
-                                    )
-
-                                # Replace the task in the list
-                                tasks[i] = new_task
-                                self.logger.info(f"Restarted {process_name} task for strategy {strategy_name}")
-                        except Exception as restart_error:
-                            self.logger.error(f"Failed to restart {process_name} task: {restart_error}")
-
-            # Check system shutdown
-            from arbirich.core.state.system_state import is_system_shutting_down
-
-            if is_system_shutting_down():
-                self.logger.info(f"System shutdown detected in {process_name} monitor, stopping")
-                break
-
-            # Sleep before checking again
-            await asyncio.sleep(5)
-
-    async def _run_execution(self):
-        """Run the execution process"""
-        self.logger.info("Execution process started")
-        try:
-            # Ensure database connection is available
-            if self.db is None:
-                self.logger.warning("Database connection not initialized, creating new connection")
-                from src.arbirich.services.database.database_service import DatabaseService
-
-                self.db = DatabaseService()
-
-            # Check for fresh strategy data
-            try:
-                with self.db.engine.connect() as conn:
-                    result = conn.execute(self.db.tables.strategies.select())
-                    strategies = [dict(row._mapping) for row in result]
-                    self.logger.info(f"Loaded {len(strategies)} strategies from database")
-                    # Update in-memory strategy data
-                    for db_strategy in strategies:
-                        strategy_id = db_strategy.get("id")
-                        if strategy_id in self.strategies:
-                            self.strategies[strategy_id]["active"] = db_strategy.get("is_active", False)
-            except Exception as e:
-                self.logger.error(f"Error updating strategies: {e}")
-
-            # Launch execution pipelines for all active strategies
-            from arbirich.flows.execution.execution_flow import run_execution_flow
-
-            self.logger.info(f"STRATEGIES: {self.strategies}")
-            # Find active strategies
-            active_strategies = []
-            for sid, strategy in self.strategies.items():
-                if strategy.get("active", False):
-                    active_strategies.append({"id": sid, "name": strategy["name"]})
-                    self.logger.info(f"Found active strategy: {strategy['name']} with ID {sid}")
-
-            if not active_strategies:
-                self.logger.warning("No active strategies found for execution process")
-                # Run a general execution flow for all strategies
-                self.logger.info("Starting execution pipeline for all strategies")
-                await run_execution_flow()
-            else:
-                # Start a pipeline for each active strategy
-                self.logger.info(f"Starting execution pipelines for {len(active_strategies)} strategies")
-
-                # Create tasks for each strategy pipeline
-                tasks = []
-                for strategy in active_strategies:
-                    strategy_name = strategy["name"]
-                    self.logger.info(f"Starting execution pipeline for strategy: {strategy_name}")
-                    # Create and store the task
-                    task = asyncio.create_task(
-                        run_execution_flow(strategy_name),
-                        name=f"execution-{strategy_name}",
-                    )
-                    tasks.append(task)
-
-                # Monitor the tasks instead of awaiting them directly
-                try:
-                    # Create a monitoring task
-                    monitor_task = asyncio.create_task(
-                        self._monitor_strategy_tasks(tasks, "execution"), name="execution-monitor"
-                    )
-
-                    # Wait for cancellation or any unexpected failure
-                    await asyncio.gather(monitor_task)
-                except asyncio.CancelledError:
-                    # Cancel all tasks if this task is cancelled
-                    self.logger.info("Execution process stopping, cancelling all strategy tasks")
-                    monitor_task.cancel()
-                    for task in tasks:
-                        if not task.done():
-                            task.cancel()
-                    # Wait for all cancellations
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                    raise
-
-        except asyncio.CancelledError:
-            self.logger.info("Execution process stopped")
-            raise
-        except Exception as e:
-            self.logger.error(f"Error in execution process: {e}", exc_info=True)
-            # Sleep briefly to avoid rapid restart loop
-            await asyncio.sleep(5)
-
-    async def _run_reporting(self):
-        """Run the reporting process for data persistence and health monitoring"""
-        self.logger.info("Reporting process started")
-        try:
-            # Import the reporting flow function
-            from arbirich.flows.reporting.reporting_flow import run_reporting_flow, stop_reporting_flow_async
-
-            # Start the reporting flow task for persisting trading data
-            reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
-            self.logger.info("Reporting flow for trade persistence started")
-
-            # Periodically check database health while the flow runs
-            while True:
-                try:
-                    # First check if system is shutting down before any other checks
-                    from arbirich.core.state.system_state import is_system_shutting_down
-
-                    if is_system_shutting_down():
-                        self.logger.info("System shutdown detected in reporting monitor loop, stopping task")
-
-                        # First explicitly stop the reporting flow - even if task is not done
-                        try:
-                            from arbirich.flows.reporting.reporting_flow import stop_reporting_flow
-
-                            stop_reporting_flow()
-                            self.logger.info("Explicitly stopped reporting flow during shutdown")
-                        except Exception as e:
-                            self.logger.error(f"Error stopping reporting flow during shutdown: {e}")
-
-                        # Cancel the task if it's still running
-                        if not reporting_flow_task.done():
-                            reporting_flow_task.cancel()
-                            try:
-                                await asyncio.wait_for(asyncio.shield(reporting_flow_task), timeout=2.0)
-                            except (asyncio.CancelledError, asyncio.TimeoutError):
-                                self.logger.info("Reporting task cancelled or timed out during shutdown")
-                        break
-
-                    # Check if the reporting flow task is still running
-                    if reporting_flow_task.done():
-                        exception = reporting_flow_task.exception()
-                        if exception:
-                            self.logger.error(f"Reporting flow task failed: {exception}")
-                            # Only restart if system is not shutting down
-                            if not is_system_shutting_down():
-                                # Restart the task
-                                reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
-                                self.logger.info("Reporting flow task restarted after error")
-                            else:
-                                self.logger.info("System shutting down, not restarting reporting flow")
-                                break
-                        else:
-                            self.logger.warning("Reporting flow task completed unexpectedly")
-                            # Only restart if system is not shutting down
-                            if not is_system_shutting_down():
-                                # Restart the task
-                                reporting_flow_task = asyncio.create_task(run_reporting_flow(), name="reporting_flow")
-                                self.logger.info("Reporting flow task restarted after completion")
-                            else:
-                                self.logger.info("System shutting down, not restarting reporting flow")
-                                break
-
-                    # Run health check less frequently
-                    import sqlalchemy as sa
-
-                    from src.arbirich.services.database.database_service import DatabaseService
-
-                    with DatabaseService() as db:
-                        with db.engine.connect() as conn:
-                            # Run a simple query to verify connection
-                            result = conn.execute(sa.text("SELECT 1")).scalar()
-                            self.logger.debug(f"Database health check: {result}")
-
-                except asyncio.CancelledError:
-                    raise  # Re-raise to handle properly in the outer try/except
-                except Exception as e:
-                    self.logger.error(f"Error in reporting monitoring loop: {e}")
-
-                # Sleep before next check
-                await asyncio.sleep(10)  # Check more frequently to detect shutdown faster
-
-        except asyncio.CancelledError:
-            self.logger.info("Reporting process stopping")
-            # Cancel the reporting flow task if running
-            if "reporting_flow_task" in locals() and not reporting_flow_task.done():
-                try:
-                    # Import here to avoid circular imports
-                    from arbirich.flows.reporting.reporting_flow import stop_reporting_flow, stop_reporting_flow_async
-
-                    # Use sync version for more immediate effect
-                    try:
-                        stop_reporting_flow()
-                        self.logger.info("Reporting flow stopped synchronously")
-                    except Exception as e:
-                        self.logger.error(f"Sync stop of reporting flow failed: {e}")
-                        # Fall back to async version
-                        await stop_reporting_flow_async()
-                        self.logger.info("Reporting flow stopped asynchronously")
-
-                    # Cancel the task after flow stop
-                    reporting_flow_task.cancel()
-                    try:
-                        await asyncio.wait_for(reporting_flow_task, timeout=2.0)
-                    except (asyncio.CancelledError, asyncio.TimeoutError):
-                        self.logger.info("Reporting task cancellation completed or timed out")
-                except Exception as e:
-                    self.logger.error(f"Error stopping reporting flow: {e}")
-
-            self.logger.info("Reporting process stopped")
-            raise
-        except Exception as e:
-            self.logger.error(f"Error in reporting process: {e}", exc_info=True)
-            # Sleep briefly to avoid rapid restart loop
-            await asyncio.sleep(5)
-            raise  # Re-raise to trigger restart
+            self.logger.error(f"Error creating strategy {strategy_name}: {e}", exc_info=True)
+            return None
 
     def _kill_orphaned_processes(self):
         """Kill any orphaned bytewax processes that didn't shut down properly"""

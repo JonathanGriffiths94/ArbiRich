@@ -298,10 +298,16 @@ async def execute_phased_shutdown(emergency_timeout=30):
         # Phase 5: Clean up Redis
         logger.info("PHASE 5: Cleaning up Redis connections")
         try:
-            from src.arbirich.flows.arbitrage.arbitrage_source import reset_shared_redis_client as reset_arbitrage_redis
-            from src.arbirich.flows.execution.execution_source import reset_shared_redis_client as reset_execution_redis
-            from src.arbirich.flows.ingestion.ingestion_sink import reset_shared_redis_client as reset_ingestion_redis
-            from src.arbirich.flows.reporting.reporting_source import reset_shared_redis_client as reset_reporting_redis
+            from src.arbirich.core.trading.bytewax_flows.detection.detection_source import (
+                reset_shared_redis_client as reset_arbitrage_redis,
+            )
+            from src.arbirich.core.trading.bytewax_flows.execution.execution_source import (
+                reset_shared_redis_client as reset_execution_redis,
+            )
+            from src.arbirich.core.trading.bytewax_flows.ingestion.ingestion_sink import (
+                reset_shared_redis_client as reset_ingestion_redis,
+            )
+            from src.arbirich.core.trading.flows.reporting import reset_shared_redis_client as reset_reporting_redis
             from src.arbirich.services.redis.redis_service import reset_redis_pool
 
             await asyncio.wait_for(

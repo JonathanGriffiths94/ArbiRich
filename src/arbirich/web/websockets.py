@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import WebSocket
@@ -166,14 +167,46 @@ async def websocket_broadcast_task():
 
 
 async def broadcast_to_connections(channel: str, data: str):
+    """
+    Broadcast a message to all WebSocket connections.
+
+    Args:
+        channel: The Redis channel the message came from
+        data: The message data as a string
+    """
     try:
+        # Log the incoming data for debugging
+        logger.info(f"Received message from channel: {channel}")
+        logger.info(f"Message data: {data[:200]}..." if len(data) > 200 else f"Message data: {data}")
+
+        # Try to parse the data as JSON
+        try:
+            data_obj = json.loads(data)
+            logger.info(f"Parsed JSON with keys: {list(data_obj.keys())}")
+
+            # Log different data based on message type
+            if "type" in data_obj:
+                logger.info(f"Message type: {data_obj['type']}")
+
+            if "opportunity_id" in data_obj:
+                logger.info(f"Opportunity ID: {data_obj['opportunity_id']}")
+
+            if "strategy" in data_obj:
+                logger.info(f"Strategy: {data_obj['strategy']}")
+
+            if "pair" in data_obj:
+                logger.info(f"Trading pair: {data_obj['pair']}")
+        except json.JSONDecodeError:
+            logger.warning(f"Could not parse message as JSON: {data[:50]}...")
+
+        # Create a payload based on the channel
+        payload = {"type": "update", "channel": channel, "data": data, "timestamp": datetime.now().isoformat()}
+
+        # Broadcast to all active connections
         for connection in manager.active_connections:
             try:
-                # Send the message to the client if they're subscribed to this channel
-                if channel in connection.channels:
-                    await connection.websocket.send_text(data)
+                await connection.send_text(json.dumps(payload))
             except Exception as e:
-                logger.error(f"Error sending message to client: {e}")
-                # Don't remove the connection here - do that only when receive_text throws
+                logger.error(f"Error sending WebSocket message to client: {e}")
     except Exception as e:
-        logger.error(f"Error preparing broadcast message: {e}")
+        logger.error(f"Error in broadcast_to_connections: {e}", exc_info=True)

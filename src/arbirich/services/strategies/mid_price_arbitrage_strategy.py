@@ -17,8 +17,12 @@ class MidPriceArbitrageStrategy(ArbitrageStrategy):
 
     def __init__(self, name: str, config: dict):
         super().__init__(name, config)
-        # Additional parameters specific to mid-price strategy
-        self.min_depth = config.get("min_depth", 3)  # Minimum depth to calculate mid-price
+
+        # Access min_depth from Pydantic model or fallback to dict
+        if hasattr(self.config, "min_depth"):
+            self.min_depth = self.config.min_depth
+        else:
+            self.min_depth = config.get("min_depth", 3)  # Minimum depth to calculate mid-price
 
     def calculate_mid_price(self, order_book) -> Optional[float]:
         """Calculate weighted mid-price based on order book depth"""

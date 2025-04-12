@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from arbirich.core.lifecycle.events import shutdown_event, startup_event
-from arbirich.core.trading.trading_service import TradingService
+from src.arbirich.core.lifecycle.events import shutdown_event, startup_event
+from src.arbirich.core.trading.trading_service import TradingService
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.web.websockets import websocket_broadcast_task
 

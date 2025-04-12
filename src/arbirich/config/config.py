@@ -69,40 +69,55 @@ EXCHANGES = {
     "cryptocom": ALL_EXCHANGES["cryptocom"],
 }
 
-# Trading pairs configuration
+# Trading pairs configuration - Updated with mid-cap cryptos
 ALL_PAIRS = {
-    "BTC-USDT": {
-        "base_currency": "BTC",
+    "ATOM-USDT": {
+        "base_currency": "ATOM",
         "quote_currency": "USDT",
     },
-    "ETH-USDT": {
-        "base_currency": "ETH",
+    "LINK-USDT": {
+        "base_currency": "LINK",
         "quote_currency": "USDT",
     },
-    "SOL-USDT": {
-        "base_currency": "SOL",
+    "AVAX-USDT": {
+        "base_currency": "AVAX",
         "quote_currency": "USDT",
     },
-    "BNB-USDT": {
-        "base_currency": "BNB",
+    "MATIC-USDT": {
+        "base_currency": "MATIC",
         "quote_currency": "USDT",
     },
-    "ETH-BTC": {
-        "base_currency": "ETH",
-        "quote_currency": "BTC",
+    "DOT-USDT": {
+        "base_currency": "DOT",
+        "quote_currency": "USDT",
+    },
+    "NEAR-USDT": {
+        "base_currency": "NEAR",
+        "quote_currency": "USDT",
+    },
+    "FTM-USDT": {
+        "base_currency": "FTM",
+        "quote_currency": "USDT",
+    },
+    "ALGO-USDT": {
+        "base_currency": "ALGO",
+        "quote_currency": "USDT",
     },
 }
 
-# Trading pairs
+# Trading pairs - Updated with mid-cap cryptos
 PAIRS = [
-    ("BTC", "USDT"),
-    ("ETH", "USDT"),
-    ("SOL", "USDT"),
-    ("BNB", "USDT"),
-    ("ETH", "BTC"),
+    ("ATOM", "USDT"),  # Cosmos
+    ("LINK", "USDT"),  # Chainlink
+    ("AVAX", "USDT"),  # Avalanche
+    ("MATIC", "USDT"),  # Polygon
+    ("DOT", "USDT"),  # Polkadot
+    ("NEAR", "USDT"),  # NEAR Protocol
+    ("FTM", "USDT"),  # Fantom
+    ("ALGO", "USDT"),  # Algorand
 ]
 
-# Strategy configurations
+# Strategy configurations - Updated with new pairs
 ALL_STRATEGIES = {
     "basic_arbitrage": {
         "type": "basic",
@@ -110,9 +125,22 @@ ALL_STRATEGIES = {
         "min_spread": 0.0001,
         "threshold": 0.0001,
         "exchanges": ["bybit", "cryptocom"],
-        "pairs": [("BTC", "USDT")],
+        "pairs": [("LINK", "USDT"), ("MATIC", "USDT")],  # Updated pairs
+        "risk_management": {
+            "max_position_size": 50.0,  # In USDT equivalent
+            "max_daily_loss": 5.0,  # Percentage of capital
+            "max_consecutive_losses": 3,
+            "circuit_breaker_cooldown": 3600,  # 1 hour in seconds
+            "scale_by_spread": True,
+        },
+        "execution": {
+            "method": "parallel",  # Could be "parallel" or "staggered"
+            "timeout": 3000,  # Timeout in milliseconds
+            "retry_attempts": 2,
+            "max_slippage": 0.0005,
+        },
         "additional_info": {
-            "min_volume": 0.001,
+            "min_volume": 10.0,  # Adjusted for mid-cap tokens
             "max_slippage": 0.0005,
             "execution_delay": 0.1,
         },
@@ -123,27 +151,52 @@ ALL_STRATEGIES = {
         "min_spread": 0.0001,
         "threshold": 0.0001,
         "exchanges": ["bybit", "cryptocom"],
-        "pairs": [("ETH", "USDT"), ("SOL", "USDT")],
+        "pairs": [("ATOM", "USDT"), ("DOT", "USDT")],  # Updated pairs
+        "risk_management": {
+            "max_position_size": 40.0,  # In USDT equivalent
+            "max_daily_loss": 3.0,  # Percentage of capital
+            "max_consecutive_losses": 2,
+            "circuit_breaker_cooldown": 1800,  # 30 minutes in seconds
+            "scale_by_spread": True,
+        },
+        "execution": {
+            "method": "staggered",  # Staggered execution for more careful approach
+            "timeout": 5000,  # Longer timeout for staggered execution
+            "retry_attempts": 3,
+            "max_slippage": 0.0003,
+            "stagger_delay": 500,  # Milliseconds between legs
+        },
         "additional_info": {
             "min_depth": 10,
             "max_slippage": 0.0003,
             "execution_delay": 0.2,
         },
     },
-    "high_frequency_arbitrage": {
-        "type": "hft",
-        "starting_capital": 20000.0,
-        "min_spread": 0.0001,  # Suitable threshold for HFT
-        "threshold": 0.0001,
-        "exchanges": ["bybit", "cryptocom"],  # More exchanges for HFT
-        "pairs": [("BTC", "USDT"), ("ETH", "USDT"), ("SOL", "USDT")],
+    "volume_adjusted_arbitrage": {
+        "type": "volume_adjusted",
+        "starting_capital": 15000.0,
+        "min_spread": 0.0002,  # Higher spread requirement due to depth analysis
+        "threshold": 0.0002,
+        "target_volume": 100.0,  # Target volume in USDT equivalent for weighted calculation
+        "min_depth_percentage": 0.7,  # Minimum % of target volume that must be available
+        "exchanges": ["bybit", "cryptocom"],
+        "pairs": [("AVAX", "USDT"), ("NEAR", "USDT"), ("FTM", "USDT"), ("ALGO", "USDT")],  # Updated pairs
+        "risk_management": {
+            "max_position_size": 60.0,  # In USDT equivalent
+            "max_daily_loss": 4.0,
+            "max_consecutive_losses": 3,
+            "circuit_breaker_cooldown": 2700,  # 45 minutes in seconds
+            "scale_by_spread": True,
+            "exchange_risk_factors": {
+                "bybit": 0.9,  # Risk factor for bybit (1.0 = full trust)
+                "cryptocom": 0.8,  # Risk factor for crypto.com
+            },
+        },
+        "execution": {"method": "parallel", "timeout": 4000, "retry_attempts": 2, "max_slippage": 0.0004},
         "additional_info": {
-            "min_volume": 0.0015,
-            "max_slippage": 0.0002,
-            "execution_delay": 0.05,  # Lower execution delay for HFT
-            "price_change_threshold": 0.0001,  # Detect small price movements
-            "history_size": 15,  # Track more price points
-            "cooldown_seconds": 0.5,  # Shorter cooldown between trades
+            "min_volume": 15.0,  # Adjusted for mid-cap tokens
+            "liquidity_factor": 0.8,  # Reduce volume based on liquidity
+            "depth_scaling": True,  # Scale position size based on order book depth
         },
     },
 }
@@ -152,6 +205,22 @@ ALL_STRATEGIES = {
 STRATEGIES = {
     "basic_arbitrage": ALL_STRATEGIES["basic_arbitrage"],
     "mid_price_arbitrage": ALL_STRATEGIES["mid_price_arbitrage"],
+    "volume_adjusted_arbitrage": ALL_STRATEGIES["volume_adjusted_arbitrage"],
+}
+
+# Execution method configurations
+EXECUTION_METHODS = {
+    "parallel": {
+        "timeout": 3000,  # Milliseconds
+        "retry_attempts": 2,
+        "cleanup_failed_trades": True,
+    },
+    "staggered": {
+        "timeout": 5000,  # Milliseconds
+        "retry_attempts": 3,
+        "stagger_delay": 500,  # Milliseconds between trade legs
+        "abort_on_first_failure": True,
+    },
 }
 
 
@@ -195,7 +264,7 @@ def get_pair_config(pair_symbol):
     Get configuration for a specific trading pair.
 
     Args:
-        pair_symbol: Symbol of the trading pair (e.g., 'BTC-USDT')
+        pair_symbol: Symbol of the trading pair (e.g., 'ATOM-USDT')
 
     Returns:
         Dict containing pair configuration or None if not found
@@ -232,6 +301,23 @@ def get_strategy_config(strategy_name):
     # Then check in ALL_STRATEGIES
     if strategy_name in ALL_STRATEGIES:
         return ALL_STRATEGIES[strategy_name]
+
+    # Not found
+    return None
+
+
+def get_execution_method_config(method_name):
+    """
+    Get configuration for a specific execution method.
+
+    Args:
+        method_name: Name of the execution method
+
+    Returns:
+        Dict containing execution method configuration or None if not found
+    """
+    if method_name in EXECUTION_METHODS:
+        return EXECUTION_METHODS[method_name]
 
     # Not found
     return None

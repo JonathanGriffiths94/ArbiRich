@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
+from arbirich.services.metrics.metrics_helper import calculate_period_dates
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
-from src.arbirich.utils.metrics_helper import calculate_period_dates
 from src.arbirich.web.dependencies import get_db_service, get_metrics_service
 
 logger = logging.getLogger(__name__)

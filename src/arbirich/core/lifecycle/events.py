@@ -8,8 +8,8 @@ import time
 
 import psutil
 
-from arbirich.core.lifecycle.shutdown_manager import execute_phased_shutdown
-from arbirich.services.database.prefill_database import prefill_database
+from src.arbirich.core.lifecycle.shutdown_manager import execute_phased_shutdown
+from src.arbirich.services.database.prefill_database import prefill_database
 from src.arbirich.services.exchange_processors.registry import set_processors_shutting_down, shutdown_all_processors
 
 logger = logging.getLogger(__name__)

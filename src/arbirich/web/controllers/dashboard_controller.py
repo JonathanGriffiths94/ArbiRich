@@ -23,7 +23,8 @@ templates = Jinja2Templates(directory=str(templates_dir))
 def get_db():
     """Get database service instance"""
     # Re-use the common implementation
-    return get_db_service()
+    db_gen = get_db_service()
+    return next(db_gen)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -39,13 +40,10 @@ async def about(request: Request):
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(request: Request, db_gen: DatabaseService = Depends(get_db)):
+async def dashboard_page(request: Request, db: DatabaseService = Depends(get_db)):
     """Render the dashboard page"""
     # Get stats for dashboard
     try:
-        # Extract the database service from the generator
-        db = next(db_gen)
-
         # Get time period for recent stats (last 24 hours)
         since_time = datetime.now() - timedelta(hours=24)
 
@@ -99,12 +97,9 @@ async def dashboard_page(request: Request, db_gen: DatabaseService = Depends(get
 
 
 @router.get("/api/dashboard/stats")
-async def dashboard_stats(db_gen: DatabaseService = Depends(get_db)):
+async def dashboard_stats(db: DatabaseService = Depends(get_db)):
     """Get dashboard statistics"""
     try:
-        # Extract the database service from the generator
-        db = next(db_gen)
-
         # Get time period for recent stats (last 24 hours)
         since_time = datetime.now() - timedelta(hours=24)
 
@@ -126,12 +121,9 @@ async def dashboard_stats(db_gen: DatabaseService = Depends(get_db)):
 
 
 @router.get("/api/dashboard/recent-opportunities")
-async def recent_opportunities(limit: int = 5, db_gen: DatabaseService = Depends(get_db)):
+async def recent_opportunities(limit: int = 5, db: DatabaseService = Depends(get_db)):
     """Get recent trade opportunities"""
     try:
-        # Extract the database service from the generator
-        db = next(db_gen)
-
         opportunities = db.get_recent_opportunities(limit=limit)
         return opportunities
     except Exception as e:
@@ -140,12 +132,9 @@ async def recent_opportunities(limit: int = 5, db_gen: DatabaseService = Depends
 
 
 @router.get("/api/dashboard/recent-executions")
-async def recent_executions(limit: int = 5, db_gen: DatabaseService = Depends(get_db)):
+async def recent_executions(limit: int = 5, db: DatabaseService = Depends(get_db)):
     """Get recent trade executions"""
     try:
-        # Extract the database service from the generator
-        db = next(db_gen)
-
         executions = db.get_recent_executions(limit=limit)
         return executions
     except Exception as e:

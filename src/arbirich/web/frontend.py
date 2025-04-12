@@ -9,10 +9,11 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
-from src.arbirich.models.models import Exchange, Strategy, TradeExecution, TradeOpportunity
+from src.arbirich.models.models import Exchange, TradeExecution, TradeOpportunity
 from src.arbirich.services.database.database_service import DatabaseService
+from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.web.controllers.mock_data_provider import mock_provider
+from src.arbirich.web.dependencies import get_db_service
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,16 @@ router = APIRouter(tags=["frontend"])
 
 
 def get_db():
-    db = DatabaseService()
+    """Get database service instance using generator"""
+    db_gen = get_db_service()
+    db = next(db_gen)
     try:
         yield db
     finally:
-        pass
+        try:
+            db.close()
+        except Exception as e:
+            logger.error(f"Error closing database service: {e}")
 
 
 # Error handling decorator
@@ -415,79 +421,74 @@ def get_dashboard_stats(db_service: DatabaseService) -> dict:
         }
 
 
-def get_strategy_leaderboard(db_service: DatabaseService) -> List[dict]:
-    """Get performance stats for all strategies."""
-    with db_service.engine.begin() as conn:
-        import sqlalchemy as sa
+def get_strategy_leaderboard(db_service):
+    """Fetch strategy performance data for the leaderboard"""
+    try:
+        # Use the repository pattern instead of direct SQL queries
+        strategies = db_service.get_all_strategies()
 
-        from src.arbirich.models.schema import strategies, trade_executions
+        # Format the data for display
+        result = []
+        for strategy in strategies:
+            # Handle additional_info properly (might be JSON string or already parsed)
+            additional_info = {}
+            if hasattr(strategy, "additional_info") and strategy.additional_info:
+                if isinstance(strategy.additional_info, dict):
+                    additional_info = strategy.additional_info
+                elif isinstance(strategy.additional_info, str):
+                    try:
+                        additional_info = json.loads(strategy.additional_info)
+                    except json.JSONDecodeError:
+                        pass
 
-        # Get all strategies ordered by net profit
-        result = conn.execute(sa.select(strategies).order_by(strategies.c.net_profit.desc()))
+            # Extract strategy parameters
+            min_spread = getattr(strategy, "min_spread", None)
+            min_volume = getattr(strategy, "min_volume", None)
+            threshold = getattr(strategy, "threshold", None)
 
-        strategies_list = []
-        for row in result:
-            # Handle additional_info properly - check if it's already a dict before parsing
-            additional_info = row.additional_info
-            if additional_info and not isinstance(additional_info, dict):
-                try:
-                    additional_info = json.loads(additional_info)
-                except (json.JSONDecodeError, TypeError):
-                    additional_info = None
+            # Calculate profit percentage
+            profit_percentage = 0
+            if hasattr(strategy, "starting_capital") and strategy.starting_capital > 0:
+                profit_percentage = (strategy.net_profit / strategy.starting_capital) * 100
 
-            # Calculate win rate for this strategy
-            win_count = (
-                conn.execute(
-                    sa.select(sa.func.count())
-                    .where(trade_executions.c.strategy == row.name)
-                    .where(trade_executions.c.executed_sell_price > trade_executions.c.executed_buy_price)
-                    .select_from(trade_executions)
-                ).scalar()
-                or 0
-            )
+            # Format the strategy data
+            strategy_data = {
+                "id": strategy.id,
+                "name": strategy.name,
+                "description": strategy.description or "",
+                "starting_capital": float(strategy.starting_capital) if hasattr(strategy, "starting_capital") else 0,
+                "total_profit": float(strategy.total_profit) if hasattr(strategy, "total_profit") else 0,
+                "total_loss": float(strategy.total_loss) if hasattr(strategy, "total_loss") else 0,
+                "net_profit": float(strategy.net_profit) if hasattr(strategy, "net_profit") else 0,
+                "profit": float(strategy.net_profit)
+                if hasattr(strategy, "net_profit")
+                else 0,  # Add profit alias for template
+                "profit_percentage": float(profit_percentage),
+                "trade_count": strategy.trade_count if hasattr(strategy, "trade_count") else 0,
+                "is_active": strategy.is_active if hasattr(strategy, "is_active") else False,
+                "is_running": False,  # Default to false, update if needed
+                "exchanges": additional_info.get("exchanges", []),
+                "pairs": additional_info.get("pairs", []),
+                "parameters": {
+                    "min_spread": float(min_spread) if min_spread is not None else 0.0001,
+                    "min_volume": float(min_volume) if min_volume is not None else 0.001,
+                    "threshold": float(threshold) if threshold is not None else 0.0001,
+                },
+                "last_updated": strategy.last_updated.isoformat()
+                if hasattr(strategy, "last_updated") and strategy.last_updated
+                else None,
+                "win_rate": 0,  # Default win rate
+            }
 
-            # Get total executions for this strategy
-            total_count = (
-                conn.execute(
-                    sa.select(sa.func.count())
-                    .where(trade_executions.c.strategy == row.name)
-                    .select_from(trade_executions)
-                ).scalar()
-                or 0
-            )
+            result.append(strategy_data)
 
-            # Calculate win rate
-            win_rate = (win_count / total_count) * 100 if total_count > 0 else 0
+        # Sort by net profit in descending order
+        result.sort(key=lambda s: s["net_profit"], reverse=True)
+        return result
 
-            # Create a Pydantic model instance
-            strategy = Strategy(
-                id=row.id,
-                name=row.name,
-                starting_capital=float(row.starting_capital),
-                min_spread=float(row.min_spread),
-                total_profit=float(row.total_profit),
-                total_loss=float(row.total_loss),
-                net_profit=float(row.net_profit),
-                trade_count=row.trade_count,
-                start_timestamp=row.start_timestamp,
-                last_updated=row.last_updated,
-                is_active=row.is_active,
-                additional_info=additional_info,
-            )
-
-            # Convert to dict and add extra fields needed for the UI
-            strategy_dict = strategy.model_dump(exclude={"metrics", "latest_metrics"})
-            strategy_dict["win_rate"] = round(win_rate, 2)
-            strategy_dict["profit"] = strategy_dict["net_profit"]  # For template compatibility
-            strategy_dict["trades"] = strategy_dict["trade_count"]  # For template compatibility
-
-            # Calculate min spread as a percentage for easier reading
-            min_spread_percent = strategy_dict["min_spread"] * 100
-            strategy_dict["min_spread_percent"] = round(min_spread_percent, 4)
-
-            strategies_list.append(strategy_dict)
-
-        return strategies_list
+    except Exception as e:
+        logger.error(f"Error fetching strategy leaderboard: {e}", exc_info=True)
+        return []
 
 
 def get_strategy_opportunities(db_service: DatabaseService, strategy_name: str, limit: int = 10) -> List[dict]:

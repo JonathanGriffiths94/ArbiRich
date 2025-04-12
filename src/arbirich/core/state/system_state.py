@@ -10,7 +10,7 @@ _shutdown_lock = threading.RLock()
 
 # Track which components have been notified of shutdown
 _notified_components: Dict[str, Set[str]] = {
-    "arbitrage": set(),
+    "detection": set(),
     "execution": set(),
     "ingestion": set(),
     "reporting": set(),
@@ -51,7 +51,7 @@ def mark_component_notified(component_type: str, component_id: str) -> bool:
     This helps prevent duplicate shutdown messages/actions for the same component.
 
     Args:
-        component_type: Type of component ("arbitrage", "execution", etc.)
+        component_type: Type of component ("detection", "execution", etc.)
         component_id: Unique identifier for the specific component instance
 
     Returns:

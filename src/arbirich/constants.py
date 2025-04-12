@@ -5,14 +5,13 @@ ORDER_BOOK_CHANNEL = "order_book"
 
 # Database table names
 EXCHANGES_TABLE = "exchanges"
-PAIRS_TABLE = "pairs"
+TRADING_PAIRS_TABLE = "trading_pairs"  # Using consistent naming with the schema
 STRATEGIES_TABLE = "strategies"
 TRADE_OPPORTUNITIES_TABLE = "trade_opportunities"
 TRADE_EXECUTIONS_TABLE = "trade_executions"
 STRATEGY_METRICS_TABLE = "strategy_metrics"
 STRATEGY_TRADING_PAIR_METRICS_TABLE = "strategy_trading_pair_metrics"
 STRATEGY_TRADING_EXCHANGE_METRICS_TABLE = "strategy_trading_exchange_metrics"
-
 
 # Redis key prefixes
 ORDER_BOOK_KEY_PREFIX = "order_book:"

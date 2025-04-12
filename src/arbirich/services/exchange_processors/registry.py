@@ -303,6 +303,57 @@ def shutdown_all_processors() -> None:
     logger.info(f"Shutdown completed for {shutdown_count} processors")
 
 
+def create_processor(
+    exchange_name=None, product=None, symbol=None, exchange=None, subscription_type=None, use_rest_snapshot=False
+):
+    """
+    Factory function to create exchange processors based on the exchange name.
+
+    Args:
+        exchange_name (str, optional): The name of the exchange to create a processor for
+        product (str, optional): Trading pair symbol (primary parameter name)
+        symbol (str, optional): Alternative parameter for trading pair symbol
+        exchange (str, optional): Alternative way to specify exchange name
+        subscription_type (str, optional): Type of subscription ("snapshot" or "delta")
+        use_rest_snapshot (bool, optional): Whether to use REST API for snapshot
+
+    Returns:
+        Exchange processor instance or None if the exchange is not supported
+    """
+    # Handle either exchange_name or exchange parameter
+    effective_exchange = exchange_name or exchange
+
+    if not effective_exchange:
+        logger.error("No exchange name provided to create_processor")
+        return None
+
+    # Handle either product or symbol parameter
+    effective_symbol = product or symbol
+
+    if not effective_symbol:
+        logger.error(f"No symbol/product provided for exchange {effective_exchange}")
+        return None
+
+    logger.info(f"Creating processor for {effective_exchange}:{effective_symbol}")
+
+    processor_class = get_processor_class(effective_exchange)
+    if not processor_class:
+        logger.error(f"No processor found for exchange: {effective_exchange}")
+        return None
+
+    try:
+        # Create a processor instance with standard parameters
+        return processor_class(
+            exchange=effective_exchange,
+            product=effective_symbol,
+            subscription_type=subscription_type or "snapshot",
+            use_rest_snapshot=use_rest_snapshot,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create processor for {effective_exchange}: {str(e)}")
+        return None
+
+
 # Perform registration when module is imported
 # Adding this at the end ensures that the functions are defined before we try to use them
 registered_processors = register_all_processors()

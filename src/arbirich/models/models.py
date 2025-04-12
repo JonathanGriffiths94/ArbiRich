@@ -55,8 +55,8 @@ class Exchange(BaseModel):
         }
 
 
-# Update the Pair model to ensure symbol is always set:
-class Pair(BaseModel):
+# Update the Pair model to TradingPair to ensure symbol is always set:
+class TradingPair(BaseModel):
     id: Optional[int] = None
     base_currency: str
     quote_currency: str
@@ -92,27 +92,169 @@ class Pair(BaseModel):
         }
 
 
+# Strategy Parameters model to match strategy_parameters table
+class StrategyParameters(BaseModel):
+    id: Optional[int] = None
+    strategy_id: int
+    min_spread: float = 0.0001
+    threshold: float = 0.0001
+    max_slippage: Optional[float] = None
+    min_volume: Optional[float] = None
+    max_execution_time_ms: Optional[int] = None
+    additional_parameters: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Strategy Type Parameters model to match strategy_type_parameters table
+class StrategyTypeParameters(BaseModel):
+    id: Optional[int] = None
+    strategy_id: int
+    target_volume: Optional[float] = None
+    min_depth: Optional[int] = None
+    min_depth_percentage: Optional[float] = None
+    parameters: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Strategy Type model to match strategy_types table
+class StrategyType(BaseModel):
+    id: Optional[int] = None
+    name: str
+    description: Optional[str] = None
+    implementation_class: str
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Risk Profile model to match risk_profiles table
+class RiskProfile(BaseModel):
+    id: Optional[int] = None
+    name: str
+    description: Optional[str] = None
+    max_position_size_percentage: Optional[float] = None
+    max_drawdown_percentage: Optional[float] = None
+    max_exposure_per_asset_percentage: Optional[float] = None
+    circuit_breaker_conditions: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Execution Strategy model to match execution_strategies table
+class ExecutionStrategy(BaseModel):
+    id: Optional[int] = None
+    name: str
+    description: Optional[str] = None
+    timeout: int
+    retry_attempts: int = 2
+    parameters: Optional[Dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Strategy Execution Mapping model to match strategy_execution_mapping table
+class StrategyExecutionMapping(BaseModel):
+    id: Optional[int] = None
+    strategy_id: int
+    execution_strategy_id: int
+    is_active: bool = True
+    priority: int = 100
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Strategy Exchange Pair Mapping model to match strategy_exchange_pair_mappings table
+class StrategyExchangePairMapping(BaseModel):
+    id: Optional[int] = None
+    strategy_id: int
+    exchange_id: int
+    trading_pair_id: int
+    is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Updated Strategy model to match the new database schema
 class Strategy(BaseModel):
     id: Optional[int] = None
     name: str
+    description: Optional[str] = None
+    strategy_type_id: Optional[int] = None
+    risk_profile_id: Optional[int] = None
     starting_capital: float
-    min_spread: float
-    additional_info: Optional[Dict[str, Any]] = None
     total_profit: float = 0
     total_loss: float = 0
     net_profit: float = 0
     trade_count: int = 0
     start_timestamp: Optional[datetime] = None
     last_updated: Optional[datetime] = None
-    is_active: bool = False  # Default to inactive
+    is_active: bool = False
+    created_by: Optional[str] = None
 
-    # Properly defined metrics fields with consistent naming
+    # Additional fields from related tables (not stored directly in strategies table)
+    min_spread: Optional[float] = None  # From strategy_parameters
+    threshold: Optional[float] = None  # From strategy_parameters
+    max_slippage: Optional[float] = None  # From strategy_parameters
+    min_volume: Optional[float] = None  # From strategy_parameters
+
+    # Reference to related objects
+    parameters: Optional[StrategyParameters] = None
+    type_parameters: Optional[StrategyTypeParameters] = None
+    risk_profile: Optional[RiskProfile] = None
+    strategy_type: Optional[StrategyType] = None
+    execution_mappings: List[StrategyExecutionMapping] = Field(default_factory=list)
+    exchange_pair_mappings: List[StrategyExchangePairMapping] = Field(default_factory=list)
+
+    # JSON field stored in database
+    additional_info: Optional[Dict[str, Any]] = None
+
+    # Metrics references (not stored in database)
     latest_metrics: Optional[Any] = Field(default=None, exclude=True)
     metrics: Optional[List[Any]] = Field(default_factory=list, exclude=True)
 
     class Config:
         from_attributes = True
-        arbitrary_types_allowed = True  # Allow storage of arbitrary types
+        arbitrary_types_allowed = True
+
+    def to_db_dict(self) -> dict:
+        """Convert to a dictionary suitable for strategies table"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "strategy_type_id": self.strategy_type_id,
+            "risk_profile_id": self.risk_profile_id,
+            "starting_capital": self.starting_capital,
+            "total_profit": self.total_profit,
+            "total_loss": self.total_loss,
+            "net_profit": self.net_profit,
+            "trade_count": self.trade_count,
+            "start_timestamp": self.start_timestamp,
+            "last_updated": self.last_updated,
+            "is_active": self.is_active,
+            "created_by": self.created_by,
+            "additional_info": json.dumps(self.additional_info) if self.additional_info else None,
+        }
 
 
 class Order(BaseModel):
@@ -367,7 +509,7 @@ class StrategyTradingPairMetrics(Base):
 
     id = Column(Integer, primary_key=True)
     strategy_metrics_id = Column(Integer, ForeignKey("strategy_metrics.id"), nullable=False)
-    trading_pair_id = Column(Integer, ForeignKey("pairs.id"), nullable=False)  # Updated to match your schema
+    trading_pair_id = Column(Integer, ForeignKey("trading_pairs.id"), nullable=False)  # Updated to match your schema
 
     trade_count = Column(Integer, nullable=False, default=0)
     net_profit = Column(Numeric(18, 2), nullable=False, default=0)
@@ -377,7 +519,7 @@ class StrategyTradingPairMetrics(Base):
 
     # Relationships
     strategy_metrics = relationship("StrategyMetrics", back_populates="trading_pair_metrics")
-    trading_pair = relationship("PairDB")  # Updated to match your model names
+    trading_pair = relationship("TradingPairDB")  # Updated to match your model names
 
 
 class StrategyExchangeMetrics(Base):
@@ -400,23 +542,20 @@ class StrategyExchangeMetrics(Base):
     exchange = relationship("ExchangeDB")  # Updated to match your model names
 
 
-# Add SQLAlchemy models for tables that need relationships
-class PairDB(Base):
+# Rename PairDB to TradingPairDB to match table name
+class TradingPairDB(Base):
     """Database model for trading pairs."""
 
-    __tablename__ = "pairs"
+    __tablename__ = "trading_pairs"  # Updated table name
 
     id = Column(Integer, primary_key=True)
     base_currency = Column(String, nullable=False)
     quote_currency = Column(String, nullable=False)
     symbol = Column(String, nullable=False, unique=True)
-    is_active = Column(Boolean, nullable=False, default=False)  # Added is_active with default false
-
-    # Relationships
-    trading_pair_metrics = relationship("StrategyTradingPairMetrics", back_populates="trading_pair")
+    is_active = Column(Boolean, nullable=False, default=False)
 
     def __repr__(self):
-        return f"<Pair(id={self.id}, symbol={self.symbol}, is_active={self.is_active})>"
+        return f"<TradingPair(id={self.id}, symbol={self.symbol}, is_active={self.is_active})>"
 
 
 class ExchangeDB(Base):
@@ -445,18 +584,20 @@ class ExchangeDB(Base):
         return f"<Exchange(id={self.id}, name={self.name}, is_active={self.is_active})>"
 
 
-# Update SQLAlchemy Strategy class with relationship to metrics
+# Update SQLAlchemy Strategy class to match schema
 class StrategyDB(Base):
     """Database model for Strategy."""
 
     __tablename__ = "strategies"
+    repository_class = "StrategyRepository"
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
+    strategy_type_id = Column(Integer, ForeignKey("strategy_types.id"), nullable=False)
+    risk_profile_id = Column(Integer, ForeignKey("risk_profiles.id"), nullable=False)
     starting_capital = Column(Numeric(18, 2), nullable=False)
-    min_spread = Column(Numeric(18, 8), nullable=False)
-    is_active = Column(Boolean, default=False)  # Updated to default false
-    # Other columns
+    is_active = Column(Boolean, default=False)
     additional_info = Column(String, nullable=True)
     total_profit = Column(Numeric(18, 2), nullable=False, default=0)
     total_loss = Column(Numeric(18, 2), nullable=False, default=0)
@@ -464,9 +605,133 @@ class StrategyDB(Base):
     trade_count = Column(Integer, nullable=False, default=0)
     start_timestamp = Column(DateTime, default=func.now())
     last_updated = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String, nullable=True)
 
-    # Add relationship to metrics - update to match StrategyMetrics relationship
+    # Add relationship to parameters
+    parameters = relationship("StrategyParametersDB", back_populates="strategy", uselist=False)
+    type_parameters = relationship("StrategyTypeParametersDB", back_populates="strategy", uselist=False)
+
+    # Add relationship to metrics
     metrics = relationship("StrategyMetrics", back_populates="strategy", foreign_keys=[StrategyMetrics.strategy_id])
 
     def __repr__(self):
         return f"<Strategy(id={self.id}, name={self.name}, is_active={self.is_active})>"
+
+
+# Add SQLAlchemy models for the new tables
+class StrategyTypeDB(Base):
+    """Database model for strategy types."""
+
+    __tablename__ = "strategy_types"
+    repository_class = "StrategyTypeRepository"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
+    implementation_class = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+
+    strategies = relationship("StrategyDB", backref="strategy_type")
+
+
+class RiskProfileDB(Base):
+    """Database model for risk profiles."""
+
+    __tablename__ = "risk_profiles"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
+    max_position_size_percentage = Column(Numeric(5, 2))
+    max_drawdown_percentage = Column(Numeric(5, 2))
+    max_exposure_per_asset_percentage = Column(Numeric(5, 2))
+    circuit_breaker_conditions = Column(String)  # JSON stored as string
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    strategies = relationship("StrategyDB", backref="risk_profile")
+
+
+class StrategyParametersDB(Base):
+    """Database model for strategy parameters."""
+
+    __tablename__ = "strategy_parameters"
+
+    id = Column(Integer, primary_key=True)
+    strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
+    min_spread = Column(Numeric(18, 8), nullable=False)
+    threshold = Column(Numeric(18, 8), nullable=False)
+    max_slippage = Column(Numeric(18, 8))
+    min_volume = Column(Numeric(18, 8))
+    max_execution_time_ms = Column(Integer)
+    additional_parameters = Column(String)  # JSON stored as string
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    strategy = relationship("StrategyDB", back_populates="parameters")
+
+
+class StrategyTypeParametersDB(Base):
+    """Database model for strategy type parameters."""
+
+    __tablename__ = "strategy_type_parameters"
+
+    id = Column(Integer, primary_key=True)
+    strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
+    target_volume = Column(Numeric(18, 8), nullable=True)
+    min_depth = Column(Integer, nullable=True)
+    min_depth_percentage = Column(Numeric(5, 2), nullable=True)
+    parameters = Column(String, nullable=True)  # JSON stored as string
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    strategy = relationship("StrategyDB", back_populates="type_parameters")
+
+
+class ExecutionStrategyDB(Base):
+    """Database model for execution strategies."""
+
+    __tablename__ = "execution_strategies"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(String, nullable=True)
+    timeout = Column(Integer, nullable=False)
+    retry_attempts = Column(Integer, nullable=False, default=2)
+    parameters = Column(String, nullable=True)  # JSON stored as string
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class StrategyExecutionMappingDB(Base):
+    """Database model for strategy-execution mappings."""
+
+    __tablename__ = "strategy_execution_mapping"
+
+    id = Column(Integer, primary_key=True)
+    strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
+    execution_strategy_id = Column(Integer, ForeignKey("execution_strategies.id"), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    priority = Column(Integer, nullable=False, default=100)
+    created_at = Column(DateTime, default=func.now())
+
+    strategy = relationship("StrategyDB")
+    execution_strategy = relationship("ExecutionStrategyDB")
+
+
+class StrategyExchangePairMappingDB(Base):
+    """Database model for strategy-exchange-pair mappings."""
+
+    __tablename__ = "strategy_exchange_pair_mappings"
+
+    id = Column(Integer, primary_key=True)
+    strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
+    exchange_id = Column(Integer, ForeignKey("exchanges.id"), nullable=False)
+    trading_pair_id = Column(Integer, ForeignKey("trading_pairs.id"), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    strategy = relationship("StrategyDB")
+    exchange = relationship("ExchangeDB")
+    trading_pair = relationship("TradingPairDB")

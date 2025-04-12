@@ -8,8 +8,10 @@ import redis
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from fastapi.responses import JSONResponse
 
-from arbirich.core.trading.trading_service import get_trading_service
 from src.arbirich.config.config import get_all_strategy_names, get_strategy_config
+from src.arbirich.core.config.model_registry import ConfigModelRegistry
+from src.arbirich.core.config.validator import BasicStrategyConfig
+from src.arbirich.core.trading.trading_service import get_trading_service
 from src.arbirich.models.models import Strategy
 from src.arbirich.models.router_models import (
     ChartData,
@@ -38,7 +40,7 @@ trading_router = APIRouter(prefix="/trading", tags=["trading"])
 strategies_router = APIRouter(prefix="/strategies", tags=["strategies"])
 dashboard_router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 market_router = APIRouter(prefix="/market", tags=["market"])
-pairs_router = APIRouter(prefix="/pairs", tags=["pairs"])
+trading_pairs_router = APIRouter(prefix="/trading-pairs", tags=["trading-pairs"])
 exchanges_router = APIRouter(prefix="/exchanges", tags=["exchanges"])
 monitor_api_router = APIRouter(prefix="/monitor", tags=["monitor"])
 
@@ -87,20 +89,31 @@ async def get_status():
         trading_service = get_trading_service()
         trading_status = await trading_service.get_status()
 
-        # Count active strategies
-        active_strategies = sum(
-            1
-            for strategy_status in trading_status.get("strategies", {}).values()
-            if strategy_status.get("active", False)
-        )
+        # Count active strategies and collect their names
+        active_strategy_names = []
+        for strategy_name, strategy_status in trading_status.get("strategies", {}).items():
+            if strategy_status.get("active", False):
+                active_strategy_names.append(strategy_name)
 
         # Get component statuses
         components = {
             "reporting": "active" if trading_status.get("reporting", False) else "inactive",
             "ingestion": "active" if trading_status.get("ingestion", False) else "inactive",
-            "arbitrage": "active" if trading_status.get("arbitrage", False) else "inactive",
+            "detection": "active" if trading_status.get("detection", False) else "inactive",
             "execution": "active" if trading_status.get("execution", False) else "inactive",
         }
+
+        # Get active pairs and exchanges (if available in trading status)
+        active_pairs = trading_status.get("active_pairs", [])
+        active_exchanges = trading_status.get("active_exchanges", [])
+
+        # Get trading timing information (if available)
+        trading_start_time = trading_status.get("start_time")
+        trading_stop_time = trading_status.get("stop_time")
+        trading_stop_reason = trading_status.get("stop_reason")
+        trading_stop_emergency = (
+            trading_status.get("emergency_stop", False) if trading_status.get("stop_time") else None
+        )
 
         # Include process information for each component
         processes = []
@@ -144,6 +157,14 @@ async def get_status():
             "environment": os.getenv("ENV", "development"),
             "components": components,
             "processes": processes,  # Include processes information
+            "active_strategies": active_strategy_names,
+            "active_pairs": active_pairs,
+            "active_exchanges": active_exchanges,
+            "active_trading": trading_status.get("overall", False),
+            "trading_start_time": trading_start_time,
+            "trading_stop_time": trading_stop_time,
+            "trading_stop_reason": trading_stop_reason,
+            "trading_stop_emergency": trading_stop_emergency,
         }
     except Exception as e:
         logger.error(f"Error getting status: {e}")
@@ -154,6 +175,14 @@ async def get_status():
             "environment": os.getenv("ENV", "development"),
             "components": {"error": str(e)},
             "processes": [],  # Empty processes list on error
+            "active_strategies": [],
+            "active_pairs": [],
+            "active_exchanges": [],
+            "active_trading": False,
+            "trading_start_time": None,
+            "trading_stop_time": None,
+            "trading_stop_reason": "error",
+            "trading_stop_emergency": None,
         }
 
 
@@ -254,8 +283,8 @@ async def stop_trading(request: Request, stop_request: TradingStopRequest = None
 
     try:
         # Stop all components
-        from arbirich.core.state.system_state import mark_system_shutdown
-        from src.arbirich.flows.ingestion.ingestion_source import disable_processor_startup
+        from src.arbirich.core.state.system_state import mark_system_shutdown
+        from src.arbirich.core.trading.bytewax_flows.ingestion.ingestion_source import disable_processor_startup
         from src.arbirich.services.exchange_processors.registry import set_processors_shutting_down
 
         # Set shutdown flags
@@ -276,7 +305,7 @@ async def stop_trading(request: Request, stop_request: TradingStopRequest = None
             success=True,
             components={
                 "ingestion": "inactive",
-                "arbitrage": "inactive",
+                "detection": "inactive",
                 "execution": "inactive",
                 "reporting": "inactive",
             },
@@ -302,6 +331,32 @@ async def restart_trading():
     except Exception as e:
         logger.error(f"Error restarting trading components: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to restart trading components: {str(e)}")
+
+
+@trading_router.post("/configure/{component_name}")
+async def configure_component(
+    component_name: str,
+    config: Dict[str, Any],
+):
+    """Update configuration for a specific component with validation."""
+    try:
+        # Validate the configuration
+        errors = ConfigModelRegistry.validate_component_config(component_name, config)
+        if errors:
+            return JSONResponse(status_code=400, content={"status": "error", "errors": errors})
+
+        # Get the trading service
+        trading_service = get_trading_service()
+
+        # Set the new configuration (assuming trading_service has a method to do this)
+        if hasattr(trading_service, "set_component_config"):
+            await trading_service.set_component_config(component_name, config)
+            return {"status": "success", "message": f"Configuration updated for {component_name}"}
+        else:
+            raise HTTPException(status_code=501, detail="Configuration update not implemented")
+    except Exception as e:
+        logger.error(f"Error configuring component {component_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to configure component: {str(e)}")
 
 
 # -------------------- STRATEGY ENDPOINTS --------------------
@@ -382,6 +437,40 @@ async def get_strategy(
     except Exception as e:
         logger.error(f"Error fetching strategy '{strategy_name}': {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve strategy")
+
+
+@strategies_router.post("/", response_model=Strategy)
+async def create_strategy(
+    strategy: BasicStrategyConfig,
+    db_gen: DatabaseService = Depends(get_db),
+):
+    """Create a new strategy with validated configuration."""
+    try:
+        # Extract the database service from the generator
+        db = next(db_gen)
+
+        # Ensure the strategy doesn't already exist
+        existing = db.get_strategy_by_name(strategy.name)
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Strategy '{strategy.name}' already exists")
+
+        # Convert to Strategy model
+        db_strategy = Strategy(
+            name=strategy.name,
+            starting_capital=float(strategy.get("starting_capital", 1000.0)),
+            min_spread=float(strategy.threshold),  # Use the threshold from Pydantic model
+            additional_info=strategy.model_dump(exclude={"name", "threshold"}),
+            is_active=False,  # New strategies are inactive by default
+        )
+
+        # Create the strategy in the database
+        created_strategy = db.create_strategy(db_strategy)
+        return created_strategy
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating strategy: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create strategy")
 
 
 @strategies_router.post("/{strategy_name}/start", response_model=TradingStatusResponse)
@@ -563,7 +652,7 @@ async def get_strategy_metrics_api(
     """API endpoint to get metrics for a strategy in JSON format."""
     try:
         # Use the shared helper function
-        from src.arbirich.utils.metrics_helper import calculate_period_dates, format_metrics_for_api
+        from arbirich.services.metrics.metrics_helper import calculate_period_dates, format_metrics_for_api
 
         # Get time period
         start_date, end_date, _ = calculate_period_dates(period)
@@ -857,11 +946,11 @@ async def get_metrics(
     return metrics
 
 
-# -------------------- PAIRS ENDPOINTS --------------------
+# -------------------- TRADING PAIRS ENDPOINTS --------------------
 
 
-@pairs_router.get("/", response_model=List[Dict[str, Any]])
-async def get_pairs(db_gen: DatabaseService = Depends(get_db)):
+@trading_pairs_router.get("/", response_model=List[Dict[str, Any]])
+async def get_trading_pairs(db_gen: DatabaseService = Depends(get_db)):
     """Get all trading pairs."""
     try:
         # Extract the database service from the generator
@@ -874,8 +963,8 @@ async def get_pairs(db_gen: DatabaseService = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to retrieve pairs")
 
 
-@pairs_router.get("/{symbol}", response_model=Dict[str, Any])
-async def get_pair(symbol: str, db_gen: DatabaseService = Depends(get_db)):
+@trading_pairs_router.get("/{symbol}", response_model=Dict[str, Any])
+async def get_trading_pair(symbol: str, db_gen: DatabaseService = Depends(get_db)):
     """Get details of a specific trading pair."""
     try:
         # Extract the database service from the generator
@@ -1006,7 +1095,7 @@ main_router.include_router(trading_router)
 main_router.include_router(strategies_router)
 main_router.include_router(dashboard_router)
 main_router.include_router(market_router)
-main_router.include_router(pairs_router)
+main_router.include_router(trading_pairs_router)
 main_router.include_router(exchanges_router)
 main_router.include_router(monitor_api_router)
 main_router.include_router(strategy_router)

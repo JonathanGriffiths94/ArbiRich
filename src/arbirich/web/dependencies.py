@@ -1,8 +1,8 @@
 import logging
 from typing import Generator
 
-from arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.services.database.database_service import DatabaseService
+from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 
 logger = logging.getLogger(__name__)
 

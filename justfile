@@ -100,6 +100,8 @@ docker-db-reset:
     # Now that PostgreSQL is ready, reset the database
     # First check if container is running and get correct container ID/name
     docker ps | grep postgres-arbirich || echo "Container not running!"
+    # Terminate any existing connections
+    docker exec $(docker ps -q -f name=postgres-arbirich) sh -c 'for DB in postgres arbiuser template1; do echo "Trying $DB"; if psql -U arbiuser -d $DB -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='"'"'arbirich_db'"'"' AND pid <> pg_backend_pid();" >/dev/null 2>&1; then break; fi; done'
     # Find which database we can connect to and use it to recreate the target database
     docker exec $(docker ps -q -f name=postgres-arbirich) sh -c 'for DB in postgres arbiuser template1; do echo "Trying $DB"; if psql -U arbiuser -d $DB -c "SELECT 1" >/dev/null 2>&1; then echo "Using $DB"; PGDATABASE=$DB; break; fi; done; echo "Dropping database if exists"; psql -U arbiuser -d $PGDATABASE -c "DROP DATABASE IF EXISTS arbirich_db;"; echo "Creating database"; psql -U arbiuser -d $PGDATABASE -c "CREATE DATABASE arbirich_db WITH OWNER arbiuser;"'
     # Run migrations
@@ -152,6 +154,8 @@ clean: clean-cache clean-venv
 
 # Reset the local database and rerun migrations
 reset-db:
+    @echo "Terminating connections to database..."
+    psql -U {{ dev_user }} -d postgres -c "SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '{{ dev_db }}' AND pid <> pg_backend_pid();"
     chmod +x ./scripts/reset_local_db.sh
     ./scripts/reset_local_db.sh
 
