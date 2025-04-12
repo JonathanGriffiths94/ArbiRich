@@ -61,32 +61,107 @@ async def get_strategies(request: Request, db_gen: DatabaseService = Depends(get
 
 
 @router.get("/strategy/{strategy_name}", response_class=HTMLResponse)
-async def get_strategy_detail(request: Request, strategy_name: str, db_gen: DatabaseService = Depends(get_db_service)):
-    """Get detailed view for a specific strategy."""
+async def get_strategy(
+    request: Request,
+    strategy_name: str,
+    action: Optional[str] = None,
+    period: Optional[int] = None,
+    db: DatabaseService = Depends(get_db_service),
+):
+    """Display a strategy details page."""
     try:
-        # Extract the database service from the generator
-        db = next(db_gen)
-
+        # Get the strategy
         strategy = db.get_strategy_by_name(strategy_name)
         if not strategy:
             return templates.TemplateResponse(
-                "errors/404.html", {"request": request, "message": f"Strategy '{strategy_name}' not found"}
+                "errors/error.html",
+                {"request": request, "error_message": f"Strategy '{strategy_name}' not found"},
             )
 
-        # Get executions for this strategy
-        executions = db.get_executions_by_strategy(strategy_name)
+        # Handle recalculation action if requested
+        if action == "calculate":
+            days = period or 30  # Default to 30 days if not specified
+            await recalculate_metrics(strategy.id, days, db)
+            return RedirectResponse(f"/strategy/{strategy_name}", status_code=303)
 
-        # Sort executions by timestamp (newest first)
-        executions = sorted(executions, key=lambda x: x.execution_timestamp, reverse=True)
+        # Get latest metrics for the strategy
+        metrics = db.get_latest_strategy_metrics(strategy.id)
+
+        # Get exchange-pair mappings for this strategy
+        exchange_pair_mappings = []
+        try:
+            # If we have additional_info with exchanges and pairs
+            if hasattr(strategy, "additional_info") and strategy.additional_info:
+                # Extract exchange and pair info
+                if isinstance(strategy.additional_info, dict):
+                    exchanges = strategy.additional_info.get("exchanges", [])
+                    pairs = strategy.additional_info.get("pairs", [])
+
+                    # Create mappings
+                    if exchanges and pairs:
+                        for exchange in exchanges:
+                            for pair in pairs:
+                                # Format pair if needed
+                                if isinstance(pair, (list, tuple)):
+                                    pair_symbol = "-".join(pair)
+                                else:
+                                    pair_symbol = pair
+
+                                exchange_pair_mappings.append(
+                                    {
+                                        "exchange_name": exchange,
+                                        "pair_symbol": pair_symbol,
+                                        "is_active": True,  # Assume active if in the strategy config
+                                    }
+                                )
+        except Exception as e:
+            logger.error(f"Error getting exchange-pair mappings: {e}")
+
+        # Attach to strategy object
+        strategy.exchange_pair_mappings = exchange_pair_mappings
 
         return templates.TemplateResponse(
-            "pages/strategy_detail.html", {"request": request, "strategy": strategy, "executions": executions}
+            "pages/strategy.html",
+            {
+                "request": request,
+                "strategy": strategy,
+                "metrics": metrics,
+                "page_title": f"{strategy.name} Strategy",
+            },
         )
     except Exception as e:
-        logger.error(f"Error getting strategy detail: {e}")
+        logger.error(f"Error in strategy page: {e}", exc_info=True)
         return templates.TemplateResponse(
             "errors/error.html", {"request": request, "error_message": f"Error loading strategy: {str(e)}"}
         )
+
+
+async def recalculate_metrics(strategy_id: int, days: int, db: DatabaseService):
+    """Recalculate metrics for a strategy."""
+    try:
+        from datetime import datetime, timedelta
+
+        from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
+
+        # Create metrics service
+        metrics_service = StrategyMetricsService(db_service=db)
+
+        # Calculate time period
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # Calculate metrics
+        metrics = metrics_service.calculate_strategy_metrics(
+            session=db.session,
+            strategy_id=strategy_id,
+            period_start=start_date,
+            period_end=end_date,
+        )
+
+        return metrics
+    except Exception as e:
+        logger.error(f"Error recalculating metrics: {e}")
+        return None
 
 
 @router.get("/strategy/{strategy_name}/metrics", response_class=HTMLResponse)
@@ -268,7 +343,7 @@ async def trigger_metrics_calculation(
                 },
             )
     except Exception as e:
-        logger.error(f"Error calculating metrics: {e}", exc_info=True)
+        logger.error(f"Error calculating metrics: {e}")
         return templates.TemplateResponse(
             "errors/error.html", {"request": request, "error_message": f"Error calculating metrics: {str(e)}"}
         )

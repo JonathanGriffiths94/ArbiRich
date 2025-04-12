@@ -7,12 +7,66 @@ from threading import Lock
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
 from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified, set_stop_event
-from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# Add this shared client variable at module level
+_shared_redis_client = None
+
+
+def reset_shared_redis_client() -> bool:
+    """
+    Reset the shared Redis client for execution flows.
+
+    Returns:
+        bool: True if reset was successful, False otherwise
+    """
+    global _shared_redis_client
+
+    try:
+        logger.info("Resetting shared Redis client for execution flows")
+
+        # Close existing pubsub if any instances exist
+        for partition in RedisExecutionSource.__dict__.get("_partitions", {}).values():
+            if hasattr(partition, "pubsub") and partition.pubsub:
+                try:
+                    partition.pubsub.unsubscribe()
+                    partition.pubsub.close()
+                    logger.info("Closed execution partition pubsub")
+                except Exception as e:
+                    logger.warning(f"Error closing execution partition pubsub: {e}")
+
+        # Reset the shared client
+        if _shared_redis_client is not None:
+            try:
+                _shared_redis_client.close()
+                logger.info("Closed execution shared Redis client")
+            except Exception as e:
+                logger.warning(f"Error closing execution shared Redis client: {e}")
+
+            _shared_redis_client = None
+
+        # Reset any Redis clients in existing partitions
+        reset_count = 0
+        for partition in RedisExecutionSource.__dict__.get("_partitions", {}).values():
+            if hasattr(partition, "redis_client"):
+                try:
+                    if partition.redis_client:
+                        partition.redis_client = None
+                        reset_count += 1
+                except Exception as e:
+                    logger.warning(f"Error resetting partition Redis client: {e}")
+
+        if reset_count > 0:
+            logger.info(f"Reset {reset_count} Redis clients in execution partitions")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error in reset_shared_redis_client for execution: {e}")
+        return False
 
 
 class RedisExecutionPartition(StatefulSourcePartition):
@@ -40,12 +94,15 @@ class RedisExecutionPartition(StatefulSourcePartition):
         self.channels_to_check = []
 
         if strategy_name:
-            # If strategy is specified, only check that strategy's channel
+            # If strategy is specified, always check both the strategy-specific and main channels
             strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
             self.channels_to_check.append(strategy_channel)
-            logger.info(f"Will check strategy-specific channel: {strategy_channel}")
+            self.channels_to_check.append(TRADE_OPPORTUNITIES_CHANNEL)  # Also listen to main channel
+            logger.info(f"Will check strategy-specific channel: {strategy_channel} and main channel")
         else:
-            # Otherwise check all strategy channels
+            # Otherwise check all strategy channels from STRATEGIES config
+            from src.arbirich.config.config import STRATEGIES
+
             for strategy in STRATEGIES.keys():
                 strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy}"
                 self.channels_to_check.append(strategy_channel)

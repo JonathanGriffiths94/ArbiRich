@@ -73,6 +73,7 @@ def get_services() -> Tuple[DatabaseService, RedisService]:
 
         if redis_service:
             try:
+                # Use synchronous close method for cleanup in this context
                 redis_service.close()
             except Exception as e:
                 logger.error(f"Error closing Redis service: {e}")
@@ -496,8 +497,11 @@ async def start_strategy(strategy_name: str, services: Tuple[DatabaseService, Re
             1,  # 1 = active
         )
 
+        # Ensure data is a dictionary even if result is a boolean
+        result_data = {"success": result} if isinstance(result, bool) else result
+
         return TradingStatusResponse(
-            success=True, message=f"Strategy '{strategy_name}' started successfully", data=result
+            success=True, message=f"Strategy '{strategy_name}' started successfully", data=result_data
         )
     except HTTPException:
         raise  # Re-raise HTTP exceptions

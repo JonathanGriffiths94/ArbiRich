@@ -1,5 +1,3 @@
-# reporting/message_processor.py
-
 import asyncio
 import json
 import logging
@@ -14,6 +12,19 @@ from src.arbirich.services.database.database_service import DatabaseService
 from .db_functions import check_opportunity_exists
 
 logger = logging.getLogger(__name__)
+
+
+# Add a function that dynamically imports and forwards to process_redis_messages
+async def process_redis_messages(pubsub, redis_client, active, stop_event, debug_mode=False):
+    """
+    Forward to the process_redis_messages function in tasks.py.
+    This avoids circular imports by dynamically importing at runtime.
+    """
+    # Dynamically import the function from tasks when needed
+    from src.arbirich.core.trading.flows.reporting.tasks import process_redis_messages as _process_redis_messages
+
+    # Forward the call
+    return await _process_redis_messages(pubsub, redis_client, active, stop_event, debug_mode)
 
 
 async def process_message(channel: str, data: Any) -> Dict[str, Any]:

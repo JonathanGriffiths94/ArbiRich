@@ -1,7 +1,7 @@
 # Redis channel names
 TRADE_OPPORTUNITIES_CHANNEL = "trade_opportunities"
 TRADE_EXECUTIONS_CHANNEL = "trade_executions"
-ORDER_BOOK_CHANNEL = "order_book"
+ORDER_BOOK_CHANNEL = "order_books"
 
 # Database table names
 EXCHANGES_TABLE = "exchanges"

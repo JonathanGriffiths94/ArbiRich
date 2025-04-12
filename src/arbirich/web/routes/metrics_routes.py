@@ -122,6 +122,112 @@ async def get_strategy_metrics(
         )
 
 
+@router.get("/strategy/{strategy_name}/metrics", response_class=HTMLResponse)
+async def get_strategy_metrics_page(
+    request: Request,
+    strategy_name: str,
+    period: str = Query("7d", description="Time period for metrics (1d, 7d, 30d, 90d, all)"),
+    db: DatabaseService = Depends(get_db_service),
+    metrics_service: StrategyMetricsService = Depends(get_metrics_service),
+):
+    """Display detailed metrics for a specific strategy."""
+    try:
+        # Get the strategy by name
+        strategy = db.get_strategy_by_name(strategy_name)
+        if not strategy:
+            return templates.TemplateResponse(
+                "errors/error.html",
+                {"request": request, "error_message": f"Strategy with name {strategy_name} not found"},
+            )
+
+        # Get time period
+        start_date, end_date, period_name = calculate_period_dates(period)
+
+        # Get metrics for the period
+        metrics = metrics_service.get_metrics_for_period(strategy.id, start_date, end_date)
+
+        # Get latest metrics
+        latest_metrics = db.get_latest_strategy_metrics(strategy.id)
+
+        # Get executions for this strategy
+        executions = db.get_executions_by_strategy(strategy.name)
+
+        # Sort by timestamp (newest first)
+        recent_executions = sorted(
+            executions,
+            key=lambda e: (
+                e.execution_timestamp
+                if isinstance(e.execution_timestamp, (int, float))
+                else datetime.timestamp(e.execution_timestamp)
+            ),
+            reverse=True,
+        )[:10]  # Get only the 10 most recent
+
+        # Get metrics by trading pair
+        pair_metrics = []
+        if latest_metrics and hasattr(latest_metrics, "id"):
+            try:
+                # Use keyword arguments for repository initialization
+                pair_metrics_data = db.strategy_pair_metrics_repo.get_by_metrics_id(latest_metrics.id)
+                for pm in pair_metrics_data:
+                    # Get trading pair info
+                    trading_pair = db.get_pair_by_id(pm.trading_pair_id)
+                    if trading_pair:
+                        pair_metrics.append(
+                            {
+                                "trading_pair": trading_pair.symbol,
+                                "total_profit": pm.net_profit,
+                                "success_rate": pm.win_rate / 100,  # Convert from percentage to decimal
+                                "average_profit": pm.net_profit / pm.trade_count if pm.trade_count > 0 else 0,
+                                "execution_count": pm.trade_count,
+                            }
+                        )
+            except Exception as e:
+                logger.error(f"Error fetching pair metrics: {e}")
+
+        # Get metrics by exchange
+        exchange_metrics = []
+        if latest_metrics and hasattr(latest_metrics, "id"):
+            try:
+                # Use keyword arguments for repository initialization
+                exchange_metrics_data = db.strategy_exchange_metrics_repo.get_by_metrics_id(latest_metrics.id)
+                for em in exchange_metrics_data:
+                    # Get exchange info
+                    exchange = db.get_exchange_by_id(em.exchange_id)
+                    if exchange:
+                        exchange_metrics.append(
+                            {
+                                "exchange_name": exchange.name,
+                                "total_profit": em.net_profit,
+                                "success_rate": em.win_rate / 100,  # Convert from percentage to decimal
+                                "average_profit": em.net_profit / em.trade_count if em.trade_count > 0 else 0,
+                                "execution_count": em.trade_count,
+                            }
+                        )
+            except Exception as e:
+                logger.error(f"Error fetching exchange metrics: {e}")
+
+        return templates.TemplateResponse(
+            "pages/strategy_metrics.html",
+            {
+                "request": request,
+                "strategy": strategy,
+                "metrics": latest_metrics,
+                "metrics_history": metrics,
+                "period": period,
+                "period_name": period_name,
+                "executions": recent_executions,
+                "pair_metrics": pair_metrics,
+                "exchange_metrics": exchange_metrics,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error in strategy metrics: {e}", exc_info=True)
+        return templates.TemplateResponse(
+            "errors/error.html", {"request": request, "error_message": f"Error loading strategy metrics: {str(e)}"}
+        )
+
+
 @router.get("/api/metrics/{strategy_id}")
 async def get_strategy_metrics_api(
     strategy_id: int,

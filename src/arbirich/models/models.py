@@ -112,7 +112,7 @@ class StrategyParameters(BaseModel):
 # Strategy Type Parameters model to match strategy_type_parameters table
 class StrategyTypeParameters(BaseModel):
     id: Optional[int] = None
-    strategy_id: int
+    strategy_id: Optional[int] = None  # Changed from required to optional
     target_volume: Optional[float] = None
     min_depth: Optional[int] = None
     min_depth_percentage: Optional[float] = None

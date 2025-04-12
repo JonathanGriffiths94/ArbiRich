@@ -187,6 +187,14 @@
 
         // Attach event handlers - using the same API endpoints as in base.html
         startTradingBtn.addEventListener('click', function () {
+            // Disable button immediately to prevent multiple clicks
+            startTradingBtn.disabled = true;
+            startTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            
+            // Add loading indicator
+            const originalText = startTradingBtn.innerHTML;
+            startTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Starting...';
+            
             fetch('/api/trading/start', {
                 method: 'POST',
                 headers: {
@@ -201,11 +209,24 @@
                 .catch(error => {
                     console.error('Error starting trading:', error);
                     showNotification('Failed to start trading', 'error');
+                    
+                    // Re-enable button on error
+                    startTradingBtn.disabled = false;
+                    startTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    startTradingBtn.innerHTML = originalText;
                 });
         });
 
         stopTradingBtn.addEventListener('click', function () {
             if (confirm('Are you sure you want to stop all trading activities?')) {
+                // Disable button immediately to prevent multiple clicks
+                stopTradingBtn.disabled = true;
+                stopTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                
+                // Add loading indicator
+                const originalText = stopTradingBtn.innerHTML;
+                stopTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Stopping...';
+                
                 fetch('/api/trading/stop', {
                     method: 'POST',
                     headers: {
@@ -220,6 +241,11 @@
                     .catch(error => {
                         console.error('Error stopping trading:', error);
                         showNotification('Failed to stop trading', 'error');
+                        
+                        // Re-enable button on error
+                        stopTradingBtn.disabled = false;
+                        stopTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        stopTradingBtn.innerHTML = originalText;
                     });
             }
         });

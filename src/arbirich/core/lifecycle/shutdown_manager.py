@@ -10,7 +10,7 @@ from enum import Enum
 
 import psutil
 
-from arbirich.core.state.system_state import mark_system_shutdown
+from src.arbirich.core.state.system_state import mark_system_shutdown
 
 logger = logging.getLogger(__name__)
 
@@ -249,8 +249,8 @@ async def execute_phased_shutdown(emergency_timeout=30):
         # NEW PHASE: First Stop Reporting Flow - this is critical to prevent hanging
         logger.info("PHASE 1.5: Stopping reporting flow early")
         try:
-            from src.arbirich.flows.common.flow_manager import BytewaxFlowManager
-            from src.arbirich.flows.reporting.reporting_flow import stop_reporting_flow
+            from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
+            from src.arbirich.core.trading.flows.reporting.reporting_flow import stop_reporting_flow
 
             # Try to get the reporting flow manager
             reporting_manager = BytewaxFlowManager.get_manager("reporting")
@@ -271,7 +271,10 @@ async def execute_phased_shutdown(emergency_timeout=30):
         # Phase 2: Stop WebSocket consumers
         logger.info("PHASE 2: Stopping WebSocket consumers")
         try:
-            from src.arbirich.flows.ingestion.ingestion_source import disable_processor_startup, stop_all_consumers
+            from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import (
+                disable_processor_startup,
+                stop_all_consumers,
+            )
 
             disable_processor_startup()
             await asyncio.wait_for(asyncio.shield(asyncio.to_thread(stop_all_consumers)), timeout=3)
@@ -298,13 +301,13 @@ async def execute_phased_shutdown(emergency_timeout=30):
         # Phase 5: Clean up Redis
         logger.info("PHASE 5: Cleaning up Redis connections")
         try:
-            from src.arbirich.core.trading.bytewax_flows.detection.detection_source import (
+            from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import (
                 reset_shared_redis_client as reset_arbitrage_redis,
             )
-            from src.arbirich.core.trading.bytewax_flows.execution.execution_source import (
+            from src.arbirich.core.trading.flows.bytewax_flows.execution.execution_source import (
                 reset_shared_redis_client as reset_execution_redis,
             )
-            from src.arbirich.core.trading.bytewax_flows.ingestion.ingestion_sink import (
+            from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_sink import (
                 reset_shared_redis_client as reset_ingestion_redis,
             )
             from src.arbirich.core.trading.flows.reporting import reset_shared_redis_client as reset_reporting_redis
@@ -325,39 +328,6 @@ async def execute_phased_shutdown(emergency_timeout=30):
         except (asyncio.TimeoutError, Exception) as e:
             logger.warning(f"Redis cleanup timed out or failed: {e}")
         mark_phase_complete(ShutdownPhase.REDIS_CLEANUP)
-
-        # Phase 5.5: Explicitly stop reporting flow
-        logger.info("PHASE 5.5: Explicitly stopping reporting flow")
-        try:
-            # Try to get and stop the reporting flow if available
-            try:
-                from src.arbirich.flows.reporting.reporting_flow import get_active_flow, stop_reporting_flow
-
-                flow = get_active_flow()
-                if flow:
-                    await asyncio.wait_for(asyncio.to_thread(stop_reporting_flow), timeout=2)
-                    logger.info("Reporting flow explicitly stopped")
-                else:
-                    logger.info("No active reporting flow found to stop")
-            except (ImportError, AttributeError) as e:
-                logger.warning(f"Could not access reporting flow stop function: {e}")
-
-            # Close reporting Redis clients
-            try:
-                from src.arbirich.flows.reporting.reporting_source import reset_shared_redis_client
-
-                reset_shared_redis_client()  # This call was already in Phase 5
-
-                # Add explicit stop for reporting partitions if possible
-                from src.arbirich.flows.reporting.reporting_source import terminate_all_partitions
-
-                terminate_all_partitions()
-                logger.info("Reporting partitions explicitly terminated")
-            except (ImportError, AttributeError) as e:
-                logger.warning(f"Could not terminate reporting partitions: {e}")
-
-        except (asyncio.TimeoutError, Exception) as e:
-            logger.warning(f"Reporting flow shutdown timed out or failed: {e}")
 
         # Phase 6: Clean up database connections
         logger.info("PHASE 6: Cleaning up database connections")

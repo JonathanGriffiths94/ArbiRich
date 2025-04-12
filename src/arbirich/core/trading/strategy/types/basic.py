@@ -16,10 +16,34 @@ class BasicArbitrage(ArbitrageType):
     Basic arbitrage strategy that looks for simple price differences between exchanges.
     """
 
-    def __init__(self, config: Dict):
-        super().__init__(config)
-        self.threshold = config.get("threshold", 0.001)  # Default 0.1%
-        self.name = config.get("name", "basic_arbitrage")
+    def __init__(self, strategy_id=None, strategy_name=None, config=None):
+        """
+        Initialize the basic arbitrage strategy.
+
+        Args:
+            strategy_id: Unique identifier for this strategy instance
+            strategy_name: Human-readable name of the strategy
+            config: Configuration dictionary
+        """
+        # Handle both constructor styles for backward compatibility
+        if strategy_name is not None and config is not None:
+            # New style constructor with separate parameters
+            self.id = strategy_id
+            self.name = strategy_name
+            super().__init__(config)
+        else:
+            # Old style constructor where first param is name or config
+            if isinstance(strategy_id, dict):
+                config = strategy_id
+                self.name = config.get("name", "basic_arbitrage")
+                self.id = str(self.name)
+                super().__init__(config)
+            else:
+                self.name = strategy_id or "basic_arbitrage"
+                self.id = str(self.name)
+                super().__init__(config or {})
+
+        self.threshold = self.config.get("threshold", 0.001)  # Default 0.1%
 
     def detect_opportunities(self, state: OrderBookState) -> Dict[str, TradeOpportunity]:
         """

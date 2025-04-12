@@ -5,6 +5,7 @@ from typing import Any, Dict
 from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.core.trading.components.base import Component
+from src.arbirich.core.trading.flows.flow_manager import FlowManager
 from src.arbirich.core.trading.flows.reporting.message_processor import process_message, process_redis_messages
 from src.arbirich.core.trading.flows.reporting.tasks import monitor_health, persist_data, report_performance
 from src.arbirich.services.redis.redis_service import initialize_redis, reset_redis_connection
@@ -35,14 +36,13 @@ class ReportingComponent(Component):
             ]
 
             # Initialize the reporting flow using the imported module
-            from src.arbirich.core.trading.flows.reporting.reporting_flow import build_reporting_flow, flow_manager
+            from src.arbirich.core.trading.flows.reporting.reporting_flow import build_reporting_flow
 
-            # Connect our component to the flow manager
-            self.flow_manager = flow_manager
+            # Create a flow manager for reporting
+            self.flow_manager = FlowManager.get_or_create(f"reporting_flow_{self.name}")
 
-            # Make sure the flow builder is properly set
-            # The build_reporting_flow in flows/reporting/reporting_flow.py now expects a flow_type parameter
-            self.flow_manager.build_flow = lambda: build_reporting_flow(flow_type="performance")
+            # Configure the flow builder
+            self.flow_manager.set_flow_builder(lambda: build_reporting_flow(flow_type="performance"))
 
             # Create flow configuration
             self.flow_config = {

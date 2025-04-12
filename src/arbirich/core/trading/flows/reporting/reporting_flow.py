@@ -230,6 +230,40 @@ class ReportingFlow:
         return True
 
 
+def build_reporting_flow(flow_type: str = "performance", config: Optional[Dict[str, Any]] = None) -> dict:
+    """
+    Build a reporting flow configuration based on the specified type.
+
+    Args:
+        flow_type: Type of reporting flow
+        config: Optional configuration dictionary
+
+    Returns:
+        A flow configuration dictionary
+    """
+    logger.info(f"Building reporting flow of type: {flow_type}")
+
+    # Create a new flow configuration
+    flow_config = {}
+
+    # Start with the main channels
+    channels = [
+        TRADE_OPPORTUNITIES_CHANNEL,
+        TRADE_EXECUTIONS_CHANNEL,
+    ]
+
+    # Add strategy-specific channels
+    for strategy_name in STRATEGIES.keys():
+        channels.append(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}")
+        channels.append(f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}")
+
+    # Build the flow configuration
+    flow = ReportingFlow(flow_type, config or {})
+
+    logger.info(f"Created reporting flow with {len(channels)} channels")
+    return flow
+
+
 # Singleton flow instance
 _reporting_flow = None
 

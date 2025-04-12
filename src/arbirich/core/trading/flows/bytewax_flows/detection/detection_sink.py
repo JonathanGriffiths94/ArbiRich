@@ -2,7 +2,6 @@ import logging
 import time
 from typing import Optional
 
-from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.models.models import TradeOpportunity
 
 logger = logging.getLogger(__name__)
@@ -74,51 +73,44 @@ def debounce_opportunity(redis_client, opportunity: TradeOpportunity, strategy_n
     return opportunity
 
 
-def publish_trade_opportunity(opportunity: TradeOpportunity, strategy_name=None) -> str:
+def publish_trade_opportunity(opportunity, strategy_name=None):
     """
-    Publish a trade opportunity directly to Redis.
+    Publish a trade opportunity to Redis.
 
-    Parameters:
-        opportunity: The opportunity to publish
-        strategy_name: Optional strategy name
+    Args:
+        opportunity: The trade opportunity to publish
+        strategy_name: Optional strategy name (will publish to strategy-specific channel)
+
+    Returns:
+        The opportunity if published successfully, None otherwise
     """
-    logger.debug(f"Publishing opportunity: {opportunity}")
-    logger.debug(f"Strategy name: {strategy_name}")
-    if not opportunity:
-        return "No opportunity to publish"
-
-    # If strategy_name is provided, update the opportunity's strategy
-    if strategy_name and opportunity.strategy != strategy_name:
-        opportunity.strategy = strategy_name
+    from src.arbirich.services.redis.redis_channel_manager import RedisChannelManager
+    from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
     try:
-        # Get Redis service
-        redis_service = get_redis_service()
+        # If no strategy_name was provided, use the one from the opportunity
+        if not strategy_name and hasattr(opportunity, "strategy"):
+            strategy_name = opportunity.strategy
 
-        # Channel is strategy-specific
-        channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{opportunity.strategy}"
+        # Make sure we have a strategy name that matches what's in the config
+        from src.arbirich.config.config import ALL_STRATEGIES
 
-        # Convert to JSON
-        opportunity_json = opportunity.model_dump_json()
+        if strategy_name and strategy_name not in ALL_STRATEGIES:
+            logger.warning(f"Publishing opportunity for unknown strategy: {strategy_name}")
 
-        # Debug what we're publishing
-        logger.info(
-            f"Publishing opportunity to channel {channel}: {opportunity.pair} with spread {opportunity.spread:.4%}"
-        )
+        # Use the channel manager to handle publication to multiple channels
+        redis_client = get_shared_redis_client()
+        channel_manager = RedisChannelManager(redis_client)
 
-        # Store in Redis with key
-        opportunity_key = f"trade_opportunity:{opportunity.strategy}:{opportunity.id}"
-        redis_service.client.setex(opportunity_key, 300, opportunity_json)
+        subscribers = channel_manager.publish_opportunity(opportunity)
 
-        # Publish to channel
-        result = redis_service.client.publish(channel, opportunity_json)
-
-        if result > 0:
-            logger.info(f"Published opportunity to {result} subscribers on {channel}")
-            return f"Published: {opportunity.id} to {result} subscribers"
+        if subscribers > 0:
+            logger.info(f"Published opportunity to {subscribers} subscribers")
+            return opportunity
         else:
-            logger.warning(f"Published opportunity to {channel} but no subscribers")
-            return f"Published (no subscribers): {opportunity.id}"
+            logger.warning("No subscribers found for opportunity")
+            return opportunity  # Still return the opportunity to continue the flow
+
     except Exception as e:
-        logger.error(f"Error publishing opportunity: {e}")
-        return f"Failed to publish: {opportunity.id}"
+        logger.error(f"Error publishing opportunity: {e}", exc_info=True)
+        return opportunity  # Still return the opportunity to continue the flow

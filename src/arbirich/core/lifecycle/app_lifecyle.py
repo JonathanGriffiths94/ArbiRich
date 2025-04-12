@@ -110,7 +110,9 @@ async def lifespan(app: FastAPI):
 
         # Disable processor startup to prevent new processors during shutdown
         try:
-            from src.arbirich.flows.ingestion.ingestion_source import disable_processor_startup
+            from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import (
+                disable_processor_startup,
+            )
 
             disable_processor_startup()
             logger.info("Processor startup disabled")

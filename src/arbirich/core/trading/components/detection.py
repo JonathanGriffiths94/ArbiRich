@@ -19,11 +19,14 @@ class DetectionComponent(Component):
         self.debug_mode = config.get("debug_mode", False)
         self.active_flows = {}
         self.strategies = {}
+        self.flow_manager = None  # Initialize flow_manager attribute
 
     async def initialize(self) -> bool:
         """Initialize detection component with database strategies."""
         try:
-            # Initialize database connection
+            # Updated import paths to reflect new structure
+            from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_flow import build_detection_flow
+            from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
             from src.arbirich.services.database.database_service import DatabaseService
 
             with DatabaseService() as db_service:
@@ -42,6 +45,22 @@ class DetectionComponent(Component):
                     strategy_name = strategy.name
 
                     self.logger.info(f"Initializing detection component for strategy: {strategy_name}")
+
+                    # Create a flow ID and manager for this strategy
+                    flow_id = f"detection_{strategy_name}"
+                    flow_manager = BytewaxFlowManager.get_or_create(flow_id)
+
+                    # Configure the flow builder - FIX: Use strategy_name parameter instead of strategy
+                    flow_manager.build_flow = lambda strat=strategy: build_detection_flow(
+                        strategy_name=strat.name, debug_mode=self.debug_mode
+                    )
+
+                    # Store the flow manager (use the first one if multiple strategies)
+                    if self.flow_manager is None:
+                        self.flow_manager = flow_manager
+
+                    # Add to active flows
+                    self.active_flows[flow_id] = {"strategy_id": strategy_id, "strategy_name": strategy_name}
 
                     # Add strategy to the tracked strategies
                     try:

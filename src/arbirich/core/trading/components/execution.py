@@ -18,10 +18,23 @@ class ExecutionComponent(Component):
         self.strategy_name = config.get("strategy_name", "default")
         self.active_flows = {}
 
+        # Ensure we have a valid strategy name that matches what's used in other components
+        if self.strategy_name == "default" and "strategy" in config:
+            self.strategy_name = config["strategy"]
+
+        # Important: Make sure we listen to the right channels
+        self.logger.info(f"Execution component initialized for strategy: {self.strategy_name}")
+
     async def initialize(self) -> bool:
         """Initialize execution flows"""
         try:
-            from src.arbirich.core.trading.bytewax_flows.common.flow_manager import BytewaxFlowManager
+            from src.arbirich.config.config import ALL_STRATEGIES
+            from src.arbirich.core.trading.flows.bytewax_flows.execution.execution_flow import build_execution_flow
+            from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
+
+            # Validate strategy name against known strategies
+            if self.strategy_name not in ALL_STRATEGIES and self.strategy_name != "default":
+                self.logger.warning(f"Unknown strategy name: {self.strategy_name}, using generic channel")
 
             # Create flow ID
             flow_id = f"execution_{self.strategy_name}"
@@ -30,16 +43,18 @@ class ExecutionComponent(Component):
             self.flow_manager = BytewaxFlowManager.get_or_create(flow_id)
 
             # Set up the flow building function
-            from src.arbirich.core.trading.bytewax_flows.execution.execution_flow import build_execution_flow
-
             # Configure the flow builder with our parameters
-            self.flow_manager.build_flow = lambda: build_execution_flow(strategy_name=self.strategy_name)
+            self.flow_manager.build_flow = lambda: build_execution_flow(
+                strategy_name=self.strategy_name, debug_mode=self.config.get("debug_mode", False)
+            )
 
             self.active_flows[flow_id] = {
                 "strategy_name": self.strategy_name,
+                "channels": [f"trade_opportunities:{self.strategy_name}", "trade_opportunities"],
             }
 
             self.logger.info(f"Initialized execution component for strategy: {self.strategy_name}")
+            self.logger.info(f"Listening on channels: {self.active_flows[flow_id]['channels']}")
             return True
 
         except Exception as e:

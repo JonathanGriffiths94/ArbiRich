@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-from typing import Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
@@ -56,6 +56,7 @@ class RedisChannelManager:
         """
         self.redis = redis_service or get_shared_redis_client()
         self._subscribed_channels: Set[str] = set()
+        self.logger = logging.getLogger(__name__)
 
     # ===== Channel Name Formatting =====
 
@@ -160,86 +161,103 @@ class RedisChannelManager:
             logger.error(f"Error publishing order book: {e}", exc_info=True)
             return 0
 
-    def publish_opportunity(self, opportunity: TradeOpportunity) -> int:
+    def publish_opportunity(self, opportunity: TradeOpportunity, strategy_name: Optional[str] = None) -> int:
         """
-        Publish a trade opportunity to appropriate channels
+        Publish an opportunity to appropriate Redis channels
 
         Args:
-            opportunity: TradeOpportunity object
+            opportunity: The opportunity to publish
+            strategy_name: Optional strategy name for strategy-specific channel
 
         Returns:
-            Total number of subscribers reached
+            Number of subscribers that received the message
         """
         try:
             # Convert to JSON
-            message_json = opportunity.model_dump_json()
-
-            # Determine channels to publish to
-            channels = [self.TRADE_OPPORTUNITIES]  # Always publish to main channel
-
-            # Add strategy-specific channel if available
-            if opportunity.strategy:
-                channels.append(f"{self.TRADE_OPPORTUNITIES}:{opportunity.strategy}")
-
-            # Publish to all channels
-            total_subscribers = 0
-            for channel in channels:
-                subscribers = self.redis.client.publish(channel, message_json)
-                total_subscribers += subscribers
-
-                if subscribers > 0:
-                    logger.debug(f"Published opportunity to {channel}: {subscribers} subscribers")
-
-            if total_subscribers > 0:
-                logger.debug(f"Opportunity {opportunity.id} published to {total_subscribers} subscribers")
+            if hasattr(opportunity, "model_dump"):
+                data = opportunity.model_dump()
+            elif hasattr(opportunity, "dict"):
+                data = opportunity.dict()
             else:
-                logger.warning(f"Opportunity {opportunity.id} published but no subscribers")
+                data = opportunity
 
+            json_data = json.dumps(data)
+
+            # First publish to main channel
+            main_subscribers = self.redis.client.publish(TRADE_OPPORTUNITIES_CHANNEL, json_data)
+            self.logger.debug(f"Published to {TRADE_OPPORTUNITIES_CHANNEL}: {main_subscribers} subscribers")
+
+            # If strategy name is provided, also publish to strategy-specific channel
+            strategy_subscribers = 0
+            if strategy_name:
+                strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
+                strategy_subscribers = self.redis.client.publish(strategy_channel, json_data)
+                self.logger.debug(f"Published to {strategy_channel}: {strategy_subscribers} subscribers")
+
+            total_subscribers = main_subscribers + strategy_subscribers
             return total_subscribers
 
         except Exception as e:
-            logger.error(f"Error publishing opportunity: {e}", exc_info=True)
+            self.logger.error(f"Error publishing opportunity: {e}")
             return 0
 
     def publish_execution(self, execution: TradeExecution) -> int:
         """
-        Publish a trade execution to appropriate channels
+        Publish an execution to appropriate Redis channels
 
         Args:
-            execution: TradeExecution object
+            execution: The execution to publish
 
         Returns:
-            Total number of subscribers reached
+            Number of subscribers that received the message
         """
         try:
             # Convert to JSON
-            message_json = execution.model_dump_json()
-
-            # Determine channels to publish to
-            channels = [self.TRADE_EXECUTIONS]  # Always publish to main channel
-
-            # Add strategy-specific channel if available
-            if execution.strategy:
-                channels.append(f"{self.TRADE_EXECUTIONS}:{execution.strategy}")
-
-            # Publish to all channels
-            total_subscribers = 0
-            for channel in channels:
-                subscribers = self.redis.client.publish(channel, message_json)
-                total_subscribers += subscribers
-
-                if subscribers > 0:
-                    logger.debug(f"Published execution to {channel}: {subscribers} subscribers")
-
-            if total_subscribers > 0:
-                logger.debug(f"Execution {execution.id} published to {total_subscribers} subscribers")
+            if hasattr(execution, "model_dump"):
+                data = execution.model_dump()
+            elif hasattr(execution, "dict"):
+                data = execution.dict()
             else:
-                logger.warning(f"Execution {execution.id} published but no subscribers")
+                data = execution
 
+            json_data = json.dumps(data)
+
+            # First publish to main executions channel
+            main_subscribers = self.redis.client.publish(TRADE_EXECUTIONS_CHANNEL, json_data)
+            self.logger.debug(f"Published to {TRADE_EXECUTIONS_CHANNEL}: {main_subscribers} subscribers")
+
+            # Also publish to strategy-specific executions channel if strategy is present
+            strategy_subscribers = 0
+            if execution.strategy:
+                strategy_channel = f"{TRADE_EXECUTIONS_CHANNEL}:{execution.strategy}"
+                strategy_subscribers = self.redis.client.publish(strategy_channel, json_data)
+                self.logger.debug(f"Published to {strategy_channel}: {strategy_subscribers} subscribers")
+
+            total_subscribers = main_subscribers + strategy_subscribers
+            self.logger.info(f"Published execution {execution.id} to {total_subscribers} subscribers")
             return total_subscribers
 
         except Exception as e:
-            logger.error(f"Error publishing execution: {e}", exc_info=True)
+            self.logger.error(f"Error publishing execution: {e}")
+            return 0
+
+    def publish_data(self, channel: str, data: Dict[str, Any]) -> int:
+        """
+        Publish generic data to a specified channel
+
+        Args:
+            channel: The channel to publish to
+            data: The data to publish
+
+        Returns:
+            Number of subscribers that received the message
+        """
+        try:
+            json_data = json.dumps(data)
+            subscribers = self.redis.client.publish(channel, json_data)
+            return subscribers
+        except Exception as e:
+            self.logger.error(f"Error publishing to {channel}: {e}")
             return 0
 
     # ===== Subscription Methods =====

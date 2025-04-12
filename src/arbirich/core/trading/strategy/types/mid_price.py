@@ -1,4 +1,3 @@
-# trading/strategy/types/mid_price.py
 import logging
 import time
 import uuid
@@ -19,11 +18,35 @@ class MidPriceArbitrage(ArbitrageType):
     exchanges to find arbitrage opportunities with less noise from spread variations.
     """
 
-    def __init__(self, config: Dict):
-        super().__init__(config)
-        self.threshold = config.get("threshold", 0.002)  # Default 0.2%
-        self.name = config.get("name", "mid_price_arbitrage")
-        self.min_depth = config.get("min_depth", 3)  # Minimum order book depth
+    def __init__(self, strategy_id=None, strategy_name=None, config=None):
+        """
+        Initialize the mid-price arbitrage strategy.
+
+        Args:
+            strategy_id: Unique identifier for this strategy instance
+            strategy_name: Human-readable name of the strategy
+            config: Configuration dictionary
+        """
+        # Handle both constructor styles for backward compatibility
+        if strategy_name is not None and config is not None:
+            # New style constructor with separate parameters
+            self.id = strategy_id
+            self.name = strategy_name
+            super().__init__(config)
+        else:
+            # Old style constructor where first param is name or config
+            if isinstance(strategy_id, dict):
+                config = strategy_id
+                self.name = config.get("name", "mid_price_arbitrage")
+                self.id = str(self.name)
+                super().__init__(config)
+            else:
+                self.name = strategy_id or "mid_price_arbitrage"
+                self.id = str(self.name)
+                super().__init__(config or {})
+
+        self.threshold = self.config.get("threshold", 0.002)  # Default 0.2%
+        self.min_depth = self.config.get("min_depth", 3)  # Minimum order book depth
 
     def detect_opportunities(self, state: OrderBookState) -> Dict[str, TradeOpportunity]:
         """

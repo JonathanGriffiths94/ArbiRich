@@ -8,10 +8,10 @@ from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 
-from src.arbirich.flows.common.flow_manager import BytewaxFlowManager
-from src.arbirich.flows.ingestion.ingestion_process import process_order_book
-from src.arbirich.flows.ingestion.ingestion_sink import publish_order_book
-from src.arbirich.flows.ingestion.ingestion_source import MultiExchangeSource
+from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_process import process_order_book
+from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_sink import publish_order_book
+from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import MultiExchangeSource
+from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
 from src.arbirich.services.exchange_processors.registry import register_all_processors
 from src.arbirich.services.redis.redis_service import RedisService
 
@@ -76,11 +76,13 @@ def build_ingestion_flow(exchange=None, trading_pair=None):
     # Configure for a specific exchange and pair if provided
     if exchange and trading_pair:
         exchanges_and_pairs = {exchange: [trading_pair]}
-        logger.info(f"Building ingestion flow for {exchange}:{trading_pair}")
+        flow_id = f"ingestion_{exchange}_{trading_pair}"
+        logger.info(f"Building specific ingestion flow '{flow_id}' for {exchange}:{trading_pair}")
     elif _current_exchanges_and_pairs:
         # Use previously configured exchanges and pairs
         exchanges_and_pairs = _current_exchanges_and_pairs
-        logger.info(f"Building ingestion flow with existing configuration: {exchanges_and_pairs}")
+        flow_id = "ingestion_multiple"
+        logger.info(f"Building multi-exchange ingestion flow with existing configuration: {exchanges_and_pairs}")
     else:
         # Use default configuration if none was provided
         from src.arbirich.config.config import EXCHANGES, PAIRS
@@ -92,10 +94,11 @@ def build_ingestion_flow(exchange=None, trading_pair=None):
                 exchanges_and_pairs[exch].append(f"{base}-{quote}")
 
         _current_exchanges_and_pairs = exchanges_and_pairs
-        logger.info(f"Building ingestion flow with default configuration: {exchanges_and_pairs}")
+        flow_id = "ingestion_default"
+        logger.info(f"Building default ingestion flow with configuration: {exchanges_and_pairs}")
 
     # Create the dataflow
-    flow = Dataflow("ingestion_flow")
+    flow = Dataflow(flow_id)
 
     # Create the multi-exchange source
     source = MultiExchangeSource(exchanges_and_pairs, get_processor_class, stop_event=flow_manager.stop_event)
@@ -106,13 +109,18 @@ def build_ingestion_flow(exchange=None, trading_pair=None):
     # Process order book updates with error handling
     def safe_process_order_book(data):
         try:
+            if data is None:
+                logger.warning(f"[{flow_id}] Received None data from source")
+                return None
+
+            logger.debug(f"[{flow_id}] Processing data: {data}")
             result = process_order_book(data)
-            logger.debug(f"Processed order book: {result}")
+            logger.debug(f"[{flow_id}] Processed order book: {result}")
             return result
         except Exception as e:
-            logger.error(f"Error in process_order_book: {e}", exc_info=True)
+            logger.error(f"[{flow_id}] Error in process_order_book: {e}", exc_info=True)
             # Log the input data to help diagnose the issue
-            logger.error(f"Input data: {data}")
+            logger.error(f"[{flow_id}] Input data: {data}")
             return None
 
     processed_stream = op.map("process_order_book", input_stream, safe_process_order_book)
@@ -125,25 +133,27 @@ def build_ingestion_flow(exchange=None, trading_pair=None):
                 return None
 
             # For debug: check type and log it
-            logger.debug(f"Publishing type: {type(order_book)}")
+            logger.debug(f"[{flow_id}] Publishing type: {type(order_book)}")
 
             # Handle both tuples and objects
             if isinstance(order_book, tuple):
                 # If it's a tuple, get the first element (assuming it's the actual order book)
                 if len(order_book) > 0:
                     actual_order_book = order_book[0]
-                    logger.debug(f"Converting tuple to order book: {actual_order_book}")
+                    logger.info(
+                        f"[{flow_id}] Publishing tuple order book: {actual_order_book.exchange}:{actual_order_book.symbol}"
+                    )
                     return publish_order_book(actual_order_book.exchange, actual_order_book.symbol, actual_order_book)
                 else:
-                    logger.warning("Received empty tuple as order book")
+                    logger.warning(f"[{flow_id}] Received empty tuple as order book")
                     return None
             else:
                 # Regular order book object
-                logger.debug(f"Publishing order book: exchange={order_book.exchange}, symbol={order_book.symbol}")
+                logger.info(f"[{flow_id}] Publishing order book: {order_book.exchange}:{order_book.symbol}")
                 return publish_order_book(order_book.exchange, order_book.symbol, order_book)
         except Exception as e:
-            logger.error(f"Error in publish_order_book: {e}", exc_info=True)
-            logger.error(f"order_book type: {type(order_book)}, value: {order_book}")
+            logger.error(f"[{flow_id}] Error in publish_order_book: {e}", exc_info=True)
+            logger.error(f"[{flow_id}] order_book type: {type(order_book)}, value: {order_book}")
             return None
 
     stored_stream = op.map("store_order_book", processed_stream, safe_publish_order_book)

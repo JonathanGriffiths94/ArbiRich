@@ -1,147 +1,121 @@
-"""Base component class for trading system components."""
+"""Base component class for all trading system components."""
 
 import asyncio
 import logging
-from abc import ABC, abstractmethod
 from typing import Any, Dict
 
-from src.arbirich.core.config.validator import (
-    ArbitrageComponentConfig,
-    BaseComponentConfig,
-    ConfigValidator,
-    ExecutionComponentConfig,
-    IngestionComponentConfig,
-    ReportingComponentConfig,
-)
 
-
-class Component(ABC):
-    """
-    Base class for all trading system components.
-
-    Each component follows a consistent lifecycle:
-    1. Initialize - Set up resources and connections
-    2. Run - Execute main component logic
-    3. Cleanup - Release resources and perform cleanup
-    """
+class Component:
+    """Base class for all trading system components."""
 
     def __init__(self, name: str, config: Dict[str, Any]):
-        self.name = name
-        self.logger = logging.getLogger(f"{__name__}.{name}")
-        self.active = False
-        self.task = None
-
-        # Validate configuration using Pydantic models
-        self.raw_config = config
-        self.config = self._validate_config(config)
-
-        self.logger.debug(f"Component {name} initialized with config: {self.config}")
-
-    def _validate_config(self, config: Dict[str, Any]) -> BaseComponentConfig:
-        """Validate component configuration using Pydantic models."""
-        errors = ConfigValidator.validate_component_config(self.name, config)
-
-        if errors:
-            error_msg = f"Invalid configuration for component {self.name}: {errors}"
-            self.logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        # Convert to appropriate config model based on component type
-        try:
-            if self.name == "arbitrage":
-                return ArbitrageComponentConfig(**config)
-            elif self.name == "execution":
-                return ExecutionComponentConfig(**config)
-            elif self.name == "reporting":
-                return ReportingComponentConfig(**config)
-            elif self.name == "ingestion":
-                return IngestionComponentConfig(**config)
-            else:
-                # For unknown components, return the raw config
-                return BaseComponentConfig(**config)
-        except Exception as e:
-            self.logger.error(f"Error creating config model for {self.name}: {e}")
-            # Fall back to raw config if model creation fails
-            return BaseComponentConfig(**config)
-
-    @abstractmethod
-    async def initialize(self) -> bool:
         """
         Initialize the component.
 
-        Sets up any resources, connections, or state needed for the component.
+        Args:
+            name: Name of the component
+            config: Component configuration
+        """
+        self.name = name
+        self.config = config
+        self.active = False
+        self.task = None
+        self.component_type = self._get_component_type()
+        self.logger = logging.getLogger(f"src.arbirich.core.trading.components.{name}")
+
+    def _get_component_type(self) -> str:
+        """
+        Get the component type based on class name.
 
         Returns:
-            bool: True if initialization succeeded, False otherwise
+            str: Component type (detection, execution, reporting, ingestion)
         """
-        pass
+        class_name = self.__class__.__name__.lower()
+        if "detection" in class_name:
+            return "detection"
+        elif "execution" in class_name:
+            return "execution"
+        elif "reporting" in class_name:
+            return "reporting"
+        elif "ingestion" in class_name:
+            return "ingestion"
+        else:
+            return "unknown"
 
-    @abstractmethod
-    async def run(self) -> None:
+    async def initialize(self) -> bool:
         """
-        Run the component's main logic.
+        Initialize component resources.
 
-        This method should contain the core functionality of the component.
-        It runs continuously until the component is stopped.
+        Returns:
+            bool: True if successfully initialized, False otherwise
         """
-        pass
-
-    @abstractmethod
-    async def cleanup(self) -> None:
-        """
-        Clean up resources used by the component.
-
-        Release connections, close files, and perform any other cleanup tasks.
-        """
-        pass
+        try:
+            self.logger.info(f"Initializing {self.name} component")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error initializing {self.name} component: {e}")
+            return False
 
     async def start(self) -> bool:
         """
-        Start the component's execution.
+        Start the component.
 
         Returns:
-            bool: True if the component was started successfully, False otherwise
+            bool: True if successfully started, False otherwise
         """
-        if self.active:
-            self.logger.info(f"Component {self.name} is already active")
-            return True
-
         try:
-            # Initialize the component
             if not await self.initialize():
-                self.logger.error(f"Component {self.name} failed to initialize")
+                self.logger.error(f"Failed to initialize {self.name} component")
                 return False
 
-            # Set component to active
+            self.logger.info(f"Starting {self.name} component")
             self.active = True
 
-            # Create the run task
-            self.task = asyncio.create_task(self.run(), name=f"{self.name}_component")
+            # Start background task
+            if self.task is None or self.task.done():
+                self.task = asyncio.create_task(self.run())
 
-            self.logger.info(f"Component {self.name} started successfully")
             return True
-
         except Exception as e:
-            self.logger.error(f"Error starting component {self.name}: {e}", exc_info=True)
-            self.active = False
+            self.logger.error(f"Error starting {self.name} component: {e}")
             return False
+
+    async def run(self) -> None:
+        """
+        Main component logic, should be overridden by subclasses.
+        """
+        try:
+            self.logger.info(f"Running {self.name} component")
+            while self.active:
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            self.logger.info(f"{self.name} component task cancelled")
+            raise
+        except Exception as e:
+            self.logger.error(f"Error in {self.name} component: {e}")
+            if not self.handle_error(e):
+                self.active = False
 
     async def stop(self) -> bool:
         """
-        Stop the component's execution.
+        Stop the component.
 
         Returns:
-            bool: True if the component was stopped successfully, False otherwise
+            bool: True if successfully stopped, False otherwise
         """
-        if not self.active:
-            self.logger.info(f"Component {self.name} is not active")
-            return True
-
         try:
-            # Set component to inactive
+            self.logger.info(f"Stopping {self.name} component")
             self.active = False
 
-            # Cancel the task if it exists
+            # Notify system state about shutdown
+            try:
+                from src.arbirich.core.state.system_state import mark_component_notified
+
+                mark_component_notified(self.component_type, self.name)
+            except ImportError:
+                self.logger.warning("Could not import system_state module")
+
+            # Cancel task if running
             if self.task and not self.task.done():
                 self.task.cancel()
                 try:
@@ -149,40 +123,43 @@ class Component(ABC):
                 except asyncio.CancelledError:
                     pass
 
-            # Perform cleanup
+            # Clean up resources
             await self.cleanup()
 
-            self.logger.info(f"Component {self.name} stopped successfully")
             return True
-
         except Exception as e:
-            self.logger.error(f"Error stopping component {self.name}: {e}", exc_info=True)
+            self.logger.error(f"Error stopping {self.name} component: {e}")
             return False
+
+    async def cleanup(self) -> None:
+        """
+        Clean up resources, should be overridden by subclasses.
+        """
+        self.logger.info(f"Cleaning up {self.name} component")
 
     def get_status(self) -> Dict[str, Any]:
         """
-        Get the current status of the component.
+        Get the component status.
 
         Returns:
-            Dict[str, Any]: Status information
+            Dict containing component status information
         """
         return {
-            "name": self.name,
             "active": self.active,
-            "task_running": self.task is not None and not self.task.done() if self.task else False,
+            "name": self.name,
+            "has_task": self.task is not None and not self.task.done() if self.task else False,
         }
 
     def handle_error(self, error: Exception) -> bool:
         """
-        Handle an error that occurred during component execution.
+        Handle component errors.
 
         Args:
             error: The exception that occurred
 
         Returns:
-            bool: True if the component should continue, False if it should stop
+            bool: True if error was handled and component should continue, False to stop
         """
-        self.logger.error(f"Error in component {self.name}: {error}", exc_info=True)
-
-        # By default, continue for most errors
+        self.logger.error(f"Error in {self.name} component: {error}", exc_info=True)
+        # By default, we continue despite errors
         return True

@@ -124,7 +124,7 @@ class BackgroundSubscriber:
         #     for exchange in EXCHANGES:
         #         self._subscribe_channel(f"order_book:{exchange}:{symbol}")
 
-        from src.arbirich.flows.ingestion.ingestion_sink import get_order_book_channel
+        from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_sink import get_order_book_channel
 
         # Subscribe to exchange-pair combinations with consistent format
         for exchange in EXCHANGES:

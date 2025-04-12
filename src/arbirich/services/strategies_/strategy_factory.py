@@ -4,18 +4,18 @@ import pkgutil
 from typing import Dict
 
 from src.arbirich.config.config import STRATEGIES
-from src.arbirich.services.strategies.base_strategy import ArbitrageStrategy
-from src.arbirich.services.strategies.basic_arbitrage_strategy import BasicArbitrageStrategy
-from src.arbirich.services.strategies.high_frequency_strategy import HighFrequencyStrategy
-from src.arbirich.services.strategies.mid_price_arbitrage_strategy import MidPriceArbitrageStrategy
+from src.arbirich.core.trading.strategy.base import ArbitrageStrategy
+from src.arbirich.core.trading.strategy.types.basic import BasicArbitrage
+from src.arbirich.core.trading.strategy.types.mid_price import MidPriceArbitrage
+from src.arbirich.core.trading.strategy.types.volume_adjusted import VolumeAdjustedArbitrage
 
 logger = logging.getLogger(__name__)
 
-# Map strategy types to their implementation classes
+# Map strategy types to their implementation classes - Updated to use new classes
 STRATEGY_CLASSES = {
-    "basic": BasicArbitrageStrategy,
-    "mid_price": MidPriceArbitrageStrategy,
-    "hft": HighFrequencyStrategy,
+    "basic": BasicArbitrage,
+    "mid_price": MidPriceArbitrage,
+    "volume_adjusted": VolumeAdjustedArbitrage,
 }
 
 # Cache of initialized strategy instances
@@ -52,8 +52,17 @@ def get_strategy(strategy_name: str) -> ArbitrageStrategy:
 
     strategy_class = STRATEGY_CLASSES[strategy_type]
 
-    # Create strategy instance
-    strategy = strategy_class(strategy_name, config)
+    # Create strategy instance with appropriate constructor based on the new implementation
+    if strategy_type in ["basic", "mid_price", "volume_adjusted"]:
+        # New implementations use strategy_id, name, and config parameters
+        strategy = strategy_class(
+            strategy_id=str(strategy_name),  # Use strategy name as ID
+            strategy_name=strategy_name,
+            config=config,
+        )
+    else:
+        # Fallback for any legacy implementations
+        strategy = strategy_class(strategy_name, config)
 
     # Cache the instance
     _strategy_instances[strategy_name] = strategy
@@ -69,7 +78,7 @@ def discover_strategies() -> None:
     logger.info("Discovering strategy implementations...")
 
     # Get the module path for the strategies package
-    import src.arbirich.services.strategies as strategies_pkg
+    import src.arbirich.services.strategies_ as strategies_pkg
 
     for _, name, is_pkg in pkgutil.iter_modules(strategies_pkg.__path__):
         if not is_pkg and name not in ("base_strategy", "strategy_factory"):

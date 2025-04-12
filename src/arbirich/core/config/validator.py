@@ -1,6 +1,6 @@
 """Configuration validation utilities using Pydantic."""
 
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -65,7 +65,9 @@ class BasicStrategyConfig(BaseStrategyConfig):
     """Configuration model for the basic arbitrage strategy."""
 
     type: str = Field(default="basic", description="Strategy type")
-    pairs: List[str] = Field(default=[], description="List of trading pairs to monitor")
+    pairs: List[Union[str, Tuple[str, str]]] = Field(
+        default=[], description="List of trading pairs to monitor (strings or tuples)"
+    )
     exchanges: List[str] = Field(default=[], description="List of exchanges to monitor")
 
 
@@ -74,7 +76,9 @@ class MidPriceStrategyConfig(BaseStrategyConfig):
 
     type: str = Field(default="mid_price", description="Strategy type")
     min_depth: int = Field(default=3, gt=0, description="Minimum order book depth for calculation")
-    pairs: List[str] = Field(default=[], description="List of trading pairs to monitor")
+    pairs: List[Union[str, Tuple[str, str]]] = Field(
+        default=[], description="List of trading pairs to monitor (strings or tuples)"
+    )
     exchanges: List[str] = Field(default=[], description="List of exchanges to monitor")
 
 

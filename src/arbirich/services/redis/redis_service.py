@@ -72,6 +72,34 @@ def reset_shared_redis_client():
             _shared_redis_client = None
 
 
+def reset_redis_connection():
+    """
+    Reset all Redis connections and pools.
+    This is a comprehensive reset function that combines other reset operations.
+    """
+    logger.info("Performing comprehensive Redis connection reset")
+
+    # Reset the shared Redis client first
+    reset_shared_redis_client()
+
+    # Reset all registered Redis clients
+    reset_all_registered_redis_clients()
+
+    # Reset the Redis connection pools
+    reset_redis_pool()
+
+    # Try to reset channel manager if it exists
+    try:
+        from src.arbirich.services.redis.redis_channel_manager import reset_channel_manager
+
+        reset_channel_manager()
+    except ImportError:
+        logger.debug("Channel manager module not available, skipping reset")
+
+    logger.info("Redis connections reset complete")
+    return True
+
+
 class RedisService:
     """Handles real-time market data storage, retrieval, and event publishing using Redis"""
 
@@ -149,22 +177,21 @@ class RedisService:
         logger.critical("Failed to reconnect to Redis after multiple attempts.")
         return False
 
-    def close(self) -> None:
-        """Close Redis connection safely"""
+    def close(self):
+        """Close the Redis connection (synchronous version)"""
         try:
-            with self._pubsub_lock:
-                if self._shared_pubsub:
-                    self._shared_pubsub.close()
-                    self._shared_pubsub = None
-                    self._subscribed_channels.clear()
+            # Close pubsub first if it exists
+            if hasattr(self, "pubsub") and self.pubsub:
+                try:
+                    self.pubsub.close()
+                    self.pubsub = None
+                except Exception as e:
+                    logger.error(f"Error closing Redis pubsub: {e}")
 
-            if self.pubsub:
-                self.pubsub.close()
-                self.pubsub = None
-
-            if self.client:
+            # Then close the client
+            if hasattr(self, "client") and self.client:
                 self.client.close()
-                self.client = None
+                logger.info("Redis connection closed (sync)")
 
             # Mark as closed
             self._closed = True
@@ -174,17 +201,11 @@ class RedisService:
                 if self in _redis_clients:
                     _redis_clients.remove(self)
 
-            logger.info("Redis connection closed")
         except Exception as e:
-            logger.error(f"Error closing Redis connection: {e}")
-
-    async def close(self) -> None:
-        """Close Redis connection safely async version"""
-        # Rename this method to avoid conflict with the synchronous close method
-        return await self.async_close()
+            logger.error(f"Error closing Redis connection (sync): {e}")
 
     async def async_close(self) -> None:
-        """Close Redis connection safely async version"""
+        """Close Redis connection safely (async version)"""
         try:
             with self._pubsub_lock:
                 if self._shared_pubsub:
@@ -208,14 +229,18 @@ class RedisService:
                 if self in _redis_clients:
                     _redis_clients.remove(self)
 
-            logger.info("Redis connection closed")
+            logger.info("Redis connection closed (async)")
         except Exception as e:
-            logger.error(f"Error closing Redis connection: {e}")
+            logger.error(f"Error closing Redis connection (async): {e}")
+
+    async def __aclose__(self) -> None:
+        """Async context manager support for 'async with' statements"""
+        await self.async_close()
 
     @staticmethod
-    def close_all_connections():
-        """Close all Redis connections across the application"""
-        logger.info("Closing all Redis connections")
+    async def close_all_connections():
+        """Close all Redis connections across the application (async version)"""
+        logger.info("Closing all Redis connections (async)")
 
         with _redis_lock:
             # Make a copy since we'll be modifying the list during iteration
@@ -223,16 +248,20 @@ class RedisService:
 
             for client in clients_to_close:
                 try:
-                    client.close()
+                    # If client has async_close, use it, otherwise use regular close
+                    if hasattr(client, "async_close") and callable(client.async_close):
+                        await client.async_close()
+                    else:
+                        client.close()
                 except Exception as e:
                     logger.error(f"Error closing Redis client: {e}")
 
             # Clear the list
             _redis_clients.clear()
 
-        logger.info("All Redis connections closed")
+        logger.info("All Redis connections closed (async)")
 
-        # Try to clear any remaining connection pools at the package level
+        # Close connection pools
         try:
             # Close connection pools more carefully
             try:
@@ -259,7 +288,41 @@ class RedisService:
         except Exception as e:
             logger.error(f"Error during Redis cleanup: {e}")
 
-        # === Order Book Methods ===
+    @staticmethod
+    def close_all_connections_sync():
+        """Close all Redis connections across the application (synchronous version)"""
+        logger.info("Closing all Redis connections (sync)")
+
+        with _redis_lock:
+            # Make a copy since we'll be modifying the list during iteration
+            clients_to_close = _redis_clients.copy()
+
+            for client in clients_to_close:
+                try:
+                    # Use synchronous close for all clients
+                    client.close()
+                except Exception as e:
+                    logger.error(f"Error closing Redis client: {e}")
+
+            # Clear the list
+            _redis_clients.clear()
+
+        logger.info("All Redis connections closed (sync)")
+
+        # Close connection pools
+        try:
+            from redis.connection import ConnectionPool
+
+            if hasattr(ConnectionPool, "connection_pools"):
+                for key, pool in ConnectionPool.connection_pools.items():
+                    try:
+                        pool.disconnect()
+                    except Exception as e:
+                        logger.warning(f"Error disconnecting pool {key}: {e}")
+                ConnectionPool.connection_pools.clear()
+                logger.info("Redis connection pools reset")
+        except Exception as e:
+            logger.error(f"Error resetting Redis connection pools: {e}")
 
     def store_order_book(self, order_book: OrderBookUpdate) -> None:
         """
@@ -947,6 +1010,108 @@ class RedisService:
             strategy_channel = f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}"
             self._ensure_subscribed(strategy_channel)
             logger.info(f"Ensured execution channel exists: {strategy_channel}")
+
+
+async def check_redis_health(redis_client, pubsub, channels=None):
+    """
+    Check if Redis connection is healthy and attempt to reconnect if needed.
+
+    Args:
+        redis_client: Redis client instance
+        pubsub: Redis PubSub object
+        channels: List of channels to resubscribe to if reconnection is needed
+
+    Returns:
+        bool: True if Redis is healthy (or reconnected successfully), False otherwise
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    if channels is None:
+        channels = []
+
+    try:
+        # Simple ping test to check connection
+        if redis_client and await redis_client.ping():
+            return True
+
+        logger.warning("Redis health check failed, attempting to reconnect")
+
+        # Reset the client if it exists
+        if redis_client:
+            try:
+                redis_client.close()
+            except Exception as e:
+                logger.error(f"Error closing Redis client: {e}")
+
+        # Reset the pubsub if it exists
+        if pubsub:
+            try:
+                await pubsub.unsubscribe()
+                pubsub.close()
+            except Exception as e:
+                logger.error(f"Error closing PubSub: {e}")
+
+        # Get a new client
+        redis_client = get_shared_redis_client()
+        if not redis_client:
+            logger.error("Failed to get new Redis client")
+            return False
+
+        # Recreate PubSub and resubscribe to channels
+        if pubsub and channels:
+            try:
+                pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+                await pubsub.subscribe(*channels)
+                logger.info(f"Successfully resubscribed to {len(channels)} channels")
+            except Exception as e:
+                logger.error(f"Error resubscribing to channels: {e}")
+                return False
+
+        logger.info("Redis reconnection successful")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error checking Redis health: {e}")
+        return False
+
+
+async def initialize_redis(channels=None):
+    """
+    Initialize Redis client and PubSub for the given channels.
+
+    Args:
+        channels: List of channel names to subscribe to
+
+    Returns:
+        tuple: (redis_client, pubsub) - the Redis client and PubSub objects
+    """
+    logger.info("Initializing Redis client and PubSub")
+
+    if channels is None:
+        channels = []
+
+    try:
+        # Get a Redis client
+        redis_client = get_shared_redis_client()
+        if not redis_client:
+            logger.error("Failed to get Redis client")
+            return None, None
+
+        # Create PubSub object
+        pubsub = redis_client.client.pubsub(ignore_subscribe_messages=True)
+
+        # Subscribe to channels if provided
+        if channels:
+            for channel in channels:
+                pubsub.subscribe(channel)
+            logger.info(f"Subscribed to {len(channels)} channels")
+
+        return redis_client, pubsub
+    except Exception as e:
+        logger.error(f"Error initializing Redis: {e}")
+        return None, None
 
 
 def reset_redis_pool():

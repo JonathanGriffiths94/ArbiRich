@@ -111,6 +111,128 @@ class StrategyRepository(BaseRepository[Strategy]):
                     strategy_data["max_slippage"] = None
                     strategy_data["min_volume"] = None
 
+                # Get type parameters
+                type_params_query = sa.text("""
+                    SELECT target_volume, min_depth, min_depth_percentage, parameters 
+                    FROM strategy_type_parameters
+                    WHERE strategy_id = :strategy_id
+                """)
+                type_params_result = conn.execute(type_params_query, {"strategy_id": strategy_data["id"]})
+                type_params_row = type_params_result.first()
+
+                if type_params_row:
+                    strategy_data["type_parameters"] = {
+                        "target_volume": float(type_params_row.target_volume)
+                        if type_params_row.target_volume
+                        else None,
+                        "min_depth": type_params_row.min_depth,
+                        "min_depth_percentage": float(type_params_row.min_depth_percentage)
+                        if type_params_row.min_depth_percentage
+                        else None,
+                        "parameters": json.loads(type_params_row.parameters) if type_params_row.parameters else None,
+                    }
+
+                # Get strategy type information
+                strategy_type_query = sa.text("""
+                    SELECT id, name, description, implementation_class
+                    FROM strategy_types 
+                    WHERE id = :strategy_type_id
+                """)
+                strategy_type_result = conn.execute(
+                    strategy_type_query, {"strategy_type_id": strategy_data["strategy_type_id"]}
+                )
+                strategy_type_row = strategy_type_result.first()
+
+                if strategy_type_row:
+                    strategy_data["strategy_type"] = {
+                        "id": strategy_type_row.id,
+                        "name": strategy_type_row.name,
+                        "description": strategy_type_row.description,
+                        "implementation_class": strategy_type_row.implementation_class,
+                    }
+
+                # Get risk profile information
+                risk_profile_query = sa.text("""
+                    SELECT id, name, description, max_position_size_percentage, max_drawdown_percentage,
+                           max_exposure_per_asset_percentage, circuit_breaker_conditions
+                    FROM risk_profiles 
+                    WHERE id = :risk_profile_id
+                """)
+                risk_profile_result = conn.execute(
+                    risk_profile_query, {"risk_profile_id": strategy_data["risk_profile_id"]}
+                )
+                risk_profile_row = risk_profile_result.first()
+
+                if risk_profile_row:
+                    strategy_data["risk_profile"] = {
+                        "id": risk_profile_row.id,
+                        "name": risk_profile_row.name,
+                        "description": risk_profile_row.description,
+                        "max_position_size_percentage": float(risk_profile_row.max_position_size_percentage)
+                        if risk_profile_row.max_position_size_percentage
+                        else None,
+                        "max_drawdown_percentage": float(risk_profile_row.max_drawdown_percentage)
+                        if risk_profile_row.max_drawdown_percentage
+                        else None,
+                        "max_exposure_per_asset_percentage": float(risk_profile_row.max_exposure_per_asset_percentage)
+                        if risk_profile_row.max_exposure_per_asset_percentage
+                        else None,
+                        "circuit_breaker_conditions": json.loads(risk_profile_row.circuit_breaker_conditions)
+                        if risk_profile_row.circuit_breaker_conditions
+                        else None,
+                    }
+
+                # Get execution mappings
+                exec_mappings_query = sa.text("""
+                    SELECT sem.id, sem.strategy_id, sem.execution_strategy_id, sem.is_active, sem.priority,
+                           es.name as execution_name, es.description as execution_description
+                    FROM strategy_execution_mapping sem
+                    JOIN execution_strategies es ON sem.execution_strategy_id = es.id
+                    WHERE sem.strategy_id = :strategy_id
+                """)
+                exec_mappings_result = conn.execute(exec_mappings_query, {"strategy_id": strategy_data["id"]})
+
+                execution_mappings = []
+                for row in exec_mappings_result:
+                    execution_mappings.append(
+                        {
+                            "id": row.id,
+                            "strategy_id": row.strategy_id,
+                            "execution_strategy_id": row.execution_strategy_id,
+                            "is_active": row.is_active,
+                            "priority": row.priority,
+                            "execution_name": row.execution_name,
+                            "execution_description": row.execution_description,
+                        }
+                    )
+                strategy_data["execution_mappings"] = execution_mappings
+
+                # Get exchange-pair mappings
+                exchange_mappings_query = sa.text("""
+                    SELECT sepm.id, sepm.strategy_id, sepm.exchange_id, sepm.trading_pair_id, sepm.is_active,
+                           e.name as exchange_name, tp.symbol as pair_symbol
+                    FROM strategy_exchange_pair_mappings sepm
+                    JOIN exchanges e ON sepm.exchange_id = e.id
+                    JOIN trading_pairs tp ON sepm.trading_pair_id = tp.id
+                    WHERE sepm.strategy_id = :strategy_id
+                """)
+                exchange_mappings_result = conn.execute(exchange_mappings_query, {"strategy_id": strategy_data["id"]})
+
+                exchange_pair_mappings = []
+                for row in exchange_mappings_result:
+                    exchange_pair_mappings.append(
+                        {
+                            "id": row.id,
+                            "strategy_id": row.strategy_id,
+                            "exchange_id": row.exchange_id,
+                            "trading_pair_id": row.trading_pair_id,
+                            "is_active": row.is_active,
+                            "exchange_name": row.exchange_name,
+                            "pair_symbol": row.pair_symbol,
+                        }
+                    )
+                strategy_data["exchange_pair_mappings"] = exchange_pair_mappings
+
                 # Convert additional_info from JSON string to dict if it exists
                 if strategy_data.get("additional_info") and isinstance(strategy_data["additional_info"], str):
                     try:
@@ -135,39 +257,8 @@ class StrategyRepository(BaseRepository[Strategy]):
                 if not row:
                     return None
 
-                # Create a dict from the row
-                strategy_data = row._asdict()
-
-                # Get parameters from the strategy_parameters table
-                params_query = sa.text("""
-                    SELECT min_spread, threshold, max_slippage, min_volume FROM strategy_parameters
-                    WHERE strategy_id = :strategy_id
-                """)
-                params_result = conn.execute(params_query, {"strategy_id": strategy_data["id"]})
-                params_row = params_result.first()
-
-                # Add parameters to the strategy data
-                if params_row:
-                    strategy_data["min_spread"] = float(params_row.min_spread)
-                    strategy_data["threshold"] = float(params_row.threshold) if params_row.threshold else None
-                    strategy_data["max_slippage"] = float(params_row.max_slippage) if params_row.max_slippage else None
-                    strategy_data["min_volume"] = float(params_row.min_volume) if params_row.min_volume else None
-                else:
-                    # Provide default values if no parameters exist
-                    strategy_data["min_spread"] = 0.0001
-                    strategy_data["threshold"] = 0.0001
-                    strategy_data["max_slippage"] = None
-                    strategy_data["min_volume"] = None
-
-                # Convert additional_info from JSON string to dict if it exists
-                if strategy_data.get("additional_info") and isinstance(strategy_data["additional_info"], str):
-                    try:
-                        strategy_data["additional_info"] = json.loads(strategy_data["additional_info"])
-                    except json.JSONDecodeError:
-                        pass
-
-                # Create the Strategy object with the updated data
-                return Strategy.model_validate(strategy_data)
+                # Use get_by_id to reuse code and get all related entities
+                return self.get_by_id(row.id)
         except Exception as e:
             self.logger.error(f"Error getting strategy by name {name}: {e}")
             raise

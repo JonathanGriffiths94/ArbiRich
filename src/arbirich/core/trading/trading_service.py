@@ -110,10 +110,56 @@ class TradingService:
     async def _initialize_components(self):
         """Initialize trading components"""
         try:
-            from src.arbirich.core.trading.components.detection import DetectionComponent
-            from src.arbirich.core.trading.components.execution import ExecutionComponent
-            from src.arbirich.core.trading.components.ingestion import IngestionComponent
-            from src.arbirich.core.trading.components.reporting import ReportingComponent
+            # Check if component modules exist
+            components_found = True
+            try:
+                # Use absolute imports to ensure modules are found correctly
+                import sys
+
+                self.logger.info(f"Python path: {sys.path}")
+
+                # Try importing with explicit paths
+                from src.arbirich.core.trading.components.detection import DetectionComponent
+                from src.arbirich.core.trading.components.execution import ExecutionComponent
+                from src.arbirich.core.trading.components.ingestion import IngestionComponent
+                from src.arbirich.core.trading.components.reporting import ReportingComponent
+
+                self.logger.info("Successfully imported all component modules")
+            except ImportError as e:
+                components_found = False
+                self.logger.warning(f"Trading component modules not found: {e}. Creating stub components.")
+
+            # If components weren't found, create stub component classes
+            if not components_found:
+                from src.arbirich.core.trading.components.base import Component
+
+                class StubComponent(Component):
+                    """Stub component for use when actual components aren't available"""
+
+                    async def start(self) -> bool:
+                        self.active = True
+                        self.logger.info(f"Stub {self.name} component started")
+                        return True
+
+                    async def stop(self) -> bool:
+                        self.active = False
+                        self.logger.info(f"Stub {self.name} component stopped")
+                        return True
+
+                    def get_status(self):
+                        return {"active": self.active, "stub": True, "name": self.name}
+
+                class IngestionComponent(StubComponent):
+                    pass
+
+                class DetectionComponent(StubComponent):
+                    pass
+
+                class ExecutionComponent(StubComponent):
+                    pass
+
+                class ReportingComponent(StubComponent):
+                    pass
 
             # Create components with default configs
             self.components = {
@@ -127,6 +173,8 @@ class TradingService:
 
         except Exception as e:
             self.logger.error(f"Error initializing components: {e}", exc_info=True)
+            # Initialize to empty dictionary to avoid NoneType errors
+            self.components = {}
             raise
 
     def _get_component_config(self, component_name: str) -> Dict[str, Any]:
@@ -359,7 +407,7 @@ class TradingService:
         try:
             from src.arbirich.services.redis.redis_service import RedisService
 
-            RedisService.close_all_connections()
+            await RedisService.close_all_connections()
         except Exception as e:
             self.logger.error(f"Error closing Redis connections: {e}")
 
@@ -469,16 +517,29 @@ class TradingService:
         except Exception as e:
             self.logger.error(f"Error stopping component {component_name}: {e}", exc_info=True)
             component.active = False
-            component.task = None
+            if hasattr(component, "task"):
+                component.task = None
             return False
 
     async def start_strategy(self, strategy_id: str) -> bool:
         """Start a specific strategy"""
-        if strategy_id not in self.strategies:
-            self.logger.error(f"Unknown strategy: {strategy_id}")
-            return False
+        # First try to find by ID
+        if strategy_id in self.strategies:
+            strategy = self.strategies[strategy_id]
+        else:
+            # Try to find by name as a fallback
+            strategy = None
+            for s_id, s_info in self.strategies.items():
+                if s_info.get("name") == strategy_id:
+                    strategy = s_info
+                    strategy_id = s_id
+                    self.logger.info(f"Found strategy by name: {strategy_id}")
+                    break
 
-        strategy = self.strategies[strategy_id]
+            if not strategy:
+                self.logger.error(f"Unknown strategy: {strategy_id}")
+                return False
+
         if strategy["active"] and strategy["task"] and not strategy["task"].done():
             self.logger.info(f"Strategy {strategy['name']} is already active")
             return True
@@ -675,3 +736,22 @@ class TradingService:
 
         except Exception as e:
             self.logger.error(f"Error checking for orphaned processes: {e}", exc_info=True)
+
+    async def _activate_all_strategies_in_db(self):
+        """Activate all strategies in the database"""
+        try:
+            if hasattr(self.db, "execute") and asyncio.iscoroutinefunction(self.db.execute):
+                await self.db.execute("UPDATE strategies SET is_active = TRUE")
+            else:
+                # Fallback to SQLAlchemy
+                import sqlalchemy as sa
+
+                with self.db.engine.connect() as conn:
+                    conn.execute(sa.text("UPDATE strategies SET is_active = TRUE"))
+                    conn.commit()
+
+            self.logger.info("Activated all strategies in database")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error activating strategies in database: {e}", exc_info=True)
+            return False

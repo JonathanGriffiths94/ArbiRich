@@ -7,17 +7,17 @@ from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 
-from src.arbirich.core.trading.flows.common.flow_manager import BytewaxFlowManager
-from src.arbirich.core.trading.flows.detection.detection_process import (
+from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_process import (
     detect_arbitrage,
     key_by_asset,
     update_asset_state,
 )
-from src.arbirich.core.trading.flows.detection.detection_sink import (
+from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_sink import (
     debounce_opportunity,
     publish_trade_opportunity,
 )
-from src.arbirich.core.trading.flows.detection.detection_source import use_redis_opportunity_source
+from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import use_redis_opportunity_source
+from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
 from src.arbirich.services.redis.redis_service import RedisService
 from src.arbirich.utils.strategy_manager import StrategyManager
 

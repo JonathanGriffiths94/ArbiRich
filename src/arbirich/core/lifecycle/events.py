@@ -143,7 +143,7 @@ async def startup_event() -> None:
 
     # Reset processor startup flag
     try:
-        from src.arbirich.flows.ingestion.ingestion_source import reset_processor_startup
+        from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import reset_processor_startup
 
         reset_processor_startup()
         logger.info("Processor startup flag reset")
@@ -194,7 +194,7 @@ async def shutdown_event() -> None:
 
     # Disable processor startup before doing anything else
     try:
-        from src.arbirich.flows.ingestion.ingestion_source import disable_processor_startup
+        from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import disable_processor_startup
 
         disable_processor_startup()
         logger.info("Processor startup disabled")
@@ -203,7 +203,7 @@ async def shutdown_event() -> None:
 
     # Stop all WebSocket consumers immediately - before any other shutdown activities
     try:
-        from src.arbirich.flows.ingestion.ingestion_source import stop_all_consumers
+        from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import stop_all_consumers
 
         stop_all_consumers()
         logger.info("All WebSocket consumers stopped early in shutdown sequence")

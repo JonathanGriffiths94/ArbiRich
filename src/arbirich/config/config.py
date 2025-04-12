@@ -121,11 +121,12 @@ PAIRS = [
 ALL_STRATEGIES = {
     "basic_arbitrage": {
         "type": "basic",
+        "name": "basic_arbitrage",  # Added name field
         "starting_capital": 10000.0,
         "min_spread": 0.0001,
         "threshold": 0.0001,
         "exchanges": ["bybit", "cryptocom"],
-        "pairs": [("LINK", "USDT"), ("MATIC", "USDT")],  # Updated pairs
+        "pairs": [("DOT", "USDT")],  # Updated pairs
         "risk_management": {
             "max_position_size": 50.0,  # In USDT equivalent
             "max_daily_loss": 5.0,  # Percentage of capital
@@ -147,6 +148,7 @@ ALL_STRATEGIES = {
     },
     "mid_price_arbitrage": {
         "type": "mid_price",
+        "name": "mid_price_arbitrage",  # Added name field
         "starting_capital": 5000.0,
         "min_spread": 0.0001,
         "threshold": 0.0001,
@@ -174,6 +176,7 @@ ALL_STRATEGIES = {
     },
     "volume_adjusted_arbitrage": {
         "type": "volume_adjusted",
+        "name": "volume_adjusted_arbitrage",  # Added name field
         "starting_capital": 15000.0,
         "min_spread": 0.0002,  # Higher spread requirement due to depth analysis
         "threshold": 0.0002,

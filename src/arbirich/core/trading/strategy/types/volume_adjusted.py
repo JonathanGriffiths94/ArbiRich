@@ -1,4 +1,3 @@
-# trading/strategy/types/volume_adjusted.py
 import logging
 import time
 import uuid
@@ -19,12 +18,36 @@ class VolumeAdjustedArbitrage(ArbitrageType):
     to find opportunities with sufficient liquidity for actual execution.
     """
 
-    def __init__(self, config: Dict):
-        super().__init__(config)
-        self.threshold = config.get("threshold", 0.0015)  # Default 0.15%
-        self.name = config.get("name", "volume_adjusted_arbitrage")
-        self.target_volume = config.get("target_volume", 0.1)  # Default target volume in base currency
-        self.min_depth_percentage = config.get("min_depth_percentage", 0.7)  # Minimum % of target volume
+    def __init__(self, strategy_id=None, strategy_name=None, config=None):
+        """
+        Initialize the volume-adjusted arbitrage strategy.
+
+        Args:
+            strategy_id: Unique identifier for this strategy instance
+            strategy_name: Human-readable name of the strategy
+            config: Configuration dictionary
+        """
+        # Handle both constructor styles for backward compatibility
+        if strategy_name is not None and config is not None:
+            # New style constructor with separate parameters
+            self.id = strategy_id
+            self.name = strategy_name
+            super().__init__(config)
+        else:
+            # Old style constructor where first param is name or config
+            if isinstance(strategy_id, dict):
+                config = strategy_id
+                self.name = config.get("name", "volume_adjusted_arbitrage")
+                self.id = str(self.name)
+                super().__init__(config)
+            else:
+                self.name = strategy_id or "volume_adjusted_arbitrage"
+                self.id = str(self.name)
+                super().__init__(config or {})
+
+        self.threshold = self.config.get("threshold", 0.0015)  # Default 0.15%
+        self.target_volume = self.config.get("target_volume", 0.1)  # Default target volume in base currency
+        self.min_depth_percentage = self.config.get("min_depth_percentage", 0.7)  # Minimum % of target volume
 
     def detect_opportunities(self, state: OrderBookState) -> Dict[str, TradeOpportunity]:
         """

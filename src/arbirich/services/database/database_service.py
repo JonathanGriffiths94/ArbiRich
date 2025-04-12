@@ -136,6 +136,10 @@ class DatabaseService:
         """Get an exchange by name."""
         return self.exchange_repo.get_by_name(name)
 
+    def get_exchange_by_id(self, exchange_id: int) -> Exchange:
+        """Get an exchange by ID."""
+        return self.exchange_repo.get_by_id(exchange_id)
+
     def get_active_exchanges(self) -> list[Exchange]:
         """Get all active exchanges."""
         return self.exchange_repo.get_active()
@@ -322,6 +326,30 @@ class DatabaseService:
             return stats
         except Exception as e:
             logger.error(f"Error retrieving trading statistics: {e}")
+            return None
+
+    def get_latest_strategy_metrics(self, strategy_id: int):
+        """
+        Get the latest metrics for a strategy.
+
+        Args:
+            strategy_id: ID of the strategy
+
+        Returns:
+            StrategyMetrics object or None if not found
+        """
+        try:
+            from src.arbirich.services.database.repositories.strategy_metrics_repository import (
+                StrategyMetricsRepository,
+            )
+
+            # Create a repository instance using engine parameter to match other repository initializations
+            repository = StrategyMetricsRepository(engine=self.engine)
+
+            # Get the latest metrics
+            return repository.get_latest_by_strategy(strategy_id)
+        except Exception as e:
+            logger.error(f"Error getting latest metrics for strategy {strategy_id}: {e}")
             return None
 
 

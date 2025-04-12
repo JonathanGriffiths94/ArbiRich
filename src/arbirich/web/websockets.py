@@ -4,8 +4,11 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List
 
+import redis
+from broadcaster import Broadcast
 from fastapi import WebSocket
 
+from src.arbirich.config.config import REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.web.frontend import (
     get_dashboard_stats,
@@ -15,6 +18,14 @@ from src.arbirich.web.frontend import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Define channels to subscribe to for WebSocket updates
+WEBSOCKET_CHANNELS = [
+    "trade_opportunities",
+    "trade_executions",
+    "status_updates",
+    "broadcast",
+]
 
 
 class ConnectionManager:
@@ -100,70 +111,84 @@ async def handle_websocket_message(websocket: WebSocket, message: str):
         logger.error(f"Error handling WebSocket message: {e}")
 
 
-async def websocket_broadcast_task():
+async def websocket_broadcast_task(broadcast: Broadcast):
     """
-    Background task to broadcast updates via WebSockets.
-
-    This task runs continuously, polling for updates to send to connected clients.
+    Task to listen for Redis messages and broadcast them to WebSocket clients.
     """
-    from src.arbirich.services.redis.redis_service import RedisService
-
-    logger = logging.getLogger(__name__)
     logger.info("Starting WebSocket broadcast task")
+    redis_client = redis.Redis(
+        host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWORD, decode_responses=False
+    )
+    pubsub = redis_client.pubsub()
 
-    # Use a try-except block to catch and log exceptions
     try:
-        # Initialize Redis for pub/sub
-        redis = RedisService()
-        logger.info("Redis service initialized for WebSocket broadcasts")
+        # Subscribe to channels
+        pubsub.subscribe(*WEBSOCKET_CHANNELS)
+        logger.info(f"Subscribed to channels: {WEBSOCKET_CHANNELS}")
 
-        # Subscribe to relevant channels
-        pubsub = redis.client.pubsub()
-        pubsub.subscribe("broadcast")
-        pubsub.subscribe("status_updates")
-        pubsub.subscribe("trade_opportunities")
-        pubsub.subscribe("trade_executions")
-        logger.info("Subscribed to Redis channels for broadcasts")
-
-        # Run broadcast loop
         while True:
-            # Process messages with a timeout to allow for clean shutdown
-            message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
-            if message:
-                try:
-                    # Process message and broadcast to clients
-                    channel = message.get("channel", b"unknown").decode("utf-8")
-                    data = message.get("data")
+            try:
+                message = pubsub.get_message(timeout=1.0)
+                if message is None:
+                    # No message, just sleep briefly
+                    await asyncio.sleep(0.01)
+                    continue
 
-                    if isinstance(data, bytes):
-                        data = data.decode("utf-8")
+                if message["type"] != "message":
+                    # Skip non-message events like subscribe confirmations
+                    continue
 
-                    # Log the received message type but not the full content to avoid log spam
-                    logger.debug(f"Broadcasting message from channel {channel}")
+                # Handle both string and bytes channel names
+                channel = message.get("channel")
+                if isinstance(channel, bytes):
+                    channel = channel.decode("utf-8")
+                elif not isinstance(channel, str):
+                    channel = "unknown"
 
-                    # Broadcast to active connections
-                    await broadcast_to_connections(channel, data)
-                except Exception as e:
-                    logger.error(f"Error processing WebSocket message: {e}", exc_info=True)
+                # Handle both string and bytes data
+                data = message.get("data")
+                if isinstance(data, bytes):
+                    data = data.decode("utf-8")
 
-            # Periodic broadcast of system status
-            await asyncio.sleep(0.1)  # Small sleep to prevent CPU hogging
+                logger.debug(f"Received message from channel: {channel}")
+
+                # Process based on channel type
+                if channel == "trade_opportunities":
+                    await process_opportunity(data, broadcast)
+                elif channel == "trade_executions":
+                    await process_execution(data, broadcast)
+                elif channel == "status_updates":
+                    await process_status_update(data, broadcast)
+                elif channel == "broadcast":
+                    await broadcast.publish(group="broadcast", message=data)
+                else:
+                    # For other channels like order_book:exchange:symbol
+                    await process_channel_message(channel, data, broadcast)
+
+            except redis.ConnectionError as ce:
+                logger.error(f"Redis connection error: {ce}")
+                await asyncio.sleep(5)  # Wait before reconnecting
+                pubsub = redis_client.pubsub()
+                pubsub.subscribe(*WEBSOCKET_CHANNELS)
+                logger.info("Reconnected to Redis")
+
+            except Exception as e:
+                logger.error(f"Error processing WebSocket message: {e}", exc_info=True)
+                await asyncio.sleep(0.1)  # Avoid tight loop on errors
+
     except asyncio.CancelledError:
-        logger.info("WebSocket broadcast task cancelled, shutting down")
-        raise  # Re-raise to allow proper cleanup
+        logger.info("WebSocket broadcast task cancelled")
+        pubsub.unsubscribe()
+        pubsub.close()
+        redis_client.close()
+        raise
+
     except Exception as e:
-        logger.error(f"WebSocket broadcast task encountered an error: {e}", exc_info=True)
-        # Sleep briefly before exiting to avoid immediate restarts causing CPU spikes
-        await asyncio.sleep(1)
-        # Return normally to allow the application to continue running
-    finally:
-        # Clean up resources
-        try:
-            pubsub.unsubscribe()
-            pubsub.close()
-            logger.info("Cleaned up WebSocket broadcast resources")
-        except Exception as e:
-            logger.error(f"Error cleaning up WebSocket resources: {e}")
+        logger.error(f"Unexpected error in WebSocket broadcast task: {e}", exc_info=True)
+        pubsub.unsubscribe()
+        pubsub.close()
+        redis_client.close()
+        raise
 
 
 async def broadcast_to_connections(channel: str, data: str):
@@ -210,3 +235,45 @@ async def broadcast_to_connections(channel: str, data: str):
                 logger.error(f"Error sending WebSocket message to client: {e}")
     except Exception as e:
         logger.error(f"Error in broadcast_to_connections: {e}", exc_info=True)
+
+
+async def process_opportunity(data: str, broadcast: Broadcast):
+    """Process and broadcast trade opportunities"""
+    try:
+        payload = {"type": "opportunity", "data": data, "timestamp": datetime.now().isoformat()}
+        await broadcast.publish(group="trade_opportunities", message=json.dumps(payload))
+    except Exception as e:
+        logger.error(f"Error processing opportunity: {e}")
+
+
+async def process_execution(data: str, broadcast: Broadcast):
+    """Process and broadcast trade executions"""
+    try:
+        payload = {"type": "execution", "data": data, "timestamp": datetime.now().isoformat()}
+        await broadcast.publish(group="trade_executions", message=json.dumps(payload))
+    except Exception as e:
+        logger.error(f"Error processing execution: {e}")
+
+
+async def process_status_update(data: str, broadcast: Broadcast):
+    """Process and broadcast status updates"""
+    try:
+        payload = {"type": "status", "data": data, "timestamp": datetime.now().isoformat()}
+        await broadcast.publish(group="status", message=json.dumps(payload))
+    except Exception as e:
+        logger.error(f"Error processing status update: {e}")
+
+
+async def process_channel_message(channel: str, data: str, broadcast: Broadcast):
+    """Process and broadcast other channel messages"""
+    try:
+        # Extract channel type from channel name (e.g., "order_book:binance:BTC-USDT" → "order_book")
+        channel_parts = channel.split(":")
+        channel_type = channel_parts[0] if channel_parts else "unknown"
+
+        payload = {"type": channel_type, "channel": channel, "data": data, "timestamp": datetime.now().isoformat()}
+
+        # Publish to group matching the channel type
+        await broadcast.publish(group=channel_type, message=json.dumps(payload))
+    except Exception as e:
+        logger.error(f"Error processing channel message: {e}")
