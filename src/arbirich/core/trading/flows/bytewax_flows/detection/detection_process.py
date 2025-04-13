@@ -421,11 +421,16 @@ def format_opportunity(opportunity: Dict) -> Optional[Tuple[str, Dict]]:
         spread = opportunity.get("spread", 0)
         estimated_profit = spread * volume * buy_price
 
+        # Verify strategy is set correctly
+        strategy_name = opportunity.get("strategy", "unknown")
+        if strategy_name == "unknown":
+            logger.warning(f"Opportunity {opportunity.get('id')} has no strategy set!")
+
         # Add formatted log message with more details
         logger.info(
             f"DETECTION OPPORTUNITY DETAILS:\n"
             f"  Pair: {opportunity['pair']}\n"
-            f"  Strategy: {opportunity.get('strategy', 'unknown')}\n"
+            f"  Strategy: {strategy_name}\n"
             f"  Buy: {opportunity['buy_exchange']} @ {opportunity['buy_price']:.8f}\n"
             f"  Sell: {opportunity['sell_exchange']} @ {opportunity['sell_price']:.8f}\n"
             f"  Spread: {opportunity['spread']:.6%}\n"

@@ -57,6 +57,20 @@
             </div>
         </form>
     </div>
+    <div class="flex justify-between items-center mb-3">
+        <h2 class="text-xl font-semibold text-dollar-green">Opportunities</h2>
+        <div class="flex items-center space-x-2">
+            <span id="connection-status"
+                  class="text-sm px-2 py-1 rounded bg-gray-700 text-gray-300">
+                <span class="status-dot inline-block w-2 h-2 rounded-full bg-gray-500 mr-1"></span>
+                Disconnected
+            </span>
+            <button id="toggle-realtime"
+                    class="bg-dark-element hover:bg-dark-card text-dollar-green py-1 px-3 rounded-lg text-sm">
+                <i class="fas fa-wifi mr-1"></i> Connect
+            </button>
+        </div>
+    </div>
     <!-- Opportunities Table -->
     <div class="dashboard-card rounded-lg shadow-md overflow-hidden">
         <div class="overflow-x-auto">
@@ -75,7 +89,7 @@
                         <th class="px-4 py-2 text-center text-dollar-green">Timestamp</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="opportunities-table-body">
                     {% for opportunity in opportunities %}
                         <tr class="border-t border-dark-element hover:bg-dark-element">
                             <td class="px-4 py-2 font-mono text-xs">{{ opportunity.id[:8] }}...</td>
@@ -96,4 +110,161 @@
             </table>
         </div>
     </div>
+    <!-- WebSocket Scripts -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const MAX_ROWS = 50;  // Maximum number of rows to display
+            let socket = null;
+            let connected = false;
+            const statusDot = document.querySelector('.status-dot');
+            const statusText = document.getElementById('connection-status');
+            const toggleButton = document.getElementById('toggle-realtime');
+            const tableBody = document.getElementById('opportunities-table-body');
+            
+            // Connect to WebSocket
+            function connectWebSocket() {
+                if (socket) {
+                    socket.close();
+                }
+                
+                // Determine WebSocket URL based on current location
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/opportunities`;
+                
+                socket = new WebSocket(wsUrl);
+                
+                socket.onopen = function() {
+                    connected = true;
+                    statusDot.classList.remove('bg-gray-500', 'bg-red-500');
+                    statusDot.classList.add('bg-green-500');
+                    statusText.textContent = 'Connected';
+                    statusText.classList.remove('bg-gray-700', 'bg-red-700');
+                    statusText.classList.add('bg-green-800', 'text-green-200');
+                    toggleButton.innerHTML = '<i class="fas fa-times mr-1"></i> Disconnect';
+                    console.log('WebSocket connected');
+                };
+                
+                socket.onclose = function() {
+                    connected = false;
+                    statusDot.classList.remove('bg-green-500');
+                    statusDot.classList.add('bg-gray-500');
+                    statusText.textContent = 'Disconnected';
+                    statusText.classList.remove('bg-green-800', 'text-green-200');
+                    statusText.classList.add('bg-gray-700', 'text-gray-300');
+                    toggleButton.innerHTML = '<i class="fas fa-wifi mr-1"></i> Connect';
+                    console.log('WebSocket disconnected');
+                };
+                
+                socket.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    statusDot.classList.remove('bg-green-500', 'bg-gray-500');
+                    statusDot.classList.add('bg-red-500');
+                    statusText.textContent = 'Error';
+                    statusText.classList.remove('bg-green-800', 'bg-gray-700');
+                    statusText.classList.add('bg-red-700', 'text-red-200');
+                };
+                
+                socket.onmessage = function(event) {
+                    try {
+                        const message = JSON.parse(event.data);
+                        
+                        if (message.event === 'opportunity') {
+                            const opportunity = message.data;
+                            
+                            // Add new opportunity to table
+                            addOpportunityToTable(opportunity);
+                        }
+                    } catch (error) {
+                        console.error('Error processing WebSocket message:', error);
+                    }
+                };
+            }
+            
+            // Format timestamps
+            function formatTimestamp(timestamp) {
+                if (!timestamp) return 'N/A';
+                
+                // Convert to number if it's a string
+                if (typeof timestamp === 'string') {
+                    timestamp = parseFloat(timestamp);
+                }
+                
+                const date = new Date(timestamp * 1000);
+                return date.toLocaleString();
+            }
+            
+            // Add opportunity to table
+            function addOpportunityToTable(opportunity) {
+                // Create new row
+                const row = document.createElement('tr');
+                row.classList.add('border-t', 'border-dark-element', 'hover:bg-dark-element', 'new-opportunity');
+                
+                // Prepare ID (first 8 chars)
+                let idText = opportunity.id ? `${opportunity.id.substring(0, 8)}...` : 'unknown';
+                
+                // Format spread as percentage
+                let spread = opportunity.spread || opportunity.profit_percent || 0;
+                // Convert decimal to percentage if needed (e.g., 0.01 -> 1%)
+                if (spread < 0.1) spread *= 100;
+                
+                // Format timestamp
+                let timestamp = formatTimestamp(opportunity.timestamp || opportunity.opportunity_timestamp || opportunity.created_at);
+                
+                // Create row content
+                row.innerHTML = `
+                    <td class="px-4 py-2 font-mono text-xs">${idText}</td>
+                    <td class="px-4 py-2">${opportunity.strategy || 'N/A'}</td>
+                    <td class="px-4 py-2 font-medium">${opportunity.pair || 'N/A'}</td>
+                    <td class="px-4 py-2">${opportunity.buy_exchange || 'N/A'}</td>
+                    <td class="px-4 py-2">${opportunity.sell_exchange || 'N/A'}</td>
+                    <td class="px-4 py-2 text-right">$${(opportunity.buy_price || 0).toFixed(4)}</td>
+                    <td class="px-4 py-2 text-right">$${(opportunity.sell_price || 0).toFixed(4)}</td>
+                    <td class="px-4 py-2 text-right text-profit-green">${spread.toFixed(4)}%</td>
+                    <td class="px-4 py-2 text-right">${(opportunity.volume || 0).toFixed(4)}</td>
+                    <td class="px-4 py-2 text-center text-gray-300">${timestamp}</td>
+                `;
+                
+                // Add highlight effect
+                row.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+                setTimeout(() => {
+                    row.style.transition = 'background-color 1s ease-out';
+                    row.style.backgroundColor = '';
+                }, 100);
+                
+                // Add to table at the top
+                tableBody.insertBefore(row, tableBody.firstChild);
+                
+                // Remove excess rows if needed
+                while (tableBody.children.length > MAX_ROWS) {
+                    tableBody.removeChild(tableBody.lastChild);
+                }
+            }
+            
+            // Toggle WebSocket connection
+            toggleButton.addEventListener('click', function() {
+                if (connected) {
+                    socket.close();
+                } else {
+                    connectWebSocket();
+                }
+            });
+            
+            // Optional: Auto-connect on page load (uncomment if desired)
+            // connectWebSocket();
+        });
+    </script>
+    <style>
+        .new-opportunity {
+            animation: fadeIn 0.5s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .status-dot {
+            transition: background-color 0.3s ease;
+        }
+    </style>
 {% endblock %}

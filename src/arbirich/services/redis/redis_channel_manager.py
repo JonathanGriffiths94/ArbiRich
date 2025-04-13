@@ -1,362 +1,167 @@
 import json
 import logging
 import threading
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, Union
 
 from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
-from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
-from src.arbirich.services.redis.redis_service import RedisService, get_shared_redis_client
+from src.arbirich.models.models import TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 
-# Singleton instance
-_channel_manager_instance = None
-_channel_manager_lock = threading.Lock()
+# Global shared instance for the channel manager
+_channel_manager = None
+_channel_manager_lock = threading.RLock()
 
 
 def get_channel_manager():
-    """Get the singleton RedisChannelManager instance"""
-    global _channel_manager_instance
+    """Get or create a shared channel manager instance"""
+    global _channel_manager
     with _channel_manager_lock:
-        if _channel_manager_instance is None:
-            _channel_manager_instance = RedisChannelManager()
-        return _channel_manager_instance
+        if _channel_manager is None:
+            from src.arbirich.services.redis.redis_service import get_shared_redis_client
+
+            redis_client = get_shared_redis_client()
+            if redis_client:
+                _channel_manager = RedisChannelManager(redis_client)
+            else:
+                logger.error("Failed to get Redis client for channel manager")
+                return None
+        return _channel_manager
 
 
 def reset_channel_manager():
-    """Reset the channel manager singleton"""
-    global _channel_manager_instance
+    """Reset the shared channel manager instance"""
+    global _channel_manager
     with _channel_manager_lock:
-        if _channel_manager_instance:
-            try:
-                _channel_manager_instance.close()
-            except Exception as e:
-                logger.error(f"Error closing channel manager: {e}")
-            _channel_manager_instance = None
-    logger.info("Channel manager reset")
+        _channel_manager = None
+        logger.info("Channel manager reset")
 
 
 class RedisChannelManager:
     """
-    Manages Redis channels for different message types and provides
-    consistent channel naming across the system.
+    Manages Redis channel publication and subscription for different message types
+    with support for strategy-specific channels.
     """
 
-    # Channel type constants
-    ORDER_BOOK = ORDER_BOOK_CHANNEL
-    TRADE_OPPORTUNITIES = TRADE_OPPORTUNITIES_CHANNEL
-    TRADE_EXECUTIONS = TRADE_EXECUTIONS_CHANNEL
+    def __init__(self, redis_service):
+        """Initialize with a Redis service instance"""
+        self.redis = redis_service
+        self.ORDER_BOOK = ORDER_BOOK_CHANNEL
+        self.TRADE_OPPORTUNITIES = TRADE_OPPORTUNITIES_CHANNEL
+        self.TRADE_EXECUTIONS = TRADE_EXECUTIONS_CHANNEL
+        logger.info("RedisChannelManager initialized")
 
-    def __init__(self, redis_service: Optional[RedisService] = None):
-        """
-        Initialize with an existing RedisService or create a new one
-
-        Args:
-            redis_service: Optional existing RedisService instance
-        """
-        self.redis = redis_service or get_shared_redis_client()
-        self._subscribed_channels: Set[str] = set()
-        self.logger = logging.getLogger(__name__)
-
-    # ===== Channel Name Formatting =====
-
-    def get_orderbook_channel(self, exchange: str, symbol: Optional[str] = None) -> str:
-        """
-        Get the channel name for order book updates
-
-        Args:
-            exchange: Exchange name
-            symbol: Optional trading pair symbol
-
-        Returns:
-            Channel name string
-        """
-        if symbol:
-            return f"{self.ORDER_BOOK}:{exchange}:{symbol}"
-        return f"{self.ORDER_BOOK}:{exchange}"
-
-    def get_opportunity_channel(self, strategy_name: Optional[str] = None) -> str:
-        """
-        Get the channel name for trade opportunities
-
-        Args:
-            strategy_name: Optional strategy name
-
-        Returns:
-            Channel name string
-        """
+    def get_opportunity_channel(self, strategy_name=None):
+        """Get the channel name for trade opportunities"""
         if strategy_name:
             return f"{self.TRADE_OPPORTUNITIES}:{strategy_name}"
         return self.TRADE_OPPORTUNITIES
 
-    def get_execution_channel(self, strategy_name: Optional[str] = None) -> str:
-        """
-        Get the channel name for trade executions
-
-        Args:
-            strategy_name: Optional strategy name
-
-        Returns:
-            Channel name string
-        """
+    def get_execution_channel(self, strategy_name=None):
+        """Get the channel name for trade executions"""
         if strategy_name:
             return f"{self.TRADE_EXECUTIONS}:{strategy_name}"
         return self.TRADE_EXECUTIONS
 
-    # ===== Publishing Methods =====
-
-    def publish_order_book(self, exchange: str, symbol: str, order_book: Union[Dict, OrderBookUpdate]) -> int:
+    def publish_opportunity(self, opportunity: Union[TradeOpportunity, Dict[str, Any]], strategy_name=None) -> int:
         """
-        Publish an order book update to appropriate channels
+        Publish a trade opportunity to appropriate channels.
 
         Args:
-            exchange: Exchange name
-            symbol: Trading pair symbol
-            order_book: Order book data (dict or OrderBookUpdate)
+            opportunity: The opportunity to publish
+            strategy_name: Optional strategy name to use for channel selection
+                           If None, will extract from opportunity
 
         Returns:
             Total number of subscribers reached
         """
-        try:
-            # Convert OrderBookUpdate to dict if needed
-            if hasattr(order_book, "model_dump"):
-                data = order_book.model_dump()
-            elif hasattr(order_book, "dict"):
-                data = order_book.dict()  # For older Pydantic versions
+        total_subscribers = 0
+
+        # Extract strategy from opportunity if not provided
+        if not strategy_name:
+            if isinstance(opportunity, dict):
+                strategy_name = opportunity.get("strategy")
             else:
-                data = order_book  # Assume it's already a dict
+                strategy_name = getattr(opportunity, "strategy", None)
 
-            # Add exchange and symbol if needed
-            if "exchange" not in data:
-                data["exchange"] = exchange
-            if "symbol" not in data:
-                data["symbol"] = symbol
-
-            # Convert to JSON
-            message_json = json.dumps(data)
-
-            # Publish to multiple channels for maximum compatibility
-            channels = [
-                self.ORDER_BOOK,  # Generic channel
-                f"{self.ORDER_BOOK}:{exchange}",  # Exchange-specific channel
-                f"{self.ORDER_BOOK}:{exchange}:{symbol}",  # Exchange and symbol specific channel
-            ]
-
-            total_subscribers = 0
-            for channel in channels:
-                subscribers = self.redis.client.publish(channel, message_json)
-                total_subscribers += subscribers
-
-                if subscribers > 0:
-                    logger.debug(f"Published to {channel}: {subscribers} subscribers")
-
-            if total_subscribers > 0:
-                logger.debug(f"Order book for {exchange}:{symbol} published to {total_subscribers} subscribers")
+        # Convert to JSON for publishing
+        if isinstance(opportunity, TradeOpportunity):
+            if hasattr(opportunity, "model_dump_json"):
+                data_json = opportunity.model_dump_json()
             else:
-                logger.warning(f"Order book for {exchange}:{symbol} published but no subscribers")
-
-            return total_subscribers
-
-        except Exception as e:
-            logger.error(f"Error publishing order book: {e}", exc_info=True)
+                data_json = json.dumps(opportunity.dict())
+        elif isinstance(opportunity, dict):
+            data_json = json.dumps(opportunity)
+        else:
+            logger.error(f"Unsupported opportunity type: {type(opportunity)}")
             return 0
 
-    def publish_opportunity(self, opportunity: TradeOpportunity, strategy_name: Optional[str] = None) -> int:
-        """
-        Publish an opportunity to appropriate Redis channels
-
-        Args:
-            opportunity: The opportunity to publish
-            strategy_name: Optional strategy name for strategy-specific channel
-
-        Returns:
-            Number of subscribers that received the message
-        """
+        # Always publish to main channel
         try:
-            # Convert to JSON
-            if hasattr(opportunity, "model_dump"):
-                data = opportunity.model_dump()
-            elif hasattr(opportunity, "dict"):
-                data = opportunity.dict()
-            else:
-                data = opportunity
-
-            json_data = json.dumps(data)
-
-            # First publish to main channel
-            main_subscribers = self.redis.client.publish(TRADE_OPPORTUNITIES_CHANNEL, json_data)
-            self.logger.debug(f"Published to {TRADE_OPPORTUNITIES_CHANNEL}: {main_subscribers} subscribers")
-
-            # If strategy name is provided, also publish to strategy-specific channel
-            strategy_subscribers = 0
-            if strategy_name:
-                strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
-                strategy_subscribers = self.redis.client.publish(strategy_channel, json_data)
-                self.logger.debug(f"Published to {strategy_channel}: {strategy_subscribers} subscribers")
-
-            total_subscribers = main_subscribers + strategy_subscribers
-            return total_subscribers
-
+            main_subscribers = self.redis.client.publish(self.TRADE_OPPORTUNITIES, data_json)
+            total_subscribers += main_subscribers
+            logger.debug(f"Published to main opportunity channel: {main_subscribers} subscribers")
         except Exception as e:
-            self.logger.error(f"Error publishing opportunity: {e}")
-            return 0
+            logger.error(f"Error publishing to main opportunity channel: {e}")
 
-    def publish_execution(self, execution: TradeExecution) -> int:
+        # Also publish to strategy-specific channel if strategy is provided
+        if strategy_name:
+            try:
+                strategy_channel = f"{self.TRADE_OPPORTUNITIES}:{strategy_name}"
+                strategy_subscribers = self.redis.client.publish(strategy_channel, data_json)
+                total_subscribers += strategy_subscribers
+                logger.debug(f"Published to strategy channel {strategy_channel}: {strategy_subscribers} subscribers")
+            except Exception as e:
+                logger.error(f"Error publishing to strategy opportunity channel: {e}")
+
+        return total_subscribers
+
+    def publish_execution(self, execution: Union[TradeExecution, Dict[str, Any]]) -> int:
         """
-        Publish an execution to appropriate Redis channels
+        Publish a trade execution to appropriate channels.
 
         Args:
             execution: The execution to publish
 
         Returns:
-            Number of subscribers that received the message
+            Total number of subscribers reached
         """
-        try:
-            # Convert to JSON
-            if hasattr(execution, "model_dump"):
-                data = execution.model_dump()
-            elif hasattr(execution, "dict"):
-                data = execution.dict()
+        total_subscribers = 0
+
+        # Extract strategy from execution
+        if isinstance(execution, dict):
+            strategy_name = execution.get("strategy")
+        else:
+            strategy_name = getattr(execution, "strategy", None)
+
+        # Convert to JSON for publishing
+        if isinstance(execution, TradeExecution):
+            if hasattr(execution, "model_dump_json"):
+                data_json = execution.model_dump_json()
             else:
-                data = execution
-
-            json_data = json.dumps(data)
-
-            # First publish to main executions channel
-            main_subscribers = self.redis.client.publish(TRADE_EXECUTIONS_CHANNEL, json_data)
-            self.logger.debug(f"Published to {TRADE_EXECUTIONS_CHANNEL}: {main_subscribers} subscribers")
-
-            # Also publish to strategy-specific executions channel if strategy is present
-            strategy_subscribers = 0
-            if execution.strategy:
-                strategy_channel = f"{TRADE_EXECUTIONS_CHANNEL}:{execution.strategy}"
-                strategy_subscribers = self.redis.client.publish(strategy_channel, json_data)
-                self.logger.debug(f"Published to {strategy_channel}: {strategy_subscribers} subscribers")
-
-            total_subscribers = main_subscribers + strategy_subscribers
-            self.logger.info(f"Published execution {execution.id} to {total_subscribers} subscribers")
-            return total_subscribers
-
-        except Exception as e:
-            self.logger.error(f"Error publishing execution: {e}")
+                data_json = json.dumps(execution.dict())
+        elif isinstance(execution, dict):
+            data_json = json.dumps(execution)
+        else:
+            logger.error(f"Unsupported execution type: {type(execution)}")
             return 0
 
-    def publish_data(self, channel: str, data: Dict[str, Any]) -> int:
-        """
-        Publish generic data to a specified channel
-
-        Args:
-            channel: The channel to publish to
-            data: The data to publish
-
-        Returns:
-            Number of subscribers that received the message
-        """
+        # Always publish to main channel
         try:
-            json_data = json.dumps(data)
-            subscribers = self.redis.client.publish(channel, json_data)
-            return subscribers
+            main_subscribers = self.redis.client.publish(self.TRADE_EXECUTIONS, data_json)
+            total_subscribers += main_subscribers
+            logger.debug(f"Published to main execution channel: {main_subscribers} subscribers")
         except Exception as e:
-            self.logger.error(f"Error publishing to {channel}: {e}")
-            return 0
+            logger.error(f"Error publishing to main execution channel: {e}")
 
-    # ===== Subscription Methods =====
+        # Also publish to strategy-specific channel if strategy is provided
+        if strategy_name:
+            try:
+                strategy_channel = f"{self.TRADE_EXECUTIONS}:{strategy_name}"
+                strategy_subscribers = self.redis.client.publish(strategy_channel, data_json)
+                total_subscribers += strategy_subscribers
+                logger.debug(f"Published to strategy execution channel: {strategy_subscribers} subscribers")
+            except Exception as e:
+                logger.error(f"Error publishing to strategy execution channel: {e}")
 
-    def subscribe_to_orderbook(self, exchange: str, symbol: Optional[str] = None, callback=None):
-        """
-        Subscribe to order book updates for an exchange
-
-        Args:
-            exchange: Exchange name
-            symbol: Optional symbol to filter updates
-            callback: Optional callback function for processing messages
-        """
-        channel = self.get_orderbook_channel(exchange, symbol)
-
-        # Subscribe using Redis pubsub
-        pubsub = self.redis.client.pubsub()
-        pubsub.subscribe(channel)
-        logger.info(f"Subscribed to channel: {channel}")
-
-        return pubsub
-
-    def subscribe_to_opportunities(self, strategy_name: Optional[str] = None, callback=None):
-        """
-        Subscribe to trade opportunity updates
-
-        Args:
-            strategy_name: Optional strategy name to filter updates
-            callback: Optional callback function for processing messages
-        """
-        channel = self.get_opportunity_channel(strategy_name)
-
-        # Subscribe using Redis pubsub
-        pubsub = self.redis.client.pubsub()
-        pubsub.subscribe(channel)
-        logger.info(f"Subscribed to channel: {channel}")
-
-        return pubsub
-
-    def subscribe_to_executions(self, strategy_name: Optional[str] = None, callback=None):
-        """
-        Subscribe to trade execution updates
-
-        Args:
-            strategy_name: Optional strategy name to filter updates
-            callback: Optional callback function for processing messages
-        """
-        channel = self.get_execution_channel(strategy_name)
-
-        # Subscribe using Redis pubsub
-        pubsub = self.redis.client.pubsub()
-        pubsub.subscribe(channel)
-        logger.info(f"Subscribed to channel: {channel}")
-
-        return pubsub
-
-    # ===== Utility Methods =====
-
-    def ensure_subscribed(self, channels: List[str]):
-        """
-        Ensure subscription to a list of channels
-
-        Args:
-            channels: List of channel names
-        """
-        pubsub = self.redis.client.pubsub()
-        for channel in channels:
-            if channel not in self._subscribed_channels:
-                pubsub.subscribe(channel)
-                self._subscribed_channels.add(channel)
-                logger.info(f"Subscribed to channel: {channel}")
-
-        return pubsub
-
-    def close(self):
-        """Close the Redis connection"""
-        self.redis.close()
-
-    def get_all_system_channels(self) -> List[str]:
-        """Get a list of all standard system channels"""
-        from src.arbirich.config.config import EXCHANGES, PAIRS, STRATEGIES
-
-        channels = [
-            # Base channels
-            self.ORDER_BOOK,
-            self.TRADE_OPPORTUNITIES,
-            self.TRADE_EXECUTIONS,
-        ]
-
-        # Add strategy-specific channels
-        for strategy_name in STRATEGIES.keys():
-            channels.append(f"{self.TRADE_OPPORTUNITIES}:{strategy_name}")
-            channels.append(f"{self.TRADE_EXECUTIONS}:{strategy_name}")
-
-        # Add exchange-pair specific channels
-        for exchange in EXCHANGES:
-            for base, quote in PAIRS:
-                symbol = f"{base}-{quote}"
-                channel = self.get_orderbook_channel(exchange, symbol)
-                channels.append(channel)
-
-        return channels
+        return total_subscribers

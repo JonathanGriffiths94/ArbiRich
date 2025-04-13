@@ -296,7 +296,10 @@ def build_detection_flow(strategy_name: str, debug_mode: bool = False, threshold
     # Publish opportunities to Redis
     def publish_logic(state, item):
         start_time = time.time()
+
+        # Will raise error instead of returning None if it fails
         publish_trade_opportunity(item)
+
         process_time = time.time() - start_time
 
         if debug_mode:
@@ -364,17 +367,30 @@ def stop_detection_flow():
     mark_system_shutdown(True)
 
     # If we have Redis client, ensure proper cleanup
-    try:
-        from src.arbirich.services.redis.redis_service import reset_redis_pool
+    from src.arbirich.services.redis.redis_service import reset_redis_pool
 
-        reset_redis_pool()
-        logger.info("Reset all Redis pools for detection flow")
-    except Exception as e:
-        logger.error(f"Error resetting Redis pools: {e}")
+    reset_redis_pool()
+    logger.info("Reset all Redis pools for detection flow")
 
     # Now use the flow manager to stop the flow
     logger.info("Stopping detection flow via flow manager")
-    return flow_manager.stop_flow()
+
+    # Add a failsafe timer to force exit if normal shutdown gets stuck
+    import os
+    import threading
+
+    def _force_exit_failsafe():
+        logger.critical("FAILSAFE TRIGGERED - Force exiting program after 5 seconds")
+        os._exit(1)
+
+    # Create a timer to force exit after 5 seconds
+    force_exit_timer = threading.Timer(5.0, _force_exit_failsafe)
+    force_exit_timer.daemon = True
+    force_exit_timer.start()
+
+    # Don't catch exceptions - let them propagate up
+    result = flow_manager.stop_flow()
+    return result
 
 
 async def stop_detection_flow_async():
@@ -422,6 +438,13 @@ if __name__ == "__main__":
             from src.arbirich.core.state.system_state import mark_system_shutdown
 
             mark_system_shutdown(True)
+
+            # Apply more aggressive shutdown from detection_source
+            from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import (
+                mark_detection_force_kill,
+            )
+
+            mark_detection_force_kill()
 
             # Just set the stop event first
             flow_manager.stop_event.set()

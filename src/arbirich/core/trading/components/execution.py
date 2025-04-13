@@ -132,6 +132,18 @@ class ExecutionComponent(Component):
         self.logger.info(f"Running execution component for {len(self.active_flows)} flows")
 
         try:
+            # Ensure reporting flow is active - this helps coordinate execution actions
+            try:
+                from src.arbirich.core.trading.flows.reporting.reporting_flow import get_flow
+                from src.arbirich.core.trading.flows.reporting.reporting_flow import start_flow as start_reporting
+
+                reporting_flow = await get_flow()
+                if not reporting_flow or not reporting_flow.active:
+                    self.logger.info("Starting reporting flow for execution coordination")
+                    await start_reporting()
+            except Exception as e:
+                self.logger.warning(f"Could not ensure reporting flow: {e}")
+
             # Start the flow for each strategy
             for flow_id, flow_info in self.active_flows.items():
                 strategy_name = flow_info.get("strategy_name")

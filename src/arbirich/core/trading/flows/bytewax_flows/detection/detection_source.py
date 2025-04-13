@@ -63,20 +63,65 @@ def mark_detection_force_kill():
         try:
             import redis
 
-            redis.Redis().connection_pool.disconnect()
+            # More aggressive connection pool cleanup
+            try:
+                # Get all Redis connection pools and close them
+                pools = redis.Redis.connection_pool.pools if hasattr(redis.Redis, "connection_pool") else {}
+                for key, pool in pools.items():
+                    try:
+                        pool.disconnect()
+                        logger.info(f"Disconnected pool: {key}")
+                    except Exception as e:
+                        logger.warning(f"Error disconnecting pool {key}: {e}")
+            except Exception:
+                # More graceful handling of Redis connection errors
+                try:
+                    redis.Redis().connection_pool.disconnect()
+                except Exception as e:
+                    logger.warning(f"Error disconnecting default Redis pool: {e}")
+
             logger.info("Forcibly disconnected all Redis connections")
         except Exception as e:
             logger.warning(f"Error during force Redis disconnect: {e}")
 
+        # Attempt to kill all Redis-related threads
+        try:
+            import threading
+
+            for thread in threading.enumerate():
+                if "redis" in thread.name.lower():
+                    logger.warning(f"Detected Redis thread: {thread.name}")
+                    # Can't force kill other threads, but log them for awareness
+        except Exception:
+            pass
+
         # Force exit if called in standalone script context
         if __name__ == "__main__":
             import os
+            import signal
 
             logger.warning("Force killing process in standalone mode")
+            # Try SIGTERM first
+            try:
+                os.kill(os.getpid(), signal.SIGTERM)
+                time.sleep(0.5)  # Give it a moment
+            except Exception as e:
+                logger.warning(f"Error sending SIGTERM: {e}")
+
             # Use os._exit which doesn't call cleanup handlers
-            os._exit(1)
+            try:
+                os._exit(1)
+            except Exception as e:
+                logger.error(f"Failed to exit process: {e}")
     except Exception as e:
         logger.error(f"Error during aggressive detection cleanup: {e}")
+        # Last resort - try to force exit
+        try:
+            import os
+
+            os._exit(1)
+        except Exception as e:
+            logger.error(f"Failed to exit process: {e}")
 
 
 def is_force_kill_set():

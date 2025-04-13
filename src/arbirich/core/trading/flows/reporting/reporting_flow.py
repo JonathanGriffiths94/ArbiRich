@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.core.state.system_state import mark_system_shutdown
+from src.arbirich.core.trading.flows.flow_manager import FlowManager
 from src.arbirich.services.redis.redis_service import get_shared_redis_client, reset_shared_redis_client
 
 from .tasks import monitor_health, persist_data, process_redis_messages, report_performance
@@ -377,6 +378,60 @@ def stop_flow_sync() -> bool:
     else:
         # Run the async stop directly
         return loop.run_until_complete(stop_flow())
+
+
+# Add a ReportingFlowManager to better integrate with the flow_manager system
+class ReportingFlowManager(FlowManager):
+    """Manager for reporting flows that integrates with the flow manager system."""
+
+    def __init__(self, flow_id: str = "reporting"):
+        super().__init__(flow_id)
+        self.reporting_flow = None
+        self.config = {}
+
+    async def build_flow(self) -> ReportingFlow:
+        """Build a reporting flow instance"""
+        self.reporting_flow = await initialize_flow(flow_type="performance", config=self.config)
+        return self.reporting_flow
+
+    async def run_flow(self) -> bool:
+        """Run the reporting flow"""
+        if self.reporting_flow is None:
+            self.reporting_flow = await self.build_flow()
+
+        if self.reporting_flow:
+            success = await self.reporting_flow.start()
+            self.running = success
+            return success
+        return False
+
+    def stop_flow(self) -> bool:
+        """Stop the reporting flow"""
+        if self.reporting_flow:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self.reporting_flow.stop())
+                self.running = False
+                return True
+            else:
+                result = loop.run_until_complete(self.reporting_flow.stop())
+                self.running = False
+                return result
+        return True
+
+
+# Initialize a singleton instance of the reporting flow manager
+_flow_manager = None
+
+
+def get_flow_manager() -> ReportingFlowManager:
+    """Get or create a ReportingFlowManager instance"""
+    global _flow_manager
+    if _flow_manager is None:
+        _flow_manager = ReportingFlowManager("reporting")
+        # Register with the global flow manager registry
+        FlowManager.get_or_create("reporting")
+    return _flow_manager
 
 
 # Main entry point for running the flow directly

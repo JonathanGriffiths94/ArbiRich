@@ -70,12 +70,16 @@
                         {% for opp in opportunities %}
                             <tr class="border-b border-gray-800 hover:bg-dark-element">
                                 <td class="py-2">{{ opp.pair|default("Unknown") }}</td>
-                                <td class="py-2">{{ opp.buy_exchange|default("N/A") }} → {{ opp.sell_exchange|default("N/A") }}</td>
-                                <td class="py-2">{{ opp.strategy_name|default("N/A") }}</td>
-                                <td class="py-2 text-right {% if opp.spread_percent|default(0) > 0.5 %}text-profit-green{% else %}text-gray-300{% endif %}">
-                                    {{ opp.spread_percent|default(0) }}%
+                                <td class="py-2">{{ opp.buy_exchange|default("--") }} → {{ opp.sell_exchange|default("--") }}</td>
+                                <td class="py-2">{{ opp.strategy|default("--") }}</td>
+                                <td class="py-2 text-right text-profit-green">
+                                    {{ (opp.spread*100 if opp.spread else opp.profit_percent|default(0) )|round(4) }}%
                                 </td>
-                                <td class="py-2 text-right text-profit-green">${{ opp.profit|default(0) |round(2) }}</td>
+                                <td class="py-2 text-right">${{ ((opp.sell_price - opp.buy_price) * opp.volume)|default(0) |round(2) }}</td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="5" class="py-3 text-center text-gray-500">No recent opportunities</td>
                             </tr>
                         {% endfor %}
                     </tbody>

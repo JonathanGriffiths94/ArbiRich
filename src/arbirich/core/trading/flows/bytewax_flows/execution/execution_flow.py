@@ -138,6 +138,16 @@ async def run_execution_flow(strategy_name=None, debug_mode=False):
     """
     logger.info(f"Starting execution flow with strategy={strategy_name}, debug={debug_mode}")
 
+    # Update the current configuration
+    global _current_strategy_name, _current_debug_mode
+    _current_strategy_name = strategy_name
+    _current_debug_mode = debug_mode
+
+    # Make sure the flow builder uses the current configuration
+    flow_manager.build_flow = lambda: build_execution_flow(
+        strategy_name=_current_strategy_name, debug_mode=_current_debug_mode
+    )
+
     # Run the flow using the manager
     return await flow_manager.run_flow()
 
@@ -145,12 +155,52 @@ async def run_execution_flow(strategy_name=None, debug_mode=False):
 def stop_execution_flow():
     """Stop the execution flow synchronously"""
     logger.info("Stopping execution flow synchronously")
+
+    # Make sure reporting system is notified of the execution stop
+    try:
+        import asyncio
+
+        from src.arbirich.core.trading.flows.reporting.reporting_flow import get_flow
+
+        # Try to get the reporting flow and notify it
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+
+            async def notify_reporting():
+                reporting_flow = await get_flow()
+                if reporting_flow:
+                    logger.info("Notifying reporting flow of execution stop")
+                    # We don't need to wait for this
+
+            # Create task but don't wait for it
+            asyncio.create_task(notify_reporting())
+        else:
+            # In synchronous context, just log
+            logger.info("Synchronous context - skipping reporting notification")
+    except Exception as e:
+        logger.warning(f"Could not notify reporting flow: {e}")
+
+    # Now stop the execution flow
     return flow_manager.stop_flow()
 
 
 async def stop_execution_flow_async():
     """Stop the execution flow asynchronously"""
     logger.info("Stopping execution flow asynchronously")
+
+    # Make sure reporting system is notified of the execution stop
+    try:
+        from src.arbirich.core.trading.flows.reporting.reporting_flow import get_flow
+
+        # Try to get the reporting flow and notify it
+        reporting_flow = await get_flow()
+        if reporting_flow:
+            logger.info("Notifying reporting flow of execution stop")
+            # We don't need to wait for this
+    except Exception as e:
+        logger.warning(f"Could not notify reporting flow: {e}")
+
+    # Now stop the execution flow
     return await flow_manager.stop_flow_async()
 
 

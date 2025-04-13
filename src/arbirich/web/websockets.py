@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time  # Add this import
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -330,13 +331,30 @@ async def process_opportunity(data, broadcast: Broadcast):
         else:
             opportunity = opportunity_data
 
-        # Prepare the message with event type
+        # Extract key fields for better logging and display
+        opportunity_id = opportunity.get("id", "unknown")
+        pair = opportunity.get("pair", "unknown")
+        buy_exchange = opportunity.get("buy_exchange", "unknown")
+        sell_exchange = opportunity.get("sell_exchange", "unknown")
+        spread = opportunity.get("spread", 0)
+
+        # Log meaningful information about the opportunity
+        logger.debug(
+            f"Processing opportunity: {opportunity_id} - {pair} - {buy_exchange}/{sell_exchange} - {spread:.4%}"
+        )
+
+        # Prepare the message with event type and add a timestamp if not present
+        if "timestamp" not in opportunity and "opportunity_timestamp" in opportunity:
+            opportunity["timestamp"] = opportunity["opportunity_timestamp"]
+        elif "timestamp" not in opportunity:
+            opportunity["timestamp"] = time.time()
+
         ws_message = {"event": "opportunity", "data": opportunity}
 
-        # Broadcast to all connected clients - FIXED: removed group parameter
-        await broadcast.publish(json.dumps(ws_message))
+        # Broadcast to all connected clients - FIXED: added required 'message' parameter name
+        await broadcast.publish(channel="trade_opportunities", message=json.dumps(ws_message))
 
-        logger.debug(f"Broadcasted opportunity: {opportunity.get('id', 'unknown')}")
+        logger.debug(f"Broadcasted opportunity: {opportunity.get('id', 'unknown')} for {pair}")
     except Exception as e:
         logger.error(f"Error processing opportunity: {e}", exc_info=True)
 

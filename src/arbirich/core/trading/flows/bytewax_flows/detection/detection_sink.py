@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from typing import Optional
@@ -21,6 +22,8 @@ def get_redis_service():
         from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
         _redis_service = get_shared_redis_client()
+        if not _redis_service:
+            raise RuntimeError("Failed to initialize Redis service")
     return _redis_service
 
 
@@ -88,68 +91,129 @@ def publish_trade_opportunity(opportunity, strategy_name=None):
     from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
     publish_start = time.time()
-    logger.info(f"Publishing trade opportunity: {opportunity.get('id', 'unknown')}")
 
-    try:
-        # If no strategy_name was provided, use the one from the opportunity
-        if not strategy_name and hasattr(opportunity, "strategy"):
+    # Early safety check for None opportunity
+    if opportunity is None:
+        raise ValueError("Attempted to publish None opportunity")
+
+    # Safer ID extraction - raise error if ID cannot be determined
+    opportunity_id = None
+    if isinstance(opportunity, dict):
+        opportunity_id = opportunity.get("id")
+    else:
+        opportunity_id = getattr(opportunity, "id", None)
+
+    if not opportunity_id:
+        raise ValueError(f"Missing opportunity ID in {type(opportunity)}")
+
+    logger.info(f"Publishing trade opportunity: {opportunity_id}")
+
+    # If no strategy_name was provided, use the one from the opportunity
+    if not strategy_name:
+        if hasattr(opportunity, "strategy"):
             strategy_name = opportunity.strategy
-        elif not strategy_name and isinstance(opportunity, dict):
+        elif isinstance(opportunity, dict):
             strategy_name = opportunity.get("strategy")
 
-        logger.info(f"Publishing to strategy: {strategy_name}")
+        if not strategy_name:
+            raise ValueError("No strategy name provided and none found in opportunity")
 
-        # Make sure we have a strategy name that matches what's in the config
-        from src.arbirich.config.config import ALL_STRATEGIES
+    logger.info(f"Publishing to strategy: {strategy_name}")
 
-        if strategy_name and strategy_name not in ALL_STRATEGIES:
-            logger.warning(f"Publishing opportunity for unknown strategy: {strategy_name}")
+    # Make sure we have a strategy name that matches what's in the config
+    from src.arbirich.config.config import ALL_STRATEGIES
 
-        # Use the channel manager to handle publication to multiple channels
-        redis_client = get_shared_redis_client()
-        channel_manager = RedisChannelManager(redis_client)
+    if strategy_name not in ALL_STRATEGIES:
+        raise ValueError(f"Publishing opportunity for unknown strategy: {strategy_name}")
 
-        # Log the opportunity details before publishing
-        if isinstance(opportunity, dict):
-            pair = opportunity.get("pair", "unknown")
-            buy_exchange = opportunity.get("buy_exchange", "unknown")
-            sell_exchange = opportunity.get("sell_exchange", "unknown")
-            buy_price = opportunity.get("buy_price", 0)
-            sell_price = opportunity.get("sell_price", 0)
-            spread = opportunity.get("spread", 0)
-            volume = opportunity.get("volume", 0)
-        else:
-            pair = getattr(opportunity, "pair", "unknown")
-            buy_exchange = getattr(opportunity, "buy_exchange", "unknown")
-            sell_exchange = getattr(opportunity, "sell_exchange", "unknown")
-            buy_price = getattr(opportunity, "buy_price", 0)
-            sell_price = getattr(opportunity, "sell_price", 0)
-            spread = getattr(opportunity, "spread", 0)
-            volume = getattr(opportunity, "volume", 0)
+    # Use the channel manager to handle publication to multiple channels
+    redis_client = get_shared_redis_client()
+    if not redis_client:
+        raise RuntimeError("Failed to get Redis client, cannot publish opportunity")
 
-        logger.info(
-            f"PUBLISHING OPPORTUNITY:\n"
-            f"  Strategy: {strategy_name}\n"
-            f"  Pair: {pair}\n"
-            f"  Buy: {buy_exchange} @ {buy_price:.8f}\n"
-            f"  Sell: {sell_exchange} @ {sell_price:.8f}\n"
-            f"  Spread: {spread:.6%}\n"
-            f"  Volume: {volume:.8f}\n"
-            f"  Est. Profit: {(spread * volume * buy_price):.8f}"
-        )
+    channel_manager = RedisChannelManager(redis_client)
 
-        subscribers = channel_manager.publish_opportunity(opportunity)
-        publish_time = time.time() - publish_start
+    # Extract opportunity details - with strict requirements
+    if isinstance(opportunity, dict):
+        if "pair" not in opportunity:
+            raise KeyError("Missing 'pair' in opportunity dict")
 
-        if subscribers > 0:
-            logger.info(f"Published opportunity to {subscribers} subscribers in {publish_time:.6f}s")
-            return opportunity
-        else:
-            logger.warning(f"No subscribers found for opportunity (took {publish_time:.6f}s)")
-            return opportunity  # Still return the opportunity to continue the flow
+        pair = opportunity["pair"]
+        buy_exchange = opportunity.get("buy_exchange")
+        sell_exchange = opportunity.get("sell_exchange")
+        buy_price = opportunity.get("buy_price")
+        sell_price = opportunity.get("sell_price")
+        spread = opportunity.get("spread")
+        volume = opportunity.get("volume")
 
-    except Exception as e:
-        logger.error(f"Error publishing opportunity: {e}", exc_info=True)
-        publish_time = time.time() - publish_start
-        logger.error(f"Publishing failed after {publish_time:.6f}s")
-        return opportunity  # Still return the opportunity to continue the flow
+        # Validate critical fields
+        if not all([buy_exchange, sell_exchange, buy_price, sell_price, spread, volume]):
+            missing = []
+            for field in ["buy_exchange", "sell_exchange", "buy_price", "sell_price", "spread", "volume"]:
+                if not opportunity.get(field):
+                    missing.append(field)
+            raise ValueError(f"Missing required fields in opportunity: {missing}")
+    else:
+        # Object attribute access
+        if not hasattr(opportunity, "pair"):
+            raise AttributeError("Missing 'pair' attribute in opportunity object")
+
+        pair = opportunity.pair
+        buy_exchange = getattr(opportunity, "buy_exchange", None)
+        sell_exchange = getattr(opportunity, "sell_exchange", None)
+        buy_price = getattr(opportunity, "buy_price", None)
+        sell_price = getattr(opportunity, "sell_price", None)
+        spread = getattr(opportunity, "spread", None)
+        volume = getattr(opportunity, "volume", None)
+
+        # Validate critical fields
+        if not all([buy_exchange, sell_exchange, buy_price, sell_price, spread, volume]):
+            missing = []
+            for field in ["buy_exchange", "sell_exchange", "buy_price", "sell_price", "spread", "volume"]:
+                if not getattr(opportunity, field, None):
+                    missing.append(field)
+            raise ValueError(f"Missing required fields in opportunity: {missing}")
+
+    # Calculate profit
+    est_profit = spread * volume * buy_price
+
+    logger.info(
+        f"PUBLISHING OPPORTUNITY:\n"
+        f"  Strategy: {strategy_name}\n"
+        f"  Pair: {pair}\n"
+        f"  Buy: {buy_exchange} @ {buy_price:.8f}\n"
+        f"  Sell: {sell_exchange} @ {sell_price:.8f}\n"
+        f"  Spread: {spread:.6%}\n"
+        f"  Volume: {volume:.8f}\n"
+        f"  Est. Profit: {est_profit:.8f}"
+    )
+
+    # Log the exact channel we're publishing to
+    main_channel = channel_manager.get_opportunity_channel()
+    strategy_channel = f"{main_channel}:{strategy_name}"
+
+    logger.info(f"Publishing opportunity to channels: {main_channel} and {strategy_channel}")
+
+    # Actual publishing - raise errors instead of suppressing them
+    subscribers = channel_manager.publish_opportunity(opportunity, strategy_name)
+    publish_time = time.time() - publish_start
+
+    if subscribers > 0:
+        logger.info(f"Published opportunity to {subscribers} subscribers in {publish_time:.6f}s")
+
+        # Verify the strategy-specific publication
+        try:
+            # Check direct publication to strategy channel as additional verification
+            # This is redundant but provides verification that strategy channels are working
+            direct_strategy_pubs = redis_client.client.publish(
+                strategy_channel,
+                opportunity.model_dump_json() if hasattr(opportunity, "model_dump_json") else json.dumps(opportunity),
+            )
+            logger.info(f"Verification: Direct strategy channel publication reached {direct_strategy_pubs} subscribers")
+        except Exception as e:
+            logger.warning(f"Verification publication failed (but main publication succeeded): {e}")
+    else:
+        logger.warning(f"No subscribers found for opportunity (took {publish_time:.6f}s)")
+        logger.warning(f"Check if subscribers are listening on channels {main_channel} or {strategy_channel}")
+
+    return opportunity
