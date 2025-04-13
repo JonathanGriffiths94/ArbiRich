@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from arbirich.api.router import main_router
+from src.arbirich.config.logging_config import configure_logging, create_timestamped_log_file
 from src.arbirich.core.lifecycle.app_lifecyle import lifespan
 from src.arbirich.web.controllers.dashboard_controller import router as dashboard_controller_router
 from src.arbirich.web.controllers.exchange_controller import router as exchange_router
@@ -122,6 +123,18 @@ def run_app():
     uvicorn.run(app, host=host, port=port)
 
 
+def main():
+    """Main entry point for the application."""
+    # Configure logging with debug mode and a timestamped log file
+    log_file = create_timestamped_log_file()
+    configure_logging(debug_mode=True, log_file=log_file)
+
+    # Log that we're starting up with debug mode
+    logging.info("🚀 Starting ArbiRich with DEBUG MODE ENABLED")
+
+    run_app()
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
@@ -131,4 +144,4 @@ if __name__ == "__main__":
         ],
     )
 
-    run_app()
+    main()

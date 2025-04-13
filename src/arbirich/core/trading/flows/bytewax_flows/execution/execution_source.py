@@ -81,7 +81,6 @@ class RedisExecutionPartition(StatefulSourcePartition):
         logger.info(f"Initializing RedisExecutionPartition for strategy: {strategy_name or 'all'}")
         self.strategy_name = strategy_name
         self.stop_event = stop_event  # Store the passed stop event
-        # Use shared Redis client instead of creating a new one
         self.redis_client = get_shared_redis_client()
         self._running = True  # Always start in running state
         self._last_activity = time.time()
@@ -90,14 +89,11 @@ class RedisExecutionPartition(StatefulSourcePartition):
         self._max_backoff = 30  # Maximum backoff in seconds
         self._initialized = False  # Track initialization state
 
-        # Determine which channels to subscribe to
         self.channels_to_check = []
 
-        # Import TRADE_OPPORTUNITIES_CHANNEL constant
         from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
 
         if strategy_name:
-            # Only subscribe to the strategy-specific channel, no fallback
             strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
             self.channels_to_check.append(strategy_channel)
             logger.info(f"Will check only strategy-specific channel: {strategy_channel}")

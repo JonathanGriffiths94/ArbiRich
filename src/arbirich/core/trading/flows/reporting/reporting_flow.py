@@ -199,17 +199,28 @@ class ReportingFlow:
         self.active = False
         self.stop_event.set()
 
+        # First set system shutdown flag to ensure everything responds to shutdown
+        try:
+            from src.arbirich.core.state.system_state import mark_system_shutdown
+
+            mark_system_shutdown(True)
+        except Exception as e:
+            self.logger.error(f"Error marking system shutdown: {e}")
+
         # Cancel all tasks
         for task_id, task in self.tasks.items():
-            if not task.done():
-                task.cancel()
-                self.logger.info(f"Cancelled task: {task_id}")
+            try:
+                if not task.done():
+                    task.cancel()
+                    self.logger.info(f"Cancelled task: {task_id}")
+            except Exception as e:
+                self.logger.error(f"Error cancelling task {task_id}: {e}")
 
-        # Wait for tasks to complete
+        # Wait for tasks to complete with a shorter timeout for faster response
         if self.tasks:
             try:
                 # Wait with a timeout
-                await asyncio.wait(list(self.tasks.values()), timeout=5.0)
+                await asyncio.wait(list(self.tasks.values()), timeout=2.0)
             except Exception as e:
                 self.logger.error(f"Error waiting for tasks to complete: {e}")
 
@@ -221,9 +232,27 @@ class ReportingFlow:
                 self.logger.info("Closed Redis PubSub")
             except Exception as e:
                 self.logger.error(f"Error closing Redis PubSub: {e}")
+                # If we couldn't close properly, add more aggressive cleanup
+                try:
+                    import redis
+
+                    redis.Redis().connection_pool.disconnect()
+                    self.logger.info("Force disconnected Redis connections")
+                except Exception:
+                    pass
 
         # Reset Redis client
         reset_shared_redis_client()
+
+        # Use more aggressive task cleanup if needed
+        still_active_tasks = [t for t in self.tasks.values() if not t.done()]
+        if still_active_tasks:
+            self.logger.warning(f"{len(still_active_tasks)} tasks still active after stop attempt")
+            for task in still_active_tasks:
+                try:
+                    task.cancel()
+                except Exception:
+                    pass
 
         self.tasks = {}
         self.logger.info(f"Reporting flow stopped: {self.flow_type}")

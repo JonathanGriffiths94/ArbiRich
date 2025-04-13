@@ -110,70 +110,42 @@ class TradingService:
     async def _initialize_components(self):
         """Initialize trading components"""
         try:
-            # Check if component modules exist
-            components_found = True
+            # Initialize components dictionary to avoid NoneType errors
+            self.components = {}
+
             try:
                 # Use absolute imports to ensure modules are found correctly
                 import sys
 
                 self.logger.info(f"Python path: {sys.path}")
 
-                # Try importing with explicit paths
+                # Try importing the component modules
                 from src.arbirich.core.trading.components.detection import DetectionComponent
                 from src.arbirich.core.trading.components.execution import ExecutionComponent
                 from src.arbirich.core.trading.components.ingestion import IngestionComponent
                 from src.arbirich.core.trading.components.reporting import ReportingComponent
 
                 self.logger.info("Successfully imported all component modules")
+
+                # Create components with default configs
+                self.components = {
+                    "ingestion": IngestionComponent("ingestion", self._get_component_config("ingestion")),
+                    "detection": DetectionComponent("detection", self._get_component_config("detection")),
+                    "execution": ExecutionComponent("execution", self._get_component_config("execution")),
+                    "reporting": ReportingComponent("reporting", self._get_component_config("reporting")),
+                }
+
+                self.logger.info(f"Initialized {len(self.components)} components")
+
             except ImportError as e:
-                components_found = False
-                self.logger.warning(f"Trading component modules not found: {e}. Creating stub components.")
-
-            # If components weren't found, create stub component classes
-            if not components_found:
-                from src.arbirich.core.trading.components.base import Component
-
-                class StubComponent(Component):
-                    """Stub component for use when actual components aren't available"""
-
-                    async def start(self) -> bool:
-                        self.active = True
-                        self.logger.info(f"Stub {self.name} component started")
-                        return True
-
-                    async def stop(self) -> bool:
-                        self.active = False
-                        self.logger.info(f"Stub {self.name} component stopped")
-                        return True
-
-                    def get_status(self):
-                        return {"active": self.active, "stub": True, "name": self.name}
-
-                class IngestionComponent(StubComponent):
-                    pass
-
-                class DetectionComponent(StubComponent):
-                    pass
-
-                class ExecutionComponent(StubComponent):
-                    pass
-
-                class ReportingComponent(StubComponent):
-                    pass
-
-            # Create components with default configs
-            self.components = {
-                "ingestion": IngestionComponent("ingestion", self._get_component_config("ingestion")),
-                "detection": DetectionComponent("detection", self._get_component_config("detection")),
-                "execution": ExecutionComponent("execution", self._get_component_config("execution")),
-                "reporting": ReportingComponent("reporting", self._get_component_config("reporting")),
-            }
-
-            self.logger.info(f"Initialized {len(self.components)} components")
+                self.logger.error(
+                    f"Failed to import trading component modules: {e}. Trading system will not function properly."
+                )
+                # Continue with empty components dict - system will be non-functional but won't crash
 
         except Exception as e:
             self.logger.error(f"Error initializing components: {e}", exc_info=True)
-            # Initialize to empty dictionary to avoid NoneType errors
+            # Ensure we have at least an empty dictionary to avoid NoneType errors
             self.components = {}
             raise
 

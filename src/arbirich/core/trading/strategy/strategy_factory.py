@@ -1,113 +1,112 @@
 import logging
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
-from arbirich.core.trading.strategy.types.vwap import VWAPArbitrage
-from src.arbirich.core.trading.strategy.base import ArbitrageStrategy
+from src.arbirich.config.config import get_strategy_config
 from src.arbirich.core.trading.strategy.types.basic import BasicArbitrage
+from src.arbirich.core.trading.strategy.types.liquidity_adjusted import LiquidityAdjustedArbitrage
 from src.arbirich.core.trading.strategy.types.mid_price import MidPriceArbitrage
+from src.arbirich.core.trading.strategy.types.vwap import VWAPArbitrage
+from src.arbirich.models.enums import StrategyType
 
 logger = logging.getLogger(__name__)
 
-# Map strategy types to their implementation classes
-STRATEGY_CLASSES = {
-    "basic": BasicArbitrage,
-    "mid_price": MidPriceArbitrage,
-    "volume_adjusted": VWAPArbitrage,
+STRATEGY_TYPES = {
+    StrategyType.BASIC: BasicArbitrage,
+    StrategyType.MID_PRICE: MidPriceArbitrage,
+    StrategyType.VWAP: VWAPArbitrage,
+    StrategyType.LIQUIDITY_ADJUSTED: LiquidityAdjustedArbitrage,
 }
 
-# Cache of initialized strategy instances
 _strategy_instances = {}
 
 
-def get_strategy(strategy_name: str) -> ArbitrageStrategy:
+def get_strategy(strategy_name: str) -> Optional[Any]:
     """
     Get a strategy instance by name.
 
-    Parameters:
+    Args:
         strategy_name: The name of the strategy
 
     Returns:
-        An ArbitrageStrategy instance
+        Strategy instance or None if not found
     """
-    # Return cached instance if available
+    # Check if we already have an instance
     if strategy_name in _strategy_instances:
-        logger.debug(f"Returning cached strategy instance for '{strategy_name}'")
+        logger.debug(f"Returning cached strategy instance for: {strategy_name}")
         return _strategy_instances[strategy_name]
 
-    # Get strategy config from settings
-    from src.arbirich.config.config import STRATEGIES
-
-    if strategy_name not in STRATEGIES:
-        raise ValueError(f"Strategy '{strategy_name}' not found in configuration")
-
-    config = STRATEGIES[strategy_name]
-
-    # Determine strategy type from config or default to "basic"
-    strategy_type = config.get("type", "basic")
-
-    # Get the strategy class
-    if strategy_type not in STRATEGY_CLASSES:
-        logger.warning(f"Unknown strategy type '{strategy_type}', falling back to basic")
-        strategy_type = "basic"
-
-    strategy_class = STRATEGY_CLASSES[strategy_type]
-
-    # Create strategy instance - handle both new and old constructor styles
-    try:
-        # First try new constructor style with separate parameters
-        strategy = strategy_class(
-            strategy_id=str(strategy_name),
-            strategy_name=strategy_name,
-            config=config,
-        )
-    except TypeError:
-        # Fall back to old constructor style if needed
-        logger.debug(f"Using legacy constructor for strategy type '{strategy_type}'")
-        strategy = strategy_class(strategy_name, config)
-
-    # Cache the instance
-    _strategy_instances[strategy_name] = strategy
-
-    logger.info(f"Created strategy instance '{strategy_name}' of type '{strategy_type}'")
-    return strategy
-
-
-def create_strategy(
-    strategy_type: str, strategy_id: str, strategy_name: str, config: Dict
-) -> Optional[ArbitrageStrategy]:
-    """
-    Create a new strategy instance of the specified type.
-
-    Parameters:
-        strategy_type: The type of strategy to create
-        strategy_id: Unique identifier for the strategy
-        strategy_name: Name of the strategy
-        config: Strategy configuration parameters
-
-    Returns:
-        A new strategy instance or None if the type is not recognized
-    """
-    if strategy_type not in STRATEGY_CLASSES:
-        logger.error(f"Unknown strategy type: {strategy_type}")
+    # Get strategy configuration
+    config = get_strategy_config(strategy_name)
+    if not config:
+        logger.error(f"Strategy configuration not found for: {strategy_name}")
         return None
 
-    strategy_class = STRATEGY_CLASSES[strategy_type]
+    # Get strategy type
+    strategy_type_str = config.get("type")
+    if not strategy_type_str:
+        logger.error(f"Strategy type not specified for: {strategy_name}")
+        return None
 
+    # Convert string to enum value
     try:
-        # First try new constructor style
-        strategy = strategy_class(strategy_id=strategy_id, strategy_name=strategy_name, config=config)
-    except TypeError:
-        # Fall back to old constructor style if needed
-        logger.debug(f"Using legacy constructor for strategy type '{strategy_type}'")
-        # For older constructors, we'll assume the first parameter is name and second is config
-        strategy = strategy_class(strategy_name, config)
+        strategy_type = StrategyType(strategy_type_str)
+    except ValueError:
+        logger.error(f"Invalid strategy type string: {strategy_type_str}")
+        return None
 
-    logger.info(f"Created new strategy: {strategy_name} (type: {strategy_type}, id: {strategy_id})")
-    return strategy
+    # Get strategy class
+    strategy_class = STRATEGY_TYPES.get(strategy_type)
+    if not strategy_class:
+        logger.error(f"Strategy class not found for type: {strategy_type}")
+        return None
+
+    # Create strategy instance
+    try:
+        logger.info(f"Creating new strategy instance: {strategy_name} (type: {strategy_type.value})")
+
+        # Initialize with the proper parameters
+        threshold = config.get("threshold", 0.001)
+
+        # Log the configuration being used
+        logger.info(f"Strategy config: name={strategy_name}, threshold={threshold}")
+
+        # Create the strategy instance with the correct parameters
+        strategy = strategy_class(strategy_id=strategy_name, strategy_name=strategy_name, config=config)
+
+        # Cache the instance
+        _strategy_instances[strategy_name] = strategy
+
+        # Log success
+        logger.info(f"Successfully created strategy: {strategy_name}")
+        return strategy
+
+    except Exception as e:
+        logger.error(f"Error creating strategy {strategy_name}: {e}", exc_info=True)
+        return None
 
 
-def clear_cache():
-    """Clear the strategy instance cache."""
+def get_all_strategies() -> Dict[str, Any]:
+    """
+    Get all available strategy instances.
+
+    Returns:
+        Dictionary of strategy instances by name
+    """
+    from src.arbirich.config.config import get_all_strategy_names
+
+    strategy_names = get_all_strategy_names()
+    strategies = {}
+
+    for name in strategy_names:
+        strategy = get_strategy(name)
+        if strategy:
+            strategies[name] = strategy
+
+    return strategies
+
+
+def clear_strategy_cache():
+    """Clear the strategy instance cache"""
     global _strategy_instances
     _strategy_instances = {}
-    logger.info("Strategy instance cache cleared")
+    logger.info("Strategy cache cleared")

@@ -104,3 +104,20 @@ def set_stop_event() -> None:
     """
     mark_system_shutdown(True)
     logger.debug("Stop event set for all execution partitions")
+
+    # Add this new section to close websocket connections
+    try:
+        # Try to import and access the connection manager to close active WebSockets
+        from src.arbirich.web.websockets import manager
+
+        if hasattr(manager, "active_connections") and manager.active_connections:
+            logger.info(f"Forcefully closing {len(manager.active_connections)} active WebSocket connections")
+
+            # We can't use async code here directly, so we'll just remove the connections from the list
+            # This will prevent further messages from being sent
+            manager.active_connections.clear()
+            logger.info("WebSocket connection list cleared")
+    except ImportError:
+        logger.debug("WebSocket manager not available, skipping connection cleanup")
+    except Exception as e:
+        logger.error(f"Error cleaning up websocket connections: {e}")

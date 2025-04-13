@@ -1,0 +1,287 @@
+<!-- Debug Panel Component -->
+<div id="debug-panel" class="dashboard-card rounded-lg shadow-md p-4 mb-6">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-bold text-dollar-green flex items-center">
+            <i class="fas fa-bug mr-2"></i> Debug Controls
+        </h2>
+        <div class="flex items-center">
+            <span class="text-sm text-text-dim mr-3">Enable Debug Mode:</span>
+            <label class="switch">
+                <input type="checkbox" id="debug-mode-toggle">
+                <span class="slider round"></span>
+            </label>
+        </div>
+    </div>
+    <div class="space-y-4">
+        <div class="p-3 bg-dark-card rounded-lg">
+            <h3 class="text-sm font-semibold text-dollar-green mb-2">Log Level</h3>
+            <div class="flex space-x-2">
+                <button id="log-level-debug"
+                        class="px-3 py-1 text-xs rounded bg-dark-element hover:bg-dollar-green hover:text-dark-bg transition-all">
+                    DEBUG
+                </button>
+                <button id="log-level-info"
+                        class="px-3 py-1 text-xs rounded bg-dark-element hover:bg-dollar-green hover:text-dark-bg transition-all">
+                    INFO
+                </button>
+                <button id="log-level-warning"
+                        class="px-3 py-1 text-xs rounded bg-dark-element hover:bg-dollar-green hover:text-dark-bg transition-all">
+                    WARNING
+                </button>
+                <button id="log-level-error"
+                        class="px-3 py-1 text-xs rounded bg-dark-element hover:bg-dollar-green hover:text-dark-bg transition-all">
+                    ERROR
+                </button>
+            </div>
+        </div>
+        <div class="p-3 bg-dark-card rounded-lg">
+            <h3 class="text-sm font-semibold text-dollar-green mb-2">Flow Controls</h3>
+            <div class="flex space-x-2">
+                <button id="restart-detection-flow"
+                        class="flex items-center px-3 py-1 text-xs rounded bg-dark-element hover:bg-dollar-green hover:text-dark-bg transition-all">
+                    <i class="fas fa-sync-alt mr-1"></i> Restart Detection Flow
+                </button>
+                <button id="force-debug-mode"
+                        class="flex items-center px-3 py-1 text-xs rounded bg-dark-element hover:bg-dollar-green hover:text-dark-bg transition-all">
+                    <i class="fas fa-bug mr-1"></i> Force Debug Mode
+                </button>
+            </div>
+        </div>
+        <div class="p-3 bg-dark-card rounded-lg">
+            <h3 class="text-sm font-semibold text-dollar-green mb-2">Live Logs</h3>
+            <div class="bg-dark-bg text-xs font-mono p-2 rounded h-40 overflow-y-auto"
+                 id="live-logs">
+                <div class="text-text-dim">Waiting for logs...</div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- Debug Panel JavaScript -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Debug mode toggle
+    const debugModeToggle = document.getElementById('debug-mode-toggle');
+    if (debugModeToggle) {
+        // Check if debug mode is enabled in local storage
+        const debugEnabled = localStorage.getItem('arbirich_debug_mode') === 'true';
+        debugModeToggle.checked = debugEnabled;
+        
+        // Update debug mode when toggle changes
+        debugModeToggle.addEventListener('change', function() {
+            const isEnabled = this.checked;
+            localStorage.setItem('arbirich_debug_mode', isEnabled);
+            
+            // Update server debug mode
+            fetch('/api/system/debug', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({enabled: isEnabled})
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification(`Debug mode ${isEnabled ? 'enabled' : 'disabled'}`, 'success');
+                addLogMessage(`Debug mode ${isEnabled ? 'enabled' : 'disabled'}`);
+            })
+            .catch(error => {
+                console.error('Error updating debug mode:', error);
+                showNotification('Failed to update debug mode', 'error');
+            });
+        });
+    }
+    
+    // Log level buttons
+    const logLevelButtons = {
+        debug: document.getElementById('log-level-debug'),
+        info: document.getElementById('log-level-info'),
+        warning: document.getElementById('log-level-warning'),
+        error: document.getElementById('log-level-error')
+    };
+    
+    // Set log level function
+    function setLogLevel(level) {
+        fetch('/api/system/log_level', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({level: level})
+        })
+        .then(response => response.json())
+        .then(data => {
+            showNotification(`Log level set to ${level}`, 'success');
+            addLogMessage(`Log level set to ${level}`);
+            
+            // Update active button styling
+            Object.keys(logLevelButtons).forEach(key => {
+                if (logLevelButtons[key]) {
+                    if (key === level.toLowerCase()) {
+                        logLevelButtons[key].classList.add('bg-dollar-green', 'text-dark-bg');
+                        logLevelButtons[key].classList.remove('bg-dark-element');
+                    } else {
+                        logLevelButtons[key].classList.remove('bg-dollar-green', 'text-dark-bg');
+                        logLevelButtons[key].classList.add('bg-dark-element');
+                    }
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error setting log level:', error);
+            showNotification('Failed to set log level', 'error');
+        });
+    }
+    
+    // Add event listeners to log level buttons
+    if (logLevelButtons.debug) {
+        logLevelButtons.debug.addEventListener('click', () => setLogLevel('DEBUG'));
+    }
+    if (logLevelButtons.info) {
+        logLevelButtons.info.addEventListener('click', () => setLogLevel('INFO'));
+    }
+    if (logLevelButtons.warning) {
+        logLevelButtons.warning.addEventListener('click', () => setLogLevel('WARNING'));
+    }
+    if (logLevelButtons.error) {
+        logLevelButtons.error.addEventListener('click', () => setLogLevel('ERROR'));
+    }
+    
+    // Restart detection flow button
+    const restartDetectionFlowBtn = document.getElementById('restart-detection-flow');
+    if (restartDetectionFlowBtn) {
+        restartDetectionFlowBtn.addEventListener('click', function() {
+            if (confirm('Are you sure you want to restart the detection flow?')) {
+                this.disabled = true;
+                this.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Restarting...';
+                
+                fetch('/api/system/restart_detection', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                })
+                .then(response => response.json())
+                .then(data => {
+                    showNotification('Detection flow restarted', 'success');
+                    addLogMessage('Detection flow restarted');
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-sync-alt mr-1"></i> Restart Detection Flow';
+                })
+                .catch(error => {
+                    console.error('Error restarting detection flow:', error);
+                    showNotification('Failed to restart detection flow', 'error');
+                    this.disabled = false;
+                    this.innerHTML = '<i class="fas fa-sync-alt mr-1"></i> Restart Detection Flow';
+                });
+            }
+        });
+    }
+    
+    // Force debug mode button
+    const forceDebugModeBtn = document.getElementById('force-debug-mode');
+    if (forceDebugModeBtn) {
+        forceDebugModeBtn.addEventListener('click', function() {
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Enabling...';
+            
+            fetch('/api/system/force_debug', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                showNotification('Debug mode forced enabled', 'success');
+                addLogMessage('Debug mode forced enabled');
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-bug mr-1"></i> Force Debug Mode';
+                
+                // Update the toggle state
+                if (debugModeToggle) {
+                    debugModeToggle.checked = true;
+                    localStorage.setItem('arbirich_debug_mode', 'true');
+                }
+            })
+            .catch(error => {
+                console.error('Error forcing debug mode:', error);
+                showNotification('Failed to force debug mode', 'error');
+                this.disabled = false;
+                this.innerHTML = '<i class="fas fa-bug mr-1"></i> Force Debug Mode';
+            });
+        });
+    }
+    
+    // Live logs functionality
+    const logsContainer = document.getElementById('live-logs');
+    function addLogMessage(message, level = 'info') {
+        if (!logsContainer) return;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        const logElement = document.createElement('div');
+        
+        // Add appropriate color based on log level
+        let levelClass = '';
+        switch(level.toLowerCase()) {
+            case 'debug': 
+                levelClass = 'text-blue-400'; 
+                break;
+            case 'info': 
+                levelClass = 'text-gray-300'; 
+                break;
+            case 'warning': 
+                levelClass = 'text-yellow-400'; 
+                break;
+            case 'error': 
+                levelClass = 'text-loss-red'; 
+                break;
+            default: 
+                levelClass = 'text-gray-300';
+        }
+        
+        logElement.className = `my-1 ${levelClass}`;
+        logElement.textContent = `[${timestamp}] ${message}`;
+        
+        logsContainer.appendChild(logElement);
+        logsContainer.scrollTop = logsContainer.scrollHeight; // Auto-scroll to bottom
+    }
+    
+    // Initialize with a welcome message
+    if (logsContainer) {
+        logsContainer.innerHTML = '';
+        addLogMessage('Debug panel initialized');
+    }
+    
+    // Set up websocket connection for live logs (would need backend implementation)
+    function setupLogWebSocket() {
+        try {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws/logs`;
+            
+            const ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                addLogMessage('WebSocket connection established', 'info');
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const logData = JSON.parse(event.data);
+                    addLogMessage(logData.message, logData.level);
+                } catch (e) {
+                    addLogMessage(event.data, 'info');
+                }
+            };
+            
+            ws.onclose = () => {
+                addLogMessage('WebSocket connection closed', 'warning');
+                // Try to reconnect after a delay
+                setTimeout(setupLogWebSocket, 5000);
+            };
+            
+            ws.onerror = (error) => {
+                addLogMessage('WebSocket error', 'error');
+                console.error('WebSocket error:', error);
+            };
+        } catch (e) {
+            console.error('Error setting up WebSocket:', e);
+            addLogMessage('Failed to connect to log stream', 'error');
+        }
+    }
+    
+    // Uncomment this when backend WebSocket for logs is implemented
+    // setupLogWebSocket();
+});
+</script>

@@ -662,6 +662,13 @@
                     .then(data => {
                         checkTradingStatus();
                         showNotification('Trading system restarted successfully', 'success');
+                        
+                        // Re-enable button after success
+                        setTimeout(() => {
+                            restartTradingBtn.disabled = false;
+                            restartTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                            restartTradingBtn.innerHTML = originalText;
+                        }, 3000); // Add a delay to prevent immediate re-clicks
                     })
                     .catch(error => {
                         console.error('Error restarting trading:', error);
@@ -677,7 +684,6 @@
 
         // Check status immediately and then periodically
         checkTradingStatus();
-        setInterval(checkTradingStatus, 10000);
     }
     </script>
     <!-- Add custom styles for the toggle switch -->

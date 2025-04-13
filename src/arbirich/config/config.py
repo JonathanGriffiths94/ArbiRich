@@ -126,7 +126,7 @@ ALL_STRATEGIES = {
         "min_spread": 0.0001,
         "threshold": 0.0001,
         "exchanges": ["bybit", "cryptocom"],
-        "pairs": [("DOT", "USDT")],  # Updated pairs
+        "pairs": [("LINK", "USDT")],  # Updated pairs
         "risk_management": {
             "max_position_size": 50.0,  # In USDT equivalent
             "max_daily_loss": 5.0,  # Percentage of capital
@@ -202,6 +202,43 @@ ALL_STRATEGIES = {
             "depth_scaling": True,  # Scale position size based on order book depth
         },
     },
+    "liquidity_adjusted_arbitrage": {
+        "type": "liquidity_adjusted",
+        "name": "liquidity_adjusted_arbitrage",
+        "starting_capital": 20000.0,
+        "min_spread": 0.0015,  # Higher threshold to account for liquidity challenges
+        "threshold": 0.0015,
+        "target_volume": 100.0,  # Target volume in USDT
+        "min_depth_percentage": 0.7,  # Minimum % of target volume that must be available
+        "slippage_factor": 0.5,  # Weight for slippage consideration
+        "liquidity_multiplier": 1.5,  # Reward for higher liquidity
+        "dynamic_volume_adjust": True,  # Dynamically adjust position sizes
+        "max_slippage": 0.0006,  # Maximum tolerable slippage
+        "opportunity_timeout": 1.5,  # Shorter timeout for faster execution (seconds)
+        "exchanges": ["bybit", "cryptocom"],
+        "pairs": [
+            ("AVAX", "USDT"),
+            ("NEAR", "USDT"),
+            ("FTM", "USDT"),
+        ],
+        "risk_management": {
+            "max_position_size": 80.0,  # In USDT equivalent
+            "max_daily_loss": 4.0,
+            "max_consecutive_losses": 3,
+            "circuit_breaker_cooldown": 1800,  # 30 minutes in seconds
+            "scale_by_spread": True,
+            "exchange_risk_factors": {
+                "bybit": 0.95,  # Risk factor for bybit
+                "cryptocom": 0.85,  # Risk factor for crypto.com
+            },
+        },
+        "execution": {"method": "parallel", "timeout": 3500, "retry_attempts": 2, "max_slippage": 0.0006},
+        "additional_info": {
+            "min_volume": 15.0,
+            "liquidity_factor": 0.85,
+            "depth_scaling": True,
+        },
+    },
 }
 
 # Active strategies for trading
@@ -209,6 +246,7 @@ STRATEGIES = {
     "basic_arbitrage": ALL_STRATEGIES["basic_arbitrage"],
     "mid_price_arbitrage": ALL_STRATEGIES["mid_price_arbitrage"],
     "vwap_arbitrage": ALL_STRATEGIES["vwap_arbitrage"],
+    "liquidity_adjusted_arbitrage": ALL_STRATEGIES["liquidity_adjusted_arbitrage"],
 }
 
 # Execution method configurations

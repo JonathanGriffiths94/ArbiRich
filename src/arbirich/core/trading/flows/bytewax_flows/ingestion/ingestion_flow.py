@@ -1,6 +1,5 @@
 import logging
 import signal
-import sys
 import time
 from typing import Dict, List
 
@@ -36,17 +35,16 @@ logger.info(f"Registered processors: {list(registered_processors.keys())}")
 
 def get_processor_class(exchange):
     """
-    Get the appropriate processor class for an exchange.
-    Import is done here to avoid circular imports.
+    Get the appropriate processor class for an exchange using the ExchangeType enum.
     """
     try:
-        from src.arbirich.services.exchange_processors.processor_factory import get_processor_for_exchange
+        from src.arbirich.models.enums import ExchangeType
 
-        processor = get_processor_for_exchange(exchange)
-        logger.info(f"Got processor for {exchange}: {processor.__name__}")
-        return processor
+        processor_class = ExchangeType.get_processor_class(exchange)
+        logger.info(f"Got processor for {exchange}: {processor_class.__name__}")
+        return processor_class
     except Exception as e:
-        logger.error(f"Error getting processor for {exchange}: {e}")
+        logger.error(f"Error getting processor for {exchange} from enum: {e}")
         # Even in case of error, return a default processor
         from src.arbirich.services.exchange_processors.default_processor import DefaultOrderBookProcessor
 
@@ -114,6 +112,36 @@ def build_ingestion_flow(exchange=None, trading_pair=None, debug_mode=False):
                 return None
 
             logger.debug(f"[{flow_id}] Processing data: {data}")
+
+            # Add additional validation and debugging
+            if isinstance(data, tuple) and len(data) == 2:
+                exchange, book_data = data
+                logger.info(f"[{flow_id}] Processing order book from {exchange}")
+
+                # Validate the book data has required fields
+                if hasattr(book_data, "bids") and hasattr(book_data, "asks"):
+                    bid_count = len(book_data.bids) if book_data.bids else 0
+                    ask_count = len(book_data.asks) if book_data.asks else 0
+                    logger.info(f"[{flow_id}] Order book from {exchange} has {bid_count} bids and {ask_count} asks")
+
+                    # Check if bids/asks are in the right format (dict)
+                    if not isinstance(book_data.bids, dict):
+                        logger.warning(f"[{flow_id}] Bids is not a dict: {type(book_data.bids)}")
+                        # Convert to dict if it's a list of [price, qty] pairs
+                        if isinstance(book_data.bids, list):
+                            book_data.bids = {str(item[0]): float(item[1]) for item in book_data.bids if len(item) >= 2}
+                            logger.info(f"[{flow_id}] Converted bids to dict: {len(book_data.bids)} entries")
+
+                    if not isinstance(book_data.asks, dict):
+                        logger.warning(f"[{flow_id}] Asks is not a dict: {type(book_data.asks)}")
+                        # Convert to dict if it's a list of [price, qty] pairs
+                        if isinstance(book_data.asks, list):
+                            book_data.asks = {str(item[0]): float(item[1]) for item in book_data.asks if len(item) >= 2}
+                            logger.info(f"[{flow_id}] Converted asks to dict: {len(book_data.asks)} entries")
+                else:
+                    logger.warning(f"[{flow_id}] Order book missing bids or asks: {book_data}")
+
+            # Process the order book
             result = process_order_book(data)
             logger.debug(f"[{flow_id}] Processed order book: {result}")
             return result
@@ -244,10 +272,54 @@ if __name__ == "__main__":
     # Setup signal handlers for better shutdown
     def handle_exit_signal(sig, frame):
         logger.info(f"Received signal {sig}, initiating shutdown...")
-        stop_ingestion_flow()
-        # Give a moment for cleanup
-        time.sleep(1)
-        sys.exit(0)
+
+        try:
+            # First check if we are the runner thread to avoid self-joining
+            import threading
+
+            current_thread_id = threading.get_ident()
+
+            # Set system shutdown flag to notify all components
+            from src.arbirich.core.state.system_state import mark_system_shutdown
+
+            mark_system_shutdown(True)
+
+            # Just set the stop event first
+            flow_manager.stop_event.set()
+
+            # Give a moment for resources to clean up
+            time.sleep(0.5)
+
+            # Close Redis client early to avoid connection issues
+            try:
+                if _redis_client:
+                    _redis_client.close()
+                    logger.info("Redis client closed during shutdown")
+            except Exception as e:
+                logger.error(f"Error closing Redis client: {e}")
+
+            # Only try to join the thread if we're not the same thread
+            if hasattr(flow_manager, "runner_thread") and flow_manager.runner_thread:
+                if flow_manager.runner_thread.ident != current_thread_id:
+                    logger.info("Waiting for flow runner thread to complete...")
+                    flow_manager.runner_thread.join(timeout=2.0)
+                else:
+                    logger.info("Running in flow thread, skipping thread join")
+
+            # In case the thread didn't exit, force exit
+            logger.info("Exiting application...")
+            # Use a small delay to allow logging to complete
+            time.sleep(0.1)
+            import os
+
+            os._exit(0)
+
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+            # Force exit as a last resort
+            import os
+
+            os._exit(1)
 
     # Register signal handlers
     signal.signal(signal.SIGINT, handle_exit_signal)

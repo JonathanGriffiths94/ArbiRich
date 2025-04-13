@@ -9,11 +9,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from src.arbirich.models import enums
 from src.arbirich.models.models import Exchange, TradeExecution, TradeOpportunity
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.web.controllers.mock_data_provider import mock_provider
-from src.arbirich.web.dependencies import get_db_service
+from src.arbirich.web.dependencies import get_db_service, get_template_context
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,9 @@ base_dir = Path(__file__).resolve().parent
 templates_dir = base_dir / "templates"
 logger.info(f"Templates directory: {templates_dir}")
 templates = Jinja2Templates(directory=str(templates_dir))
+
+# Add global template context variables
+templates.env.globals["enums"] = enums
 
 router = APIRouter(tags=["frontend"])
 
@@ -73,57 +77,58 @@ async def get_index(request: Request):
 
 @router.get("/dashboard", response_class=HTMLResponse)
 @handle_errors()
-async def dashboard(request: Request):
+async def dashboard(
+    request: Request, db: DatabaseService = Depends(get_db), template_context: dict = Depends(get_template_context)
+):
     """Display the main dashboard with trading data."""
-    with DatabaseService() as db:
-        logger.info("Loading dashboard data...")
+    logger.info("Loading dashboard data...")
+    try:
+        # Get recent opportunities directly - don't use safe_query to catch specific errors
+        opportunities = get_recent_opportunities(db, limit=5)
+        logger.info(f"Loaded {len(opportunities)} opportunities")
+    except Exception as e:
+        logger.error(f"Error loading opportunities: {e}", exc_info=True)
+        opportunities = mock_provider.get_opportunities(5)
+        logger.info(f"Loaded {len(opportunities)} opportunities")
 
-        try:
-            # Get recent opportunities directly - don't use safe_query to catch specific errors
-            opportunities = get_recent_opportunities(db, limit=5)
-            logger.info(f"Loaded {len(opportunities)} opportunities")
-        except Exception as e:
-            logger.error(f"Error loading opportunities: {e}", exc_info=True)
-            opportunities = mock_provider.get_opportunities(5)
+    try:
+        # Get recent executions
+        executions = get_recent_executions(db, limit=5)
+        logger.info(f"Loaded {len(executions)} executions")
+    except Exception as e:
+        logger.error(f"Error loading executions: {e}", exc_info=True)
+        executions = mock_provider.get_executions(5)
+        logger.info(f"Loaded {len(executions)} executions")
 
-        try:
-            # Get recent executions directly
-            executions = get_recent_executions(db, limit=5)
-            logger.info(f"Loaded {len(executions)} executions")
-        except Exception as e:
-            logger.error(f"Error loading executions: {e}", exc_info=True)
-            executions = mock_provider.get_executions(5)
+    try:
+        # Get strategies with enhanced debug
+        strategies = get_strategy_leaderboard(db)
+        logger.info(f"Loaded {len(strategies)} strategies")
+        # Log first strategy for debugging
+        if strategies:
+            logger.info(f"First strategy details: {strategies[0]}")
+    except Exception as e:
+        logger.error(f"Error loading strategies: {e}", exc_info=True)
+        strategies = mock_provider.get_strategies()
+        logger.info(f"Loaded {len(strategies)} strategies")
 
-        try:
-            # Get strategies with enhanced debug
-            strategies = get_strategy_leaderboard(db)
-            logger.info(f"Loaded {len(strategies)} strategies")
-            # Log first strategy for debugging
-            if strategies:
-                logger.info(f"First strategy details: {strategies[0]}")
-        except Exception as e:
-            logger.error(f"Error loading strategies: {e}", exc_info=True)
-            strategies = mock_provider.get_strategies()
+    try:
+        # Get enhanced dashboard stats
+        stats = get_enhanced_dashboard_stats(db)
+        logger.info(f"Loaded dashboard stats: {stats}")
+    except Exception as e:
+        logger.error(f"Error loading stats: {e}", exc_info=True)
+        stats = mock_provider.get_dashboard_stats()
+        logger.info(f"Loaded dashboard stats: {stats}")
 
-        try:
-            # Get enhanced dashboard stats
-            stats = get_enhanced_dashboard_stats(db)
-            logger.info(f"Loaded dashboard stats: {stats}")
-        except Exception as e:
-            logger.error(f"Error loading stats: {e}", exc_info=True)
-            stats = mock_provider.get_dashboard_stats()
-
-        try:
-            # Get all exchanges
-            exchanges = get_all_exchanges(db)
-            logger.info(f"Loaded {len(exchanges)} exchanges")
-        except Exception as e:
-            logger.error(f"Error loading exchanges: {e}", exc_info=True)
-            exchanges = mock_provider.get_exchanges() if hasattr(mock_provider, "get_exchanges") else []
-
-        # We're not using chart_data from the backend anymore
-        # The chart is now created entirely in the frontend with hardcoded data
-        # This eliminates the JSON serialization issue
+    try:
+        # Get all exchanges
+        exchanges = get_all_exchanges(db)
+        logger.info(f"Loaded {len(exchanges)} exchanges")
+    except Exception as e:
+        logger.error(f"Error loading exchanges: {e}", exc_info=True)
+        exchanges = mock_provider.get_exchanges() if hasattr(mock_provider, "get_exchanges") else []
+        logger.info(f"Loaded {len(exchanges)} exchanges")
 
     return templates.TemplateResponse(
         "pages/dashboard.html",
@@ -134,41 +139,52 @@ async def dashboard(request: Request):
             "strategies": strategies,
             "stats": stats,
             "exchanges": exchanges,
-            # No more chart_data here
+            **template_context,  # Add template context
         },
     )
 
 
 @router.get("/opportunities", response_class=HTMLResponse)
 @handle_errors()
-async def opportunities_list(request: Request):
+async def opportunities_list(request: Request, template_context: dict = Depends(get_template_context)):
     """Display a list of trade opportunities."""
     with DatabaseService() as db_service:
         opportunities = get_recent_opportunities(db_service, limit=50)
-    return templates.TemplateResponse("pages/opportunities.html", {"request": request, "opportunities": opportunities})
+    return templates.TemplateResponse(
+        "pages/opportunities.html", {"request": request, "opportunities": opportunities, **template_context}
+    )
 
 
 @router.get("/executions", response_class=HTMLResponse)
 @handle_errors()
-async def executions_list(request: Request):
+async def executions_list(request: Request, template_context: dict = Depends(get_template_context)):
     """Display a list of trade executions."""
     with DatabaseService() as db_service:
         executions = get_recent_executions(db_service, limit=50)
-    return templates.TemplateResponse("pages/executions.html", {"request": request, "executions": executions})
+    return templates.TemplateResponse(
+        "pages/executions.html", {"request": request, "executions": executions, **template_context}
+    )
 
 
 @router.get("/strategies", response_class=HTMLResponse)
 @handle_errors()
-async def strategies_list(request: Request):
+async def strategies_list(request: Request, template_context: dict = Depends(get_template_context)):
     """Display a list of all strategies."""
     with DatabaseService() as db_service:
         strategies = get_strategy_leaderboard(db_service)
-    return templates.TemplateResponse("pages/strategies.html", {"request": request, "strategies": strategies})
+    return templates.TemplateResponse(
+        "pages/strategies.html", {"request": request, "strategies": strategies, **template_context}
+    )
 
 
 @router.get("/strategy/{strategy_name}", response_class=HTMLResponse)
 @handle_errors()
-async def strategy_detail(request: Request, strategy_name: str, db: DatabaseService = Depends(get_db)):
+async def strategy_detail(
+    request: Request,
+    strategy_name: str,
+    db: DatabaseService = Depends(get_db),
+    template_context: dict = Depends(get_template_context),
+):
     """Strategy detail page."""
     # Get strategy by name
     strategies = db.get_all_strategies()
@@ -232,7 +248,13 @@ async def strategy_detail(request: Request, strategy_name: str, db: DatabaseServ
 
     return templates.TemplateResponse(
         "pages/strategy.html",
-        {"request": request, "strategy": strategy, "executions": executions, "metrics": metrics},
+        {
+            "request": request,
+            "strategy": strategy,
+            "executions": executions,
+            "metrics": metrics,
+            **template_context,  # Add template context
+        },
     )
 
 
@@ -243,31 +265,33 @@ async def setup(request: Request):
 
 
 @router.get("/monitor", response_class=HTMLResponse)
-async def monitor(request: Request):
+async def monitor(request: Request, template_context: dict = Depends(get_template_context)):
     """Display the monitoring page for real-time system status."""
-    return templates.TemplateResponse("pages/monitor.html", {"request": request})
+    return templates.TemplateResponse("pages/monitor.html", {"request": request, **template_context})
 
 
 @router.get("/exchanges", response_class=HTMLResponse)
 @handle_errors()
-async def exchanges_list(request: Request):
+async def exchanges_list(request: Request, template_context: dict = Depends(get_template_context)):
     """Display a list of all exchanges."""
     with DatabaseService() as db_service:
         exchanges = get_all_exchanges(db_service)  # Renamed function call
-    return templates.TemplateResponse("pages/exchanges.html", {"request": request, "exchanges": exchanges})
+    return templates.TemplateResponse(
+        "pages/exchanges.html", {"request": request, "exchanges": exchanges, **template_context}
+    )
 
 
 @router.get("/about", response_class=HTMLResponse)
-async def get_about(request: Request):
+async def get_about(request: Request, template_context: dict = Depends(get_template_context)):
     """
     Render the about page.
     """
-    return templates.TemplateResponse("about.html", {"request": request})
+    return templates.TemplateResponse("about.html", {"request": request, **template_context})
 
 
 @router.get("/{path:path}", response_class=HTMLResponse)
 @handle_errors()
-async def catch_all(request: Request, path: str):
+async def catch_all(request: Request, path: str, template_context: dict = Depends(get_template_context)):
     """Catch all other routes and display 404 page if template doesn't exist."""
     template_path = templates_dir / "pages" / f"{path}.html"
 
@@ -279,7 +303,7 @@ async def catch_all(request: Request, path: str):
         )
 
     # For other pages, just render the template
-    return templates.TemplateResponse(f"pages/{path}.html", {"request": request})
+    return templates.TemplateResponse(f"pages/{path}.html", {"request": request, **template_context})
 
 
 # Helper functions for database queries - keeping all original functions
@@ -317,9 +341,9 @@ def get_recent_opportunities(db_service: DatabaseService, limit: int = 25) -> Li
             opp_dict = opportunity.model_dump()
 
             # Add additional fields needed for templates
-            opp_dict["symbol"] = opp_dict["pair"]  # For compatibility
-
-            # Calculate profit percent and correctly format as percentage for template
+            opp_dict["symbol"] = opp_dict["pair"]  # For compatibility template
+            if opportunity.opportunity_timestamp:
+                opp_dict["created_at"] = datetime.fromtimestamp(opportunity.opportunity_timestamp)
             if opp_dict["buy_price"] > 0:
                 spread_percent = ((opp_dict["sell_price"] - opp_dict["buy_price"]) / opp_dict["buy_price"]) * 100
                 opp_dict["spread_percent"] = round(spread_percent, 2)
@@ -328,10 +352,6 @@ def get_recent_opportunities(db_service: DatabaseService, limit: int = 25) -> Li
 
             # Calculate potential profit (as $ value)
             opp_dict["profit"] = round(float(opportunity.spread * opportunity.volume), 2)
-
-            # Format the timestamp for the template
-            if opportunity.opportunity_timestamp:
-                opp_dict["created_at"] = datetime.fromtimestamp(opportunity.opportunity_timestamp)
 
             opportunities.append(opp_dict)
 
@@ -479,7 +499,6 @@ def get_strategy_leaderboard(db_service):
                 else None,
                 "win_rate": 0,  # Default win rate
             }
-
             result.append(strategy_data)
 
         # Sort by net profit in descending order
@@ -525,19 +544,16 @@ def get_strategy_opportunities(db_service: DatabaseService, strategy_name: str, 
             # Convert to dict and add calculated fields for template usage
             opp_dict = opportunity.model_dump()
 
-            # Add additional fields needed for templates
+            # Add additional fields needed for template
             opp_dict["symbol"] = opp_dict["pair"]  # For compatibility
-
+            if opportunity.opportunity_timestamp:
+                opp_dict["created_at"] = datetime.fromtimestamp(opportunity.opportunity_timestamp)
             # Calculate profit percent
             if opp_dict["buy_price"] > 0:
                 profit_percent = ((opp_dict["sell_price"] - opp_dict["buy_price"]) / opp_dict["buy_price"]) * 100
                 opp_dict["profit_percent"] = profit_percent
             else:
                 opp_dict["profit_percent"] = 0
-
-            # Format the timestamp for the template
-            if opportunity.opportunity_timestamp:
-                opp_dict["created_at"] = datetime.fromtimestamp(opportunity.opportunity_timestamp)
 
             opportunities.append(opp_dict)
 
@@ -580,12 +596,13 @@ def get_strategy_executions(db_service: DatabaseService, strategy_name: str, lim
             # Convert to dict and add calculated fields for template usage
             exec_dict = execution.model_dump()
 
-            # Add additional fields needed for templates
+            # Add additional fields needed for template
             exec_dict["symbol"] = exec_dict["pair"]  # Add for compatibility
 
             # Calculate actual profit
             actual_profit = execution.executed_sell_price - execution.executed_buy_price
             exec_dict["actual_profit"] = actual_profit
+            exec_dict["profit"] = round(actual_profit, 2)  # For template compatibility
 
             # Format the timestamp for the template
             if execution.execution_timestamp:
@@ -604,64 +621,68 @@ def get_strategy_executions(db_service: DatabaseService, strategy_name: str, lim
         return executions
 
 
-def get_all_exchanges(db_service: DatabaseService) -> List[dict]:
-    """Get all exchanges, both active and inactive."""
-    with db_service.engine.begin() as conn:
-        import sqlalchemy as sa
+def get_all_exchanges(db):
+    """Get all exchanges from the database."""
+    try:
+        exchanges = []
+        with db.engine.begin() as conn:
+            import sqlalchemy as sa
 
-        from src.arbirich.models.schema import exchanges
+            from src.arbirich.models.schema import exchanges as exchanges_table
 
-        # Query all exchanges without filtering by is_active, order by name
-        result = conn.execute(sa.select(exchanges).order_by(exchanges.c.name))
+            result = conn.execute(sa.select(exchanges_table))
+            for row in result:
+                # Fix: Use _mapping instead of mappings
+                mapping = row._mapping
 
-        # Rest of function remains the same
-        exchanges_list = []
-        for row in result:
-            # Handle additional_info properly - check if it's already a dict before parsing
-            additional_info = row.additional_info
-            if additional_info and not isinstance(additional_info, dict):
-                try:
-                    additional_info = json.loads(additional_info)
-                except (json.JSONDecodeError, TypeError):
-                    additional_info = {}
+                # Handle additional_info properly - check if it's already a dict before parsing
+                additional_info = mapping.additional_info
+                if additional_info and not isinstance(additional_info, dict):
+                    try:
+                        additional_info = json.loads(additional_info)
+                    except (json.JSONDecodeError, TypeError):
+                        additional_info = {}
 
-            # Handle withdrawal_fee properly
-            withdrawal_fee = row.withdrawal_fee
-            if withdrawal_fee and not isinstance(withdrawal_fee, dict):
-                try:
-                    withdrawal_fee = json.loads(withdrawal_fee)
-                except (json.JSONDecodeError, TypeError):
-                    withdrawal_fee = {}
+                # Handle withdrawal_fee properly
+                withdrawal_fee = mapping.withdrawal_fee
+                if withdrawal_fee and not isinstance(withdrawal_fee, dict):
+                    try:
+                        withdrawal_fee = json.loads(withdrawal_fee)
+                    except (json.JSONDecodeError, TypeError):
+                        withdrawal_fee = {}
 
-            # Handle mapping properly
-            mapping = row.mapping
-            if mapping and not isinstance(mapping, dict):
-                try:
-                    mapping = json.loads(mapping)
-                except (json.JSONDecodeError, TypeError):
-                    mapping = {}
+                # Handle mapping properly
+                mapping_data = mapping.mappings
+                if mapping_data and not isinstance(mapping_data, dict):
+                    try:
+                        mapping_data = json.loads(mapping_data)
+                    except (json.JSONDecodeError, TypeError):
+                        mapping_data = {}
 
-            # Create a Pydantic model instance
-            exchange = Exchange(
-                id=row.id,
-                name=row.name,
-                api_rate_limit=row.api_rate_limit,
-                trade_fees=float(row.trade_fees) if row.trade_fees is not None else None,
-                rest_url=row.rest_url,
-                ws_url=row.ws_url,
-                delimiter=row.delimiter,
-                withdrawal_fee=withdrawal_fee,
-                api_response_time=row.api_response_time,
-                mapping=mapping,
-                additional_info=additional_info,
-                is_active=row.is_active,
-                created_at=row.created_at,
-            )
+                # Create a Pydantic model instance
+                exchange = Exchange(
+                    id=mapping.id,
+                    name=mapping.name,
+                    api_rate_limit=mapping.api_rate_limit,
+                    trade_fees=float(mapping.trade_fees) if mapping.trade_fees is not None else None,
+                    rest_url=mapping.rest_url,
+                    ws_url=mapping.ws_url,
+                    delimiter=mapping.delimiter,
+                    withdrawal_fee=withdrawal_fee,
+                    api_response_time=mapping.api_response_time,
+                    mapping=mapping_data,
+                    additional_info=additional_info,
+                    is_active=mapping.is_active,
+                    created_at=mapping.created_at,
+                )
 
-            # Convert to dict for template usage
-            exchanges_list.append(exchange.model_dump())
+                # Convert to dict for template usage
+                exchanges.append(exchange.model_dump())
 
-        return exchanges_list
+        return exchanges
+    except Exception as e:
+        logger.error(f"Error loading exchanges: {e}")
+        return []
 
 
 def get_enhanced_dashboard_stats(db_service: DatabaseService) -> dict:
@@ -724,10 +745,10 @@ def get_enhanced_dashboard_stats(db_service: DatabaseService) -> dict:
         return {
             "total_opportunities": total_opportunities,
             "total_executions": total_executions,
-            "total_trades": int(total_trades),  # Make sure it's an integer
             "executions_24h": executions_24h,
             "total_profit": total_profit,
             "best_strategy_profit": best_strategy_profit,
-            "active_strategies": active_strategies,
             "win_rate": win_rate,
+            "active_strategies": active_strategies,
+            "total_trades": int(total_trades),  # Make sure it's an integer
         }

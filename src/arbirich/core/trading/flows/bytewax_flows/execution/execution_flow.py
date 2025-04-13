@@ -182,5 +182,10 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, handle_exit_signal)
     signal.signal(signal.SIGTERM, handle_exit_signal)
 
+    # Update the build_flow method to include the required parameters
+    flow_manager.build_flow = lambda: build_execution_flow(
+        strategy_name=_current_strategy_name, debug_mode=_current_debug_mode
+    )
+
     # Run the flow
     flow_manager.run_flow_with_direct_api()

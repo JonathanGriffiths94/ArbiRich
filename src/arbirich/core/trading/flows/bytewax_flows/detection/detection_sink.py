@@ -87,10 +87,17 @@ def publish_trade_opportunity(opportunity, strategy_name=None):
     from src.arbirich.services.redis.redis_channel_manager import RedisChannelManager
     from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
+    publish_start = time.time()
+    logger.info(f"Publishing trade opportunity: {opportunity.get('id', 'unknown')}")
+
     try:
         # If no strategy_name was provided, use the one from the opportunity
         if not strategy_name and hasattr(opportunity, "strategy"):
             strategy_name = opportunity.strategy
+        elif not strategy_name and isinstance(opportunity, dict):
+            strategy_name = opportunity.get("strategy")
+
+        logger.info(f"Publishing to strategy: {strategy_name}")
 
         # Make sure we have a strategy name that matches what's in the config
         from src.arbirich.config.config import ALL_STRATEGIES
@@ -102,15 +109,47 @@ def publish_trade_opportunity(opportunity, strategy_name=None):
         redis_client = get_shared_redis_client()
         channel_manager = RedisChannelManager(redis_client)
 
+        # Log the opportunity details before publishing
+        if isinstance(opportunity, dict):
+            pair = opportunity.get("pair", "unknown")
+            buy_exchange = opportunity.get("buy_exchange", "unknown")
+            sell_exchange = opportunity.get("sell_exchange", "unknown")
+            buy_price = opportunity.get("buy_price", 0)
+            sell_price = opportunity.get("sell_price", 0)
+            spread = opportunity.get("spread", 0)
+            volume = opportunity.get("volume", 0)
+        else:
+            pair = getattr(opportunity, "pair", "unknown")
+            buy_exchange = getattr(opportunity, "buy_exchange", "unknown")
+            sell_exchange = getattr(opportunity, "sell_exchange", "unknown")
+            buy_price = getattr(opportunity, "buy_price", 0)
+            sell_price = getattr(opportunity, "sell_price", 0)
+            spread = getattr(opportunity, "spread", 0)
+            volume = getattr(opportunity, "volume", 0)
+
+        logger.info(
+            f"PUBLISHING OPPORTUNITY:\n"
+            f"  Strategy: {strategy_name}\n"
+            f"  Pair: {pair}\n"
+            f"  Buy: {buy_exchange} @ {buy_price:.8f}\n"
+            f"  Sell: {sell_exchange} @ {sell_price:.8f}\n"
+            f"  Spread: {spread:.6%}\n"
+            f"  Volume: {volume:.8f}\n"
+            f"  Est. Profit: {(spread * volume * buy_price):.8f}"
+        )
+
         subscribers = channel_manager.publish_opportunity(opportunity)
+        publish_time = time.time() - publish_start
 
         if subscribers > 0:
-            logger.info(f"Published opportunity to {subscribers} subscribers")
+            logger.info(f"Published opportunity to {subscribers} subscribers in {publish_time:.6f}s")
             return opportunity
         else:
-            logger.warning("No subscribers found for opportunity")
+            logger.warning(f"No subscribers found for opportunity (took {publish_time:.6f}s)")
             return opportunity  # Still return the opportunity to continue the flow
 
     except Exception as e:
         logger.error(f"Error publishing opportunity: {e}", exc_info=True)
+        publish_time = time.time() - publish_start
+        logger.error(f"Publishing failed after {publish_time:.6f}s")
         return opportunity  # Still return the opportunity to continue the flow

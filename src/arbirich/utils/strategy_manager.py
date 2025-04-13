@@ -1,122 +1,108 @@
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from src.arbirich.config.config import STRATEGIES, get_strategy_config
-from src.arbirich.constants import ORDER_BOOK_CHANNEL
+from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
 class StrategyManager:
-    """
-    Manager for strategy configuration and operations.
-    Provides static methods for accessing strategy-specific settings.
-    """
+    """Manages strategy registration, configuration, and channel subscriptions"""
 
-    @staticmethod
-    def get_exchange_channels(strategy_name: str) -> Dict[str, List[str]]:
-        """
-        Get the exchanges and channels for a specific strategy.
+    def __init__(self):
+        self.strategies = {}
+        self.active_strategies = set()
+        self.strategy_channels = {}
+        self._load_strategies()
 
-        Args:
-            strategy_name: Name of the strategy
+    def _load_strategies(self):
+        """Load strategies from configuration"""
+        for strategy_name, is_active in STRATEGIES.items():
+            config = get_strategy_config(strategy_name)
+            if not config:
+                logger.warning(f"No configuration found for strategy {strategy_name}")
+                continue
 
-        Returns:
-            Dictionary mapping exchange names to channel lists
-        """
-        logger.info(f"Getting exchange channels for strategy: {strategy_name}")
+            self.strategies[strategy_name] = config
+            if is_active:
+                self.active_strategies.add(strategy_name)
 
-        # Get strategy configuration
-        strategy_config = get_strategy_config(strategy_name)
-        if not strategy_config:
-            logger.warning(f"No configuration found for strategy: {strategy_name}")
-            return {}
+            # Set up channels for this strategy
+            self._configure_strategy_channels(strategy_name, config)
 
-        # Get exchanges from strategy configuration
-        exchanges = strategy_config.get("exchanges", [])
-        if not exchanges:
-            logger.warning(f"No exchanges configured for strategy: {strategy_name}")
-            return {}
+    def _configure_strategy_channels(self, strategy_name: str, config: Dict):
+        """Set up Redis channels for a strategy"""
+        channels = {
+            "opportunities": f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}",
+            "executions": f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}",
+            "order_books": [],
+        }
 
-        # Get pairs for this strategy
-        pairs = strategy_config.get("pairs", [])
-        if not pairs:
-            logger.warning(f"No pairs configured for strategy: {strategy_name}")
-            return {}
+        # Add order book channels for each exchange/pair combo
+        exchanges = config.get("exchanges", [])
+        pairs = config.get("pairs", [])
 
-        # Create exchange to channels mapping
-        exchange_channels = {}
         for exchange in exchanges:
-            # Format channel names to match Redis publishing format: "order_book:{exchange}:{pair}"
-            channels = [f"{ORDER_BOOK_CHANNEL}:{exchange}:{base}-{quote}" for base, quote in pairs]
-            exchange_channels[exchange] = channels
+            # Subscribe to exchange-level channel
+            exchange_channel = f"{ORDER_BOOK_CHANNEL}:{exchange}"
+            channels["order_books"].append(exchange_channel)
 
-        logger.info(f"Exchange channels for {strategy_name}: {exchange_channels}")
-        return exchange_channels
+            # Subscribe to specific pair channels
+            for pair in pairs:
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    symbol = f"{pair[0]}-{pair[1]}"
+                elif isinstance(pair, str):
+                    symbol = pair
+                else:
+                    continue
 
-    @staticmethod
-    def get_pairs_for_strategy(strategy_name: str) -> List[Tuple[str, str]]:
-        """
-        Get the trading pairs for a specific strategy.
+                pair_channel = f"{ORDER_BOOK_CHANNEL}:{exchange}:{symbol}"
+                channels["order_books"].append(pair_channel)
 
-        Args:
-            strategy_name: Name of the strategy
+        self.strategy_channels[strategy_name] = channels
 
-        Returns:
-            List of trading pairs (as tuples of base and quote currencies)
-        """
-        logger.info(f"Getting pairs for strategy: {strategy_name}")
+    def get_strategy_channels(self, strategy_name: str) -> Dict[str, List[str]]:
+        """Get Redis channels for a specific strategy"""
+        if strategy_name not in self.strategies:
+            logger.warning(f"Strategy {strategy_name} not registered")
+            return {"opportunities": [], "executions": [], "order_books": []}
 
-        # Get strategy configuration
-        strategy_config = get_strategy_config(strategy_name)
-        if not strategy_config:
-            logger.warning(f"No configuration found for strategy: {strategy_name}")
-            return []
+        return self.strategy_channels.get(strategy_name, {"opportunities": [], "executions": [], "order_books": []})
 
-        # Get pairs from strategy configuration
-        pairs = strategy_config.get("pairs", [])
+    def get_all_channels(self) -> List[str]:
+        """Get all channels across all strategies"""
+        all_channels = set([ORDER_BOOK_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL, TRADE_EXECUTIONS_CHANNEL])
 
-        logger.info(f"Pairs for strategy {strategy_name}: {pairs}")
-        return pairs
+        # Add all strategy-specific channels
+        for strategy_name, channels in self.strategy_channels.items():
+            all_channels.add(channels["opportunities"])
+            all_channels.add(channels["executions"])
+            all_channels.update(channels["order_books"])
 
-    @staticmethod
-    def get_threshold(strategy_name: str) -> float:
-        """
-        Get the minimum spread threshold for a specific strategy.
+        return list(all_channels)
 
-        Args:
-            strategy_name: Name of the strategy
+    def is_strategy_active(self, strategy_name: str) -> bool:
+        """Check if a strategy is active"""
+        return strategy_name in self.active_strategies
 
-        Returns:
-            Minimum spread threshold as a float
-        """
-        logger.info(f"Getting threshold for strategy: {strategy_name}")
+    def activate_strategy(self, strategy_name: str) -> bool:
+        """Activate a strategy"""
+        if strategy_name not in self.strategies:
+            logger.warning(f"Cannot activate unknown strategy: {strategy_name}")
+            return False
 
-        # Get strategy configuration
-        strategy_config = get_strategy_config(strategy_name)
-        if not strategy_config:
-            logger.warning(f"No configuration found for strategy: {strategy_name}")
-            return 0.001  # Default threshold
+        self.active_strategies.add(strategy_name)
+        logger.info(f"Activated strategy: {strategy_name}")
+        return True
 
-        # Get threshold from strategy configuration
-        threshold = strategy_config.get("min_spread", 0.001)
+    def deactivate_strategy(self, strategy_name: str) -> bool:
+        """Deactivate a strategy"""
+        if strategy_name not in self.active_strategies:
+            logger.warning(f"Strategy not active: {strategy_name}")
+            return False
 
-        logger.info(f"Threshold for strategy {strategy_name}: {threshold}")
-        return threshold
-
-    @staticmethod
-    def get_active_strategies() -> List[str]:
-        """
-        Get a list of active strategy names.
-
-        Returns:
-            List of active strategy names
-        """
-        logger.info("Getting active strategies")
-
-        # For now, all strategies in STRATEGIES are considered active
-        active_strategies = list(STRATEGIES.keys())
-
-        logger.info(f"Active strategies: {active_strategies}")
-        return active_strategies
+        self.active_strategies.remove(strategy_name)
+        logger.info(f"Deactivated strategy: {strategy_name}")
+        return True

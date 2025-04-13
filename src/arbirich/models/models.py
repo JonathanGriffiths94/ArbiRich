@@ -190,6 +190,12 @@ class StrategyExchangePairMapping(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+    # Additional fields for exchange and pair details that come from joins
+    exchange_name: Optional[str] = None
+    pair_symbol: Optional[str] = None
+    base_currency: Optional[str] = None
+    quote_currency: Optional[str] = None
+
     class Config:
         from_attributes = True
 

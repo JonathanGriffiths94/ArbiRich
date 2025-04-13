@@ -109,7 +109,7 @@ class BackgroundSubscriber:
     def _subscribe_to_channels(self):
         """Subscribe to all required channels"""
         # Subscribe to main channels
-        self._subscribe_channel("order_book")
+        self._subscribe_channel(ORDER_BOOK_CHANNEL)  # Changed from "order_book" to use the constant
         self._subscribe_channel(TRADE_OPPORTUNITIES_CHANNEL)
         self._subscribe_channel(TRADE_EXECUTIONS_CHANNEL)
 
@@ -120,6 +120,12 @@ class BackgroundSubscriber:
             # Make sure this channel is initialized even without messages
             logger.info(f"Subscribed to trade execution channel for {strategy_name}")
 
+            # Send heartbeat to strategy channels to ensure they're active
+            self.redis.publish(
+                f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}",
+                json.dumps({"type": "heartbeat", "timestamp": time.time()}),
+            )
+
         # Subscribe to exchange-specific order book channels
 
         # Subscribe to exchange-pair combinations with consistent format
@@ -128,6 +134,11 @@ class BackgroundSubscriber:
             self._subscribe_channel(f"{ORDER_BOOK_CHANNEL}:{exchange}")
             logger.info(f"Subscribed to order book channel for {exchange}")
 
+            # Send heartbeat to exchange channel
+            self.redis.publish(
+                f"{ORDER_BOOK_CHANNEL}:{exchange}", json.dumps({"type": "heartbeat", "timestamp": time.time()})
+            )
+
             # Then subscribe to specific pair channels
             for base, quote in PAIRS:
                 symbol = f"{base}-{quote}"
@@ -135,7 +146,16 @@ class BackgroundSubscriber:
                 self._subscribe_channel(channel)
                 logger.info(f"Subscribed to order book channel for {exchange}:{symbol}")
 
+                # Send heartbeat to pair-specific channel to ensure it's active
+                self.redis.publish(
+                    channel,
+                    json.dumps({"type": "heartbeat", "timestamp": time.time(), "exchange": exchange, "symbol": symbol}),
+                )
+
         logger.info(f"Background subscriber listening on {len(self.channels)} channels")
+
+        # Log channels for debugging
+        logger.info(f"Subscribed channels: {sorted(list(self.channels))}")
 
     def _subscribe_channel(self, channel):
         """Subscribe to a Redis channel with error handling"""

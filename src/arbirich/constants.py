@@ -52,3 +52,12 @@ LOG_INFO = "INFO"
 LOG_WARNING = "WARNING"
 LOG_ERROR = "ERROR"
 LOG_CRITICAL = "CRITICAL"
+
+# Define channels for WebSocket communication
+WEBSOCKET_CHANNELS = [
+    TRADE_OPPORTUNITIES_CHANNEL,
+    TRADE_EXECUTIONS_CHANNEL,
+    ORDER_BOOK_CHANNEL,
+    "status_updates",
+    "broadcast",
+]

@@ -28,6 +28,9 @@ def detect_arbitrage(
     Returns:
         TradeOpportunity object if found, None otherwise
     """
+    start_time = time.time()
+    logger.info(f"Starting arbitrage detection for {asset} using strategy {strategy_name}")
+
     try:
         # First check if we have data from at least 2 exchanges for this asset
         if asset not in state.symbols or len(state.symbols[asset]) < 2:
@@ -38,250 +41,281 @@ def detect_arbitrage(
 
         # Get the strategy instance using the factory
         strategy = get_strategy(strategy_name)
+        if not strategy:
+            logger.error(f"Failed to get strategy instance for {strategy_name}")
+            return None
 
         logger.info(f"Running arbitrage detection for {asset} with {len(state.symbols[asset])} exchanges")
         # Log the exchanges we have data for
         for exchange in state.symbols[asset]:
             book = state.symbols[asset][exchange]
-            logger.info(f"  Exchange {exchange}: {len(book.bids)} bids, {len(book.asks)} asks")
+            bid_count = len(book.bids) if hasattr(book, "bids") else 0
+            ask_count = len(book.asks) if hasattr(book, "asks") else 0
+            logger.info(f"  Exchange {exchange}: {bid_count} bids, {ask_count} asks")
+
+            # Log top bids and asks for better visibility
+            if bid_count > 0:
+                try:
+                    top_bid = max(book.bids.items(), key=lambda x: float(x[0]))[0] if book.bids else "none"
+                    top_bid_vol = book.bids.get(top_bid, 0)
+                    logger.debug(f"    Top bid: {top_bid} (vol: {top_bid_vol})")
+                except Exception as e:
+                    logger.error(f"Error getting top bid: {e}")
+
+            if ask_count > 0:
+                try:
+                    top_ask = min(book.asks.items(), key=lambda x: float(x[0]))[0] if book.asks else "none"
+                    top_ask_vol = book.asks.get(top_ask, 0)
+                    logger.debug(f"    Top ask: {top_ask} (vol: {top_ask_vol})")
+                except Exception as e:
+                    logger.error(f"Error getting top ask: {e}")
 
         # Use the detect_arbitrage method from the strategy
+        detection_start = time.time()
         opportunity = strategy.detect_arbitrage(asset, state)
+        detection_time = time.time() - detection_start
+
+        logger.info(f"Strategy detection completed in {detection_time:.6f}s")
 
         if opportunity:
             logger.info(
-                f"Found opportunity for {asset} using {strategy_name}: "
-                f"Buy from {opportunity.buy_exchange} at {opportunity.buy_price:.2f}, "
-                f"Sell on {opportunity.sell_exchange} at {opportunity.sell_price:.2f}, "
-                f"Spread: {opportunity.spread:.4%}"
+                f"💰 ARBITRAGE OPPORTUNITY FOUND for {asset} using {strategy_name}:\n"
+                f"  • Buy from {opportunity.buy_exchange} at {opportunity.buy_price:.8f}\n"
+                f"  • Sell on {opportunity.sell_exchange} at {opportunity.sell_price:.8f}\n"
+                f"  • Spread: {opportunity.spread:.6%}\n"
+                f"  • Volume: {opportunity.volume:.8f}\n"
+                f"  • Est. Profit: {(opportunity.spread * opportunity.volume * opportunity.buy_price):.8f}"
             )
 
             # Convert Pydantic model to dict for bytewax processing
             if hasattr(opportunity, "model_dump"):
-                return opportunity.model_dump()
+                result = opportunity.model_dump()
             elif hasattr(opportunity, "dict"):
-                return opportunity.dict()
+                result = opportunity.dict()
             else:
-                return opportunity
+                result = opportunity
 
+            total_time = time.time() - start_time
+            logger.info(f"Total detection processing time: {total_time:.6f}s")
+            return result
+
+        logger.info(f"No opportunity found for {asset} using {strategy_name}")
+        total_time = time.time() - start_time
+        logger.info(f"Total detection processing time: {total_time:.6f}s")
         return None
 
     except Exception as e:
         logger.error(f"Error detecting arbitrage for {asset} with {strategy_name}: {e}", exc_info=True)
+        total_time = time.time() - start_time
+        logger.info(f"Detection failed after {total_time:.6f}s")
         return None
 
 
-def key_by_asset(record: Dict) -> Tuple[str, Dict]:
-    """Group order book updates by asset symbol"""
+def extract_asset_key(record: OrderBookUpdate) -> str:
+    """Extract just the asset symbol key from the record"""
+    try:
+        # Assuming record is always a tuple
+        exchange, data = record
+
+        # Make sure symbol is extracted and normalized
+        asset = normalize_symbol(data.symbol) if data.symbol else None
+
+        # Ensure symbol isn't None - raise error instead of using fallback
+        if not asset:
+            logger.error(f"❌ Missing symbol in OrderBookUpdate from {exchange}")
+            # Try to extract from exchange:symbol format
+            if ":" in exchange:
+                _, extracted_symbol = exchange.split(":", 1)
+                asset = normalize_symbol(extracted_symbol)
+                logger.info(f"📌 Extracted symbol from exchange identifier: {asset}")
+            else:
+                # Raise error instead of using "UNKNOWN" fallback
+                error_msg = f"Cannot extract symbol from exchange {exchange}, no valid key available"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+        logger.info(f"🔑 EXTRACT_ASSET_KEY: Using key '{asset}' for {exchange}")
+        return asset
+
+    except Exception as e:
+        logger.error(f"❌ Error in extract_asset_key: {e}, record: {record}")
+        # Re-raise the exception to halt processing instead of returning "ERROR"
+        raise
+
+
+def process_order_book_record(record: Dict) -> Tuple[str, Dict]:
+    """Process and enrich order book record"""
     try:
         # Assuming record is always a tuple
         exchange, data = record
 
         # Handle only if data is already an OrderBookUpdate
         if isinstance(data, OrderBookUpdate):
-            asset = data.symbol
-            update_order = data
+            # Make sure symbol is extracted and normalized
+            asset = normalize_symbol(data.symbol) if data.symbol else None
 
-            # Ensure we have a valid asset key - don't return None
+            # Ensure symbol isn't None - raise error instead of using fallback
             if not asset:
-                logger.error(f"Missing symbol in OrderBookUpdate from {exchange}: {data}")
+                logger.error(f"❌ Missing symbol in OrderBookUpdate from {exchange}")
                 # Try to extract from exchange:symbol format
                 if ":" in exchange:
                     _, extracted_symbol = exchange.split(":", 1)
-                    asset = extracted_symbol
-                    logger.info(f"Extracted symbol from exchange identifier: {asset}")
+                    asset = normalize_symbol(extracted_symbol)
+                    logger.info(f"📌 Extracted symbol from exchange identifier: {asset}")
                 else:
-                    logger.error("Cannot extract symbol, using 'UNKNOWN' as fallback")
-                    asset = "UNKNOWN"  # Use a fallback value instead of None
+                    # Raise error instead of using "UNKNOWN" fallback
+                    error_msg = f"Cannot extract symbol from exchange {exchange}, no valid key available"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
 
-            logger.info(f"Grouped data by asset: {asset}")
-            logger.debug(f"Update order: {update_order}")
-            return asset, update_order
+            logger.info(f"🔄 PROCESS_RECORD: Processed {exchange}:{asset}")
+
+            # Ensure symbol is set in the data object too
+            data.symbol = asset
+
+            return asset, data
         else:
-            logger.error(f"Unsupported data type in key_by_asset: {type(data)}")
-            return "UNKNOWN", data  # Return a fallback asset name instead of None
+            error_msg = f"Unsupported data type in process_order_book_record: {type(data)}"
+            logger.error(error_msg)
+            raise TypeError(error_msg)
     except Exception as e:
-        logger.error(f"Error in key_by_asset: {e}, record: {record}")
-        return "ERROR", None  # Return an error indicator instead of None
+        logger.error(f"❌ Error in process_order_book_record: {e}, record: {record}")
+        # Re-raise the exception instead of returning fallback values
+        raise
+
+
+def key_by_asset(record: Dict) -> str:
+    """Group order book updates by asset symbol (backward compatibility)"""
+    return extract_asset_key(record)
+
+
+def normalize_symbol(symbol: str) -> str:
+    """Normalize symbol format to ensure consistency"""
+    if not symbol:
+        return "unknown"
+
+    # Replace various separators with standard format and uppercase
+    normalized = symbol.replace("_", "-").replace("/", "-").upper()
+
+    return normalized
 
 
 def update_asset_state(key: str, records: list, state: Dict = None) -> Tuple[str, Optional[OrderBookState]]:
     """Update order book state for an asset"""
     # Check if records is a single item or a collection
     if not isinstance(records, (list, tuple)) and records is not None:
-        records = [records]  # Convert single item to a list
+        records = [records]
 
-    logger.info(f"Processing update_asset_state with key: {key}, records count: {len(records) if records else 0}")
+    logger.info(f"🔄 UPDATE_STATE: Processing {len(records) if records else 0} records for key: {key}")
 
     if state is None:
-        logger.info("Creating new OrderBookState (empty state)")
+        logger.info("🆕 Creating new OrderBookState (empty state)")
         state = OrderBookState()
     else:
-        # Detailed logging of initial state
-        logger.info(f"INITIAL STATE: Contains {len(state.symbols)} symbols")
+        # Log current state summary
+        logger.info(f"📊 Current state has {len(state.symbols)} symbols")
         for symbol, exchanges in state.symbols.items():
             logger.info(f"  • Symbol {symbol} has {len(exchanges)} exchanges: {list(exchanges.keys())}")
-            # Log details about each exchange's order book
-            for exch, book in exchanges.items():
-                bid_count = len(book.bids) if hasattr(book, "bids") else 0
-                ask_count = len(book.asks) if hasattr(book, "asks") else 0
-                timestamp = getattr(book, "timestamp", "unknown")
-                logger.debug(f"    → {exch}: {bid_count} bids, {ask_count} asks, ts: {timestamp}")
 
-    # Return early if no records - don't error out
+    # Return early if no records
     if not records:
-        logger.warning(f"No records provided for asset {key}, returning current state")
+        logger.warning(f"⚠️ No records provided for asset {key}, returning current state")
         return key, state
 
-    # Default asset name if key is None or invalid
-    asset = key if key and key != "None" else "UNKNOWN"
+    # Validate key - raise error instead of using fallback
+    if not key or key == "None":
+        error_msg = f"Invalid key provided to update_asset_state: {key}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Use the validated key
+    asset = key
 
     try:
-        logger.info(f"Starting updates for asset: {asset}")
+        logger.info(f"🔄 Processing updates for asset: {asset}")
 
-        for i, new_data in enumerate(records):
-            logger.info(f"Processing record {i + 1}/{len(records)} for {asset}")
+        for i, record in enumerate(records):
+            logger.info(f"📝 Processing record {i + 1}/{len(records)}")
 
-            # Handle case where new_data is a tuple (exchange, order_book)
-            if isinstance(new_data, tuple) and len(new_data) == 2:
-                exchange, order_book = new_data
-                logger.info(f"Unpacked tuple: exchange={exchange}, order_book type={type(order_book)}")
+            # Handle tuple (exchange, order_book)
+            if isinstance(record, tuple) and len(record) == 2:
+                exchange, order_book = record
+                logger.info(f"📦 Unpacked tuple: exchange={exchange}")
             else:
-                # Assume it's an OrderBookUpdate object directly
+                # Assume OrderBookUpdate object
                 try:
-                    exchange = new_data.exchange
-                    order_book = new_data
-                    logger.info(f"Using direct object: exchange={exchange}, order_book type={type(order_book)}")
+                    exchange = record.exchange
+                    order_book = record
+                    logger.info(f"📦 Direct object: exchange={exchange}")
                 except AttributeError:
-                    logger.error(f"Data is not a tuple or OrderBookUpdate: {type(new_data)}")
-                    logger.error(f"Data content: {new_data}")
-                    continue
+                    error_msg = f"Invalid record type: {type(record)}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
 
-            # Log existing data for this exchange if it exists
-            if asset in state.symbols and exchange in state.symbols[asset]:
-                existing_book = state.symbols[asset][exchange]
-                bid_count = len(existing_book.bids) if hasattr(existing_book, "bids") else 0
-                ask_count = len(existing_book.asks) if hasattr(existing_book, "asks") else 0
-                logger.info(f"BEFORE UPDATE: {exchange}:{asset} has {bid_count} bids, {ask_count} asks")
+            # Extract and normalize symbol from order book if needed
+            # We require a valid symbol - no fallbacks to UNKNOWN
+            symbol = asset
+
+            # Make sure symbol is set in the order book
+            order_book.symbol = symbol
+
+            # Initialize symbol entry in state if needed
+            if symbol not in state.symbols:
+                logger.info(f"🆕 Adding new symbol to state: {symbol}")
+                state.symbols[symbol] = {}
+
+            # Check for existing order book for this exchange/symbol
+            has_existing = symbol in state.symbols and exchange in state.symbols[symbol]
+            if has_existing:
+                logger.info(f"🔄 Updating existing order book for {exchange}:{symbol}")
             else:
-                logger.info(f"BEFORE UPDATE: No existing data for {exchange}:{asset}")
+                logger.info(f"🆕 Adding new exchange {exchange} for symbol {symbol}")
 
-            # Extract symbol from order book and use it as the asset key if available
-            extracted_symbol = getattr(order_book, "symbol", None)
-
-            # If we have a valid symbol from the data, use it to override the key
-            if extracted_symbol and extracted_symbol != "None":
-                asset = extracted_symbol
-                logger.info(f"Using symbol from data: {asset} (original key: {key})")
-
-            # Fallback if asset is still None or invalid
-            if not asset or asset == "None":
-                logger.error("No valid asset key found, using exchange identifier")
-                if ":" in exchange:
-                    _, extracted_symbol = exchange.split(":", 1)
-                    asset = extracted_symbol
-                    logger.info(f"Extracted asset from exchange identifier: {asset}")
-                else:
-                    asset = "UNKNOWN"
-                    logger.error("Cannot determine asset, using 'UNKNOWN'")
-
-            # Initialize the nested state for this asset if it doesn't exist
-            if asset not in state.symbols:
-                logger.info(f"Initializing NEW state for asset: {asset}")
-                state.symbols[asset] = {}
-
-            # Log what exchanges currently exist for this asset
-            logger.info(f"CURRENT EXCHANGES for {asset}: {list(state.symbols[asset].keys())}")
-
-            # Initialize the sub-state for this exchange if it doesn't exist
-            if exchange not in state.symbols[asset]:
-                logger.info(f"Initializing NEW state for exchange: {exchange} in asset: {asset}")
-                # Make sure we always provide a valid symbol string
-                state.symbols[asset][exchange] = OrderBookUpdate(
-                    exchange=exchange,
-                    symbol=asset,  # Use the determined asset name as symbol
-                    bids={},
-                    asks={},
-                    timestamp=0.0,
-                )
-
-            # Update the exchange-specific order book for the asset
+            # Update the order book
             try:
-                logger.info(f"Updating order book data for {exchange}:{asset}")
-                # Log the new data being added
+                # Create complete OrderBookUpdate if none exists
+                if not has_existing or not isinstance(state.symbols[symbol][exchange], OrderBookUpdate):
+                    logger.info(f"🆕 Creating new OrderBookUpdate for {exchange}:{symbol}")
+                    state.symbols[symbol][exchange] = OrderBookUpdate(
+                        exchange=exchange,
+                        symbol=symbol,
+                        bids=getattr(order_book, "bids", {}),
+                        asks=getattr(order_book, "asks", {}),
+                        timestamp=getattr(order_book, "timestamp", time.time()),
+                    )
+                else:
+                    # Update existing order book
+                    logger.info(f"🔄 Updating fields for {exchange}:{symbol}")
+                    state.symbols[symbol][exchange].bids = order_book.bids
+                    state.symbols[symbol][exchange].asks = order_book.asks
+                    state.symbols[symbol][exchange].timestamp = order_book.timestamp
+
+                # Log update summary
                 bid_count = len(order_book.bids) if hasattr(order_book, "bids") else 0
                 ask_count = len(order_book.asks) if hasattr(order_book, "asks") else 0
-                logger.info(f"ADDING: {exchange}:{asset} with {bid_count} bids, {ask_count} asks")
-
-                state.symbols[asset][exchange].bids = order_book.bids
-                state.symbols[asset][exchange].asks = order_book.asks
-                state.symbols[asset][exchange].timestamp = order_book.timestamp
-                logger.info(f"Updated order book: bids={len(order_book.bids)}, asks={len(order_book.asks)}")
+                logger.info(f"✅ Updated {exchange}:{symbol} with {bid_count} bids, {ask_count} asks")
             except Exception as e:
-                logger.error(f"Error updating order book attributes: {e}")
-                # Create a new OrderBookUpdate with all required fields from the order_book
-                logger.info(f"Creating new OrderBookUpdate for {exchange}:{asset}")
-                state.symbols[asset][exchange] = OrderBookUpdate(
-                    exchange=exchange,
-                    symbol=asset,  # Use the determined asset name
-                    bids=getattr(order_book, "bids", {}),
-                    asks=getattr(order_book, "asks", {}),
-                    timestamp=getattr(order_book, "timestamp", time.time()),
-                )
+                logger.error(f"❌ Error updating order book: {e}", exc_info=True)
 
-            # Log state after this update
-            if asset in state.symbols:
-                logger.info(
-                    f"AFTER UPDATE: Asset {asset} now has {len(state.symbols[asset])} exchanges: {list(state.symbols[asset].keys())}"
-                )
-                # Log the first few bid/ask entries if any
-                for ex, book in state.symbols[asset].items():
-                    bid_count = len(book.bids) if hasattr(book, "bids") else 0
-                    ask_count = len(book.asks) if hasattr(book, "asks") else 0
-                    logger.debug(f"  → {ex}: {bid_count} bids, {ask_count} asks")
+        # Final state check
+        exchanges_for_key = []
+        if asset in state.symbols:
+            exchanges_for_key = list(state.symbols[asset].keys())
+
+        logger.info(
+            f"📊 STATE AFTER UPDATE: Symbol {asset} has {len(exchanges_for_key)} exchanges: {exchanges_for_key}"
+        )
+
+        # Most important log - check if we have enough exchanges for comparison
+        if len(exchanges_for_key) >= 2:
+            logger.info(f"✅ READY FOR COMPARISON: {asset} has {len(exchanges_for_key)} exchanges")
+        else:
+            logger.warning(f"⚠️ NOT ENOUGH EXCHANGES: {asset} has only {len(exchanges_for_key)} exchange(s)")
 
     except Exception as e:
-        logger.error(f"Error in update_asset_state: {e}", exc_info=True)
-        return asset, state  # Return asset instead of key
+        logger.error(f"❌ Error in update_asset_state: {e}", exc_info=True)
 
-    # Summary of what we've built
-    try:
-        assets_count = len(state.symbols)
-        exchanges_count = sum(len(exchanges) for exchanges in state.symbols.values())
-        logger.info(f"FINAL STATE: Has {assets_count} assets and {exchanges_count} total exchange entries")
-
-        for asset_name, exchanges in state.symbols.items():
-            exchange_count = len(exchanges)
-            logger.info(f"  • Asset {asset_name}: {exchange_count} exchanges: {list(exchanges.keys())}")
-
-            # Log if we have enough exchanges for arbitrage
-            if exchange_count >= 2:
-                logger.info(
-                    f"  ✅ Asset {asset_name} has sufficient exchanges ({exchange_count}) for arbitrage detection"
-                )
-            else:
-                logger.info(
-                    f"  ❌ Asset {asset_name} needs more exchanges for arbitrage detection (have {exchange_count}, need at least 2)"
-                )
-
-            # Detailed logging of what's in each exchange's order book
-            for exch_name, book in exchanges.items():
-                bid_count = len(book.bids) if hasattr(book, "bids") else 0
-                ask_count = len(book.asks) if hasattr(book, "asks") else 0
-                logger.info(f"    → {exch_name}: {bid_count} bids, {ask_count} asks")
-                # Log top bid/ask if available (useful for debugging spread issues)
-                if bid_count > 0 and ask_count > 0:
-                    try:
-                        top_bid = max(book.bids.items(), key=lambda x: float(x[0]))[0] if book.bids else "none"
-                        top_ask = min(book.asks.items(), key=lambda x: float(x[0]))[0] if book.asks else "none"
-                        logger.debug(f"      Top bid: {top_bid}, Top ask: {top_ask}")
-                    except Exception as e:
-                        logger.error(f"Error getting top bid/ask: {e}")
-
-    except Exception as e:
-        logger.error(f"Error summarizing state: {e}", exc_info=True)
-
-    return asset, state  # Return asset instead of key
+    return asset, state
 
 
 def find_arbitrage_opportunities(
@@ -367,7 +401,7 @@ def find_arbitrage_opportunities(
     return {"state": state_dict, "strategy": strategy, "threshold": threshold}, opportunity
 
 
-def format_opportunity(opportunity: Dict) -> Optional[Dict]:
+def format_opportunity(opportunity: Dict) -> Optional[Tuple[str, Dict]]:
     """
     Format the opportunity for output.
 
@@ -375,21 +409,33 @@ def format_opportunity(opportunity: Dict) -> Optional[Dict]:
         opportunity: The opportunity dictionary
 
     Returns:
-        Formatted opportunity or None
+        Tuple of (key, opportunity) or None
     """
     if not opportunity:
         return None
 
     try:
-        # Add formatted log message
+        # Calculate estimated profit for logging
+        buy_price = opportunity.get("buy_price", 0)
+        volume = opportunity.get("volume", 0)
+        spread = opportunity.get("spread", 0)
+        estimated_profit = spread * volume * buy_price
+
+        # Add formatted log message with more details
         logger.info(
-            f"Detection opportunity: {opportunity['pair']}: "
-            f"Buy from {opportunity['buy_exchange']} at {opportunity['buy_price']}, "
-            f"Sell on {opportunity['sell_exchange']} at {opportunity['sell_price']}, "
-            f"Spread: {opportunity['spread']:.4%}, Volume: {opportunity['volume']}"
+            f"DETECTION OPPORTUNITY DETAILS:\n"
+            f"  Pair: {opportunity['pair']}\n"
+            f"  Strategy: {opportunity.get('strategy', 'unknown')}\n"
+            f"  Buy: {opportunity['buy_exchange']} @ {opportunity['buy_price']:.8f}\n"
+            f"  Sell: {opportunity['sell_exchange']} @ {opportunity['sell_price']:.8f}\n"
+            f"  Spread: {opportunity['spread']:.6%}\n"
+            f"  Volume: {opportunity['volume']:.8f}\n"
+            f"  Est. Profit: {estimated_profit:.8f}\n"
+            f"  Timestamp: {opportunity.get('opportunity_timestamp', time.time())}"
         )
 
-        return opportunity
+        # Return a tuple (key, value) as required by Bytewax for routing
+        return (opportunity["pair"], opportunity)
     except Exception as e:
         logger.error(f"Error formatting opportunity: {e}")
         return None

@@ -1,13 +1,14 @@
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
-from src.arbirich.config.config import STRATEGIES
 from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.core.trading.components.base import Component
 from src.arbirich.core.trading.flows.flow_manager import FlowManager
-from src.arbirich.core.trading.flows.reporting.message_processor import process_message, process_redis_messages
+from src.arbirich.core.trading.flows.reporting.message_processor import process_redis_messages
 from src.arbirich.core.trading.flows.reporting.tasks import monitor_health, persist_data, report_performance
+from src.arbirich.models.models import Strategy
+from src.arbirich.services.database.repositories.strategy_repository import StrategyRepository
 from src.arbirich.services.redis.redis_service import initialize_redis, reset_redis_connection
 
 logger = logging.getLogger(__name__)
@@ -24,15 +25,39 @@ class ReportingComponent(Component):
         self.flow_configs = config.get("flows", {})
         self.tasks = {}
         self.stop_event = asyncio.Event()
+        self.strategy_repository = None
+        self.strategies = {}
+        self.active_channels = set()
+        self.refresh_interval = config.get("refresh_interval", 300.0)  # 5 minutes default
 
     async def initialize(self) -> bool:
         """Initialize reporting configurations"""
         try:
+            # Initialize the Database connection
+            from src.arbirich.services.database.database_service import DatabaseService
+
+            # Get a database connection from the service
+            db_service = DatabaseService()
+
+            # Create the strategy repository
+            self.strategy_repository = StrategyRepository(engine=db_service.engine)
+
+            # Get active strategies using the repository
+            active_strategies = self._get_active_strategies()
+
+            # Store strategies info
+            for strategy in active_strategies:
+                strategy_id = str(strategy.id)
+                strategy_name = strategy.name
+
+                self.strategies[strategy_id] = {"id": strategy_id, "name": strategy_name, "active": True}
+
             # Configure different types of reporting tasks
             self.reporting_types = [
                 {"id": f"persistence_{self.name}", "type": "data_persistence"},
                 {"id": f"health_{self.name}", "type": "health_monitoring"},
                 {"id": f"performance_{self.name}", "type": "performance_reporting"},
+                {"id": f"strategy_refresh_{self.name}", "type": "strategy_refresh"},
             ]
 
             # Initialize the reporting flow using the imported module
@@ -44,15 +69,18 @@ class ReportingComponent(Component):
             # Configure the flow builder
             self.flow_manager.set_flow_builder(lambda: build_reporting_flow(flow_type="performance"))
 
-            # Create flow configuration
+            # Create flow configuration with dynamic channels based on active strategies
             self.flow_config = {
                 "id": f"reporting_flow_{self.name}",
-                "channels": [],  # Will be populated by the flow builder
+                "channels": self._get_strategy_channels(),
                 "active": True,
             }
 
             # Initialize Redis connection for stream processing
             self.redis_client, self.pubsub = await initialize_redis(self.flow_config.get("channels", []))
+
+            # Store the current set of active channels
+            self.active_channels = set(self.flow_config.get("channels", []))
 
             if not self.redis_client or not self.pubsub:
                 logger.error("Failed to initialize Redis connection")
@@ -63,53 +91,55 @@ class ReportingComponent(Component):
             self._next_log_time = 0
 
             logger.info(f"Initialized {len(self.reporting_types)} reporting tasks and flow")
+            logger.info(
+                f"Monitoring {len(self.strategies)} active strategies with {len(self.active_channels)} channels"
+            )
             return True
 
         except Exception as e:
             logger.error(f"Error initializing reporting: {e}", exc_info=True)
             return False
 
-    def build_reporting_flow(self, flow_type: str = "performance") -> Dict[str, Any]:
-        """
-        Build a reporting flow configuration based on the specified type.
-        This replaces the Bytewax dataflow creation with a configuration object
-        that will be used by our async tasks.
-        """
+    def _get_active_strategies(self) -> List[Strategy]:
+        """Get active strategies from the repository"""
+        try:
+            if self.strategy_repository is None:
+                logger.error("Strategy repository not initialized")
+                return []
+
+            return self.strategy_repository.get_active()
+        except Exception as e:
+            logger.error(f"Error retrieving active strategies: {e}", exc_info=True)
+            return []
+
+    def _get_strategy_by_name(self, strategy_name: str) -> Optional[Strategy]:
+        """Get a strategy by name from the repository"""
+        try:
+            if self.strategy_repository is None:
+                logger.error("Strategy repository not initialized")
+                return None
+
+            return self.strategy_repository.get_by_name(strategy_name)
+        except Exception as e:
+            logger.error(f"Error retrieving strategy by name {strategy_name}: {e}", exc_info=True)
+            return None
+
+    def _get_strategy_channels(self) -> List[str]:
+        """Get Redis channels for all active strategies"""
         # Start with the main channels
         channels = [
             TRADE_OPPORTUNITIES_CHANNEL,
             TRADE_EXECUTIONS_CHANNEL,
         ]
 
-        # Add strategy-specific channels
-        for strategy_name in STRATEGIES.keys():
+        # Add strategy-specific channels for each active strategy
+        for strategy_id, strategy_info in self.strategies.items():
+            strategy_name = strategy_info["name"]
             channels.append(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}")
             channels.append(f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}")
+            logger.debug(f"Added channels for strategy: {strategy_name}")
 
-        logger.info(f"Building reporting flow with channels: {channels}")
-
-        # Create a configuration that mimics the Bytewax flow
-        flow_config = {
-            "id": f"reporting_flow_{flow_type}",
-            "type": flow_type,
-            "channels": channels,
-            "handlers": {
-                "data_persistence": persist_data,
-                "health_monitoring": monitor_health,
-                "performance_reporting": report_performance,
-                "message_processing": process_message,
-            },
-            "active": True,
-        }
-
-        # Add the Redis stream processor task
-        redis_stream_task = {"id": f"redis_stream_{self.name}", "type": "redis_stream_processor"}
-
-        if redis_stream_task not in self.reporting_types:
-            self.reporting_types.append(redis_stream_task)
-
-        logger.debug(f"Created flow config: {flow_config['id']}")
-        return flow_config
+        return channels
 
     async def run(self) -> None:
         """Run reporting tasks as simple async coroutines"""
@@ -173,6 +203,9 @@ class ReportingComponent(Component):
                     await monitor_health()
                 elif report_type == "performance_reporting":
                     await report_performance()
+                elif report_type == "strategy_refresh":
+                    # This is a new task that refreshes the active strategies
+                    await self._refresh_active_strategies()
                 elif report_type == "redis_stream_processor":
                     # This replaces the Bytewax flow functionality
                     await process_redis_messages(
@@ -187,9 +220,12 @@ class ReportingComponent(Component):
                 else:
                     logger.warning(f"Unknown report type: {report_type}")
 
+                # Use different intervals for different tasks
+                timeout = self.refresh_interval if report_type == "strategy_refresh" else self.update_interval
+
                 # Wait for next interval
                 try:
-                    await asyncio.wait_for(self.stop_event.wait(), timeout=self.update_interval)
+                    await asyncio.wait_for(self.stop_event.wait(), timeout=timeout)
                 except asyncio.TimeoutError:
                     # This is expected - it means we waited for update_interval and no stop event occurred
                     pass
@@ -201,6 +237,97 @@ class ReportingComponent(Component):
                 logger.error(f"Error in reporting task {task_id}: {e}", exc_info=True)
                 # Back off on errors to avoid rapid failure cycles
                 await asyncio.sleep(min(self.update_interval * 2, 300))
+
+    async def _refresh_active_strategies(self) -> None:
+        """Refresh the list of active strategies and update Redis subscriptions if needed"""
+        try:
+            logger.debug("Refreshing active strategies for reporting")
+
+            # Get current active strategies
+            current_strategies = self._get_active_strategies()
+
+            # Track changes
+            strategies_changed = False
+
+            # Create a dictionary of current strategy IDs for quick lookup
+            current_strategy_ids = {str(strategy.id): strategy for strategy in current_strategies}
+
+            # Check for strategies that have been deactivated
+            strategies_to_remove = []
+            for strategy_id in self.strategies:
+                if strategy_id not in current_strategy_ids:
+                    strategy_name = self.strategies[strategy_id]["name"]
+                    logger.info(f"Strategy {strategy_name} has been deactivated")
+                    strategies_to_remove.append(strategy_id)
+                    strategies_changed = True
+
+            # Remove deactivated strategies
+            for strategy_id in strategies_to_remove:
+                del self.strategies[strategy_id]
+
+            # Check for new active strategies
+            for strategy_id, strategy in current_strategy_ids.items():
+                if strategy_id not in self.strategies:
+                    strategy_name = strategy.name
+                    logger.info(f"New active strategy detected: {strategy_name}")
+
+                    # Add to strategies dict
+                    self.strategies[strategy_id] = {"id": strategy_id, "name": strategy_name, "active": True}
+                    strategies_changed = True
+
+            # If strategies have changed, update Redis subscriptions
+            if strategies_changed:
+                await self._update_redis_subscriptions()
+
+        except Exception as e:
+            logger.error(f"Error refreshing active strategies: {e}", exc_info=True)
+
+    async def _update_redis_subscriptions(self) -> None:
+        """Update Redis subscriptions based on current active strategies"""
+        try:
+            # Get new channels based on current strategies
+            new_channels = set(self._get_strategy_channels())
+
+            # Nothing to do if channels haven't changed
+            if new_channels == self.active_channels:
+                return
+
+            # Find channels to add and remove
+            channels_to_add = new_channels - self.active_channels
+            channels_to_remove = self.active_channels - new_channels
+
+            logger.info(
+                f"Updating Redis subscriptions: adding {len(channels_to_add)}, removing {len(channels_to_remove)}"
+            )
+
+            # If we have channels to remove, unsubscribe
+            if channels_to_remove:
+                for channel in channels_to_remove:
+                    try:
+                        await self.pubsub.unsubscribe(channel)
+                        logger.debug(f"Unsubscribed from channel: {channel}")
+                    except Exception as e:
+                        logger.error(f"Error unsubscribing from channel {channel}: {e}")
+
+            # If we have channels to add, subscribe
+            if channels_to_add:
+                for channel in channels_to_add:
+                    try:
+                        await self.pubsub.subscribe(channel)
+                        logger.debug(f"Subscribed to channel: {channel}")
+                    except Exception as e:
+                        logger.error(f"Error subscribing to channel {channel}: {e}")
+
+            # Update active channels
+            self.active_channels = new_channels
+
+            # Update flow config
+            self.flow_config["channels"] = list(self.active_channels)
+
+            logger.info(f"Updated Redis subscriptions, now monitoring {len(self.active_channels)} channels")
+
+        except Exception as e:
+            logger.error(f"Error updating Redis subscriptions: {e}", exc_info=True)
 
     async def cleanup(self) -> None:
         """Cancel all reporting tasks and clean up resources"""
@@ -227,7 +354,7 @@ class ReportingComponent(Component):
         # Close Redis connection
         if hasattr(self, "pubsub") and self.pubsub:
             try:
-                self.pubsub.unsubscribe()
+                await self.pubsub.unsubscribe()
                 self.pubsub.close()
                 logger.info("Closed Redis PubSub connection")
             except Exception as e:
@@ -236,7 +363,11 @@ class ReportingComponent(Component):
         # Reset shared Redis client
         reset_redis_connection()
 
+        # Clear state
         self.tasks = {}
+        self.strategies = {}
+        self.active_channels = set()
+        self.strategy_repository = None
 
     def handle_error(self, error: Exception) -> bool:
         """Handle component errors, return True if error was handled"""

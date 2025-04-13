@@ -1,5 +1,8 @@
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
+
+from src.arbirich.models.models import Strategy
+from src.arbirich.services.database.repositories.strategy_repository import StrategyRepository
 
 from .base import Component
 
@@ -19,6 +22,7 @@ class ExecutionComponent(Component):
         self.active_flows = {}
         self.strategies = {}
         self.flow_manager = None  # Initialize flow_manager attribute
+        self.strategy_repository = None
 
     async def initialize(self) -> bool:
         """Initialize execution component with database strategies."""
@@ -28,59 +32,104 @@ class ExecutionComponent(Component):
             from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
             from src.arbirich.services.database.database_service import DatabaseService
 
-            with DatabaseService() as db_service:
-                # Get active strategies
-                active_strategies = db_service.get_active_strategies()
+            # Get a database connection from the service
+            db_service = DatabaseService()
 
-                if not active_strategies:
-                    self.logger.warning("No active strategies found for execution component")
-                    # Return True anyway to allow component to start
-                    self.strategies = {}
-                    return True
+            # Create the strategy repository
+            self.strategy_repository = StrategyRepository(engine=db_service.engine)
 
-                # Initialize strategies
-                for strategy in active_strategies:
-                    strategy_id = str(strategy.id)
-                    strategy_name = strategy.name
+            # Get active strategies using the repository
+            active_strategies = self._get_active_strategies()
 
-                    self.logger.info(f"Initializing execution component for strategy: {strategy_name}")
+            if not active_strategies:
+                self.logger.warning("No active strategies found for execution component")
+                # Return True anyway to allow component to start
+                self.strategies = {}
+                return True
 
-                    # Create a flow ID and manager for this strategy
-                    flow_id = f"execution_{strategy_name}"
-                    flow_manager = BytewaxFlowManager.get_or_create(flow_id)
+            # Initialize strategies
+            for strategy in active_strategies:
+                strategy_id = str(strategy.id)
+                strategy_name = strategy.name
 
-                    # Configure the flow builder
-                    flow_manager.build_flow = lambda strat=strategy: build_execution_flow(
-                        strategy_name=strat.name, debug_mode=self.debug_mode
-                    )
+                self.logger.info(f"Initializing execution component for strategy: {strategy_name}")
 
-                    # Store the flow manager (use the first one if multiple strategies)
-                    if self.flow_manager is None:
-                        self.flow_manager = flow_manager
+                # Create a flow ID and manager for this strategy
+                flow_id = f"execution_{strategy_name}"
+                flow_manager = BytewaxFlowManager.get_or_create(flow_id)
 
-                    # Add to active flows
-                    self.active_flows[flow_id] = {"strategy_id": strategy_id, "strategy_name": strategy_name}
+                # Configure the flow builder
+                flow_manager.build_flow = lambda strat=strategy: build_execution_flow(
+                    strategy_name=strat.name, debug_mode=self.debug_mode
+                )
 
-                    # Add strategy to the tracked strategies
-                    try:
-                        self.strategies[strategy_id] = {"id": strategy_id, "name": strategy_name, "active": True}
-                    except Exception as e:
-                        self.logger.error(f"Error initializing strategy {strategy_name}: {e}")
+                # Store the flow manager (use the first one if multiple strategies)
+                if self.flow_manager is None:
+                    self.flow_manager = flow_manager
 
-                if self.strategies:
-                    self.logger.info(f"Initialized execution component with {len(self.strategies)} strategies")
-                    return True
-                else:
-                    self.logger.warning("No strategies were successfully initialized for execution component")
-                    return False
+                # Add to active flows
+                self.active_flows[flow_id] = {"strategy_id": strategy_id, "strategy_name": strategy_name}
+
+                # Add strategy to the tracked strategies
+                try:
+                    # Extract strategy parameters for execution logic
+                    self.strategies[strategy_id] = {
+                        "id": strategy_id,
+                        "name": strategy_name,
+                        "active": True,
+                        "min_spread": strategy.min_spread,
+                        "threshold": strategy.threshold,
+                        "max_slippage": strategy.max_slippage,
+                        "min_volume": strategy.min_volume,
+                        "risk_profile": strategy.risk_profile.model_dump() if strategy.risk_profile else None,
+                    }
+
+                    # Log execution strategies for this strategy
+                    if hasattr(strategy, "execution_mappings") and strategy.execution_mappings:
+                        execution_count = len(strategy.execution_mappings)
+                        self.logger.info(f"Found {execution_count} execution strategies for {strategy_name}")
+
+                except Exception as e:
+                    self.logger.error(f"Error initializing strategy {strategy_name}: {e}", exc_info=True)
+
+            if self.strategies:
+                self.logger.info(f"Initialized execution component with {len(self.strategies)} strategies")
+                return True
+            else:
+                self.logger.warning("No strategies were successfully initialized for execution component")
+                return False
 
         except Exception as e:
             self.logger.error(f"Error initializing execution component: {e}", exc_info=True)
             return False
 
+    def _get_active_strategies(self) -> List[Strategy]:
+        """Get active strategies from the repository"""
+        try:
+            if self.strategy_repository is None:
+                self.logger.error("Strategy repository not initialized")
+                return []
+
+            return self.strategy_repository.get_active()
+        except Exception as e:
+            self.logger.error(f"Error retrieving active strategies: {e}", exc_info=True)
+            return []
+
+    def _get_strategy_by_name(self, strategy_name: str) -> Optional[Strategy]:
+        """Get a strategy by name from the repository"""
+        try:
+            if self.strategy_repository is None:
+                self.logger.error("Strategy repository not initialized")
+                return None
+
+            return self.strategy_repository.get_by_name(strategy_name)
+        except Exception as e:
+            self.logger.error(f"Error retrieving strategy by name {strategy_name}: {e}", exc_info=True)
+            return None
+
     async def run(self) -> None:
         """Run the execution component by starting Bytewax flows"""
-        self.logger.info("Running execution component")
+        self.logger.info(f"Running execution component for {len(self.active_flows)} flows")
 
         try:
             # Start the flow for each strategy
@@ -97,6 +146,10 @@ class ExecutionComponent(Component):
                     self.logger.error("Execution flow stopped unexpectedly, attempting to restart")
                     await self.flow_manager.run_flow()
 
+                # Periodically check for strategy updates
+                if self.strategy_repository:
+                    self._refresh_active_strategies()
+
                 await asyncio.sleep(self.update_interval)
 
         except asyncio.CancelledError:
@@ -111,16 +164,112 @@ class ExecutionComponent(Component):
             # Ensure cleanup happens
             await self.cleanup()
 
+    def _refresh_active_strategies(self) -> None:
+        """Refresh the list of active strategies"""
+        try:
+            # Get current active strategies
+            current_strategies = self._get_active_strategies()
+
+            # Create a dictionary of current strategy IDs for quick lookup
+            current_strategy_ids = {str(strategy.id): strategy for strategy in current_strategies}
+
+            # Check for strategies that have been deactivated
+            strategies_to_remove = []
+            for strategy_id in self.strategies:
+                if strategy_id not in current_strategy_ids:
+                    strategy_name = self.strategies[strategy_id]["name"]
+                    self.logger.info(f"Strategy {strategy_name} has been deactivated")
+                    strategies_to_remove.append(strategy_id)
+
+                    # Remove from active flows
+                    flow_id = f"execution_{strategy_name}"
+                    if flow_id in self.active_flows:
+                        del self.active_flows[flow_id]
+
+            # Remove deactivated strategies
+            for strategy_id in strategies_to_remove:
+                del self.strategies[strategy_id]
+
+            # Check for new active strategies
+            for strategy_id, strategy in current_strategy_ids.items():
+                if strategy_id not in self.strategies:
+                    strategy_name = strategy.name
+                    self.logger.info(f"New active strategy detected: {strategy_name}")
+
+                    # Add to strategies dict with execution parameters
+                    self.strategies[strategy_id] = {
+                        "id": strategy_id,
+                        "name": strategy_name,
+                        "active": True,
+                        "min_spread": strategy.min_spread,
+                        "threshold": strategy.threshold,
+                        "max_slippage": strategy.max_slippage,
+                        "min_volume": strategy.min_volume,
+                        "risk_profile": strategy.risk_profile.model_dump() if strategy.risk_profile else None,
+                    }
+
+                    # Add to active flows
+                    flow_id = f"execution_{strategy_name}"
+                    self.active_flows[flow_id] = {"strategy_id": strategy_id, "strategy_name": strategy_name}
+
+                    # Create flow manager if needed
+                    from src.arbirich.core.trading.flows.bytewax_flows.execution.execution_flow import (
+                        build_execution_flow,
+                    )
+                    from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
+
+                    flow_manager = BytewaxFlowManager.get_or_create(flow_id)
+                    flow_manager.build_flow = lambda strat=strategy: build_execution_flow(
+                        strategy_name=strat.name, debug_mode=self.debug_mode
+                    )
+
+                    # Use this as the flow manager if we don't have one
+                    if self.flow_manager is None:
+                        self.flow_manager = flow_manager
+
+                # Check for updated strategy parameters
+                elif strategy_id in self.strategies:
+                    current_strategy = current_strategy_ids[strategy_id]
+                    existing_strategy = self.strategies[strategy_id]
+
+                    # Check if any key execution parameters have changed
+                    if (
+                        existing_strategy["min_spread"] != current_strategy.min_spread
+                        or existing_strategy["threshold"] != current_strategy.threshold
+                        or existing_strategy["max_slippage"] != current_strategy.max_slippage
+                        or existing_strategy["min_volume"] != current_strategy.min_volume
+                    ):
+                        self.logger.info(f"Updated parameters detected for strategy: {current_strategy.name}")
+
+                        # Update the strategy parameters
+                        existing_strategy["min_spread"] = current_strategy.min_spread
+                        existing_strategy["threshold"] = current_strategy.threshold
+                        existing_strategy["max_slippage"] = current_strategy.max_slippage
+                        existing_strategy["min_volume"] = current_strategy.min_volume
+                        existing_strategy["risk_profile"] = (
+                            current_strategy.risk_profile.model_dump() if current_strategy.risk_profile else None
+                        )
+
+        except Exception as e:
+            self.logger.error(f"Error refreshing active strategies: {e}", exc_info=True)
+
     async def cleanup(self) -> None:
         """Stop all execution flows"""
         self.logger.info("Cleaning up execution component")
 
         try:
-            # Stop the flow
-            await self.flow_manager.stop_flow_async()
-            self.logger.info("Stopped execution flow")
+            # Stop all flows
+            if self.flow_manager:
+                await self.flow_manager.stop_flow_async()
+                self.logger.info("Stopped all execution flows")
 
             # Clear the active flows
             self.active_flows = {}
+
+            # Clear strategies
+            self.strategies = {}
+
+            # Close repository if needed
+            self.strategy_repository = None
         except Exception as e:
             self.logger.error(f"Error during cleanup: {e}", exc_info=True)

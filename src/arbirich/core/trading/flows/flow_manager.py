@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Optional, Set
 from bytewax.run import cli_main
 
 from src.arbirich.core.state.system_state import is_system_shutting_down
-from src.arbirich.utils.thread_helpers import terminate_thread_pool, try_join_thread
+from src.arbirich.utils.thread_helpers import try_join_thread
 
 logger = logging.getLogger(__name__)
 
@@ -174,24 +174,64 @@ class FlowManager:
         """Check if the flow is running."""
         return self.running and (self.runner_thread is not None and self.runner_thread.is_alive())
 
-    def stop_flow(self) -> bool:
-        """Synchronously stop the flow."""
-        # Set the stop event to signal shutdown
-        self.stop_event.set()
-        self.logger.info(f"Stop signal sent to {self.flow_id} flow")
+    def stop_flow(self):
+        """Signal the flow to stop synchronously with enhanced error handling"""
+        flow_name = self.flow_id
+        logger.info(f"Stop signal sent to {flow_name} flow")
 
-        # Wait for the thread to exit
-        if self.runner_thread and self.runner_thread.is_alive():
-            self.logger.info(f"Waiting for {self.flow_id} flow thread to exit...")
-            thread_exited = try_join_thread(self.runner_thread, 3.0)  # 3 second timeout
+        try:
+            from src.arbirich.core.state.system_state import mark_system_shutdown
 
-            if not thread_exited:
-                self.logger.warning(f"{self.flow_id} flow thread didn't exit cleanly")
+            # Make sure we set the shutdown flag
+            mark_system_shutdown(True)
 
-        self.running = False
-        self.flow = None  # Clear flow to force rebuild on next run
-        self.logger.info(f"{self.flow_id} flow stop completed")
-        return True
+            # Set the stop event to signal all threads
+            self.stop_event.set()
+
+            # Use a shorter timeout for waiting and log our intention
+            logger.info(f"Waiting for {flow_name} flow thread to exit (max 2.0s)...")
+
+            # If there's a thread, attempt to join it with timeout
+            if hasattr(self, "runner_thread") and self.runner_thread and self.runner_thread.is_alive():
+                import threading
+
+                current_thread_id = threading.get_ident()
+                if self.runner_thread.ident != current_thread_id:
+                    self.runner_thread.join(timeout=2.0)
+                else:
+                    logger.warning(f"Cannot join current thread for {flow_name}, skipping thread join")
+
+            # Forcefully shutdown the executor with more aggressive approach
+            if hasattr(self, "_thread_pool") and self._thread_pool:
+                try:
+                    self._thread_pool.shutdown(wait=False)
+                    logger.info(f"Shutdown thread pool executor for {flow_name}")
+                except Exception as e:
+                    logger.error(f"Error shutting down thread pool: {e}")
+
+                    # Try to forcibly clear the thread pool
+                    try:
+                        self._thread_pool = None
+                        logger.info("Forcibly cleared thread pool reference")
+                    except Exception:
+                        pass
+
+            # If it's a known bytewax flow, try more aggressive cleanup
+            if "detection" in flow_name or "ingestion" in flow_name:
+                try:
+                    # Try to force reset Redis connections
+                    from src.arbirich.services.redis.redis_service import reset_redis_pool
+
+                    reset_redis_pool()
+                    logger.info("Force reset all Redis pools")
+                except Exception as e:
+                    logger.error(f"Error resetting Redis pools: {e}")
+
+            return True
+        except Exception as e:
+            logger.error(f"Error stopping flow {flow_name}: {e}")
+            # Still return True to indicate stop was attempted
+            return True
 
     async def stop_flow_async(self) -> bool:
         """Asynchronously stop the flow."""
@@ -350,12 +390,21 @@ class BytewaxFlowManager(FlowManager):
     def _monitor_stop(self):
         """Monitor for stop event and initiate shutdown when triggered."""
         try:
+            # Set initial check interval
+            check_interval = 0.1  # Start with more frequent checks
+
             # Wait for the stop event or check system shutdown
             while not self.stop_event.is_set() and not is_system_shutting_down():
-                time.sleep(0.1)  # Short sleep to avoid CPU spinning
+                time.sleep(check_interval)  # Short sleep to avoid CPU spinning
 
+                # Gradually increase check interval to reduce CPU usage over time
+                # but keep it responsive for quick shutdown
+                if check_interval < 0.5:  # Don't go above 0.5 seconds
+                    check_interval = min(check_interval * 1.05, 0.5)
+
+            # Log why we're shutting down
             if self.stop_event.is_set():
-                self.logger.info("Stop condition detected, terminating flow")
+                self.logger.info("Stop event detected, terminating flow")
             elif is_system_shutting_down():
                 self.logger.info("System shutdown detected, terminating flow")
                 # Make sure our internal stop event is also set
@@ -364,18 +413,29 @@ class BytewaxFlowManager(FlowManager):
             # Terminate the thread pool - this will cause run_main to exit
             self._shutdown_thread_pool()
 
+            # Don't rely on imported functions during shutdown - use a direct approach
+            self.logger.info(f"Flow {self.flow_id} shutting down - not waiting for component notification")
+
         except Exception as e:
             self.logger.error(f"Error in monitor thread: {e}")
         finally:
             self.logger.info(f"{self.flow_id} flow monitor exited")
 
     def _shutdown_thread_pool(self):
-        """Shutdown the thread pool executor."""
+        """Shutdown the thread pool executor with improvements."""
         if self._thread_pool:
             try:
-                # Use our helper function for better thread pool termination
-                terminate_thread_pool(self._thread_pool)
-                self.logger.info(f"Shutdown thread pool executor for {self.flow_id}")
+                # First attempt a normal shutdown with a timeout
+                self.logger.info(f"Initiating thread pool shutdown for {self.flow_id}")
+                self._thread_pool.shutdown(wait=True, timeout=2.0)
+                self.logger.info(f"Thread pool shutdown completed for {self.flow_id}")
+            except (TypeError, AttributeError):
+                # Older Python versions don't support timeout parameter
+                try:
+                    self._thread_pool.shutdown(wait=False)
+                    self.logger.info(f"Thread pool shutdown initiated for {self.flow_id} (no wait)")
+                except Exception as e:
+                    self.logger.error(f"Error during thread pool shutdown: {e}")
             except Exception as e:
                 self.logger.error(f"Error shutting down thread pool: {e}")
             finally:
@@ -383,9 +443,10 @@ class BytewaxFlowManager(FlowManager):
                     if self._thread_pool in _executors_in_use:
                         _executors_in_use.remove(self._thread_pool)
                 self._thread_pool = None
+                self.logger.info(f"Thread pool cleared for {self.flow_id}")
 
     def stop_flow(self) -> bool:
-        """Synchronously stop the flow."""
+        """Synchronously stop the flow with more aggressive handling."""
         # Set the stop event to signal shutdown
         self.stop_event.set()
         self.logger.info(f"Stop signal sent to {self.flow_id} flow")
@@ -398,18 +459,24 @@ class BytewaxFlowManager(FlowManager):
         except ImportError:
             self.logger.warning("Could not import system_state module")
 
-        # Wait for the thread to exit
+        # Wait for the thread to exit, but with a shorter timeout
         if self.runner_thread and self.runner_thread.is_alive():
-            self.logger.info(f"Waiting for {self.flow_id} flow thread to exit (max {self._stop_timeout}s)...")
-            thread_exited = try_join_thread(self.runner_thread, self._stop_timeout)
+            self.logger.info(f"Waiting for {self.flow_id} flow thread to exit (max 1.5s)...")
+            thread_exited = try_join_thread(self.runner_thread, 1.5)  # Shorter timeout
 
             if not thread_exited:
-                self.logger.warning(f"{self.flow_id} flow thread didn't exit cleanly, forcing cleanup...")
+                # More aggressive cleanup if the thread doesn't exit quickly
+                self.logger.warning(f"{self.flow_id} flow thread didn't exit cleanly, using aggressive cleanup...")
+
                 # Force cleanup of resources even if thread didn't exit
                 self._shutdown_thread_pool()
 
+                # Attempt to identify and kill associated processes more aggressively
+                self._force_kill_processes()
+
                 # Flow-specific cleanup for common flows - update paths
                 try:
+                    # Flow-specific Redis cleanup
                     if "detection" in self.flow_id:
                         from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import (
                             reset_shared_redis_client,
@@ -431,10 +498,57 @@ class BytewaxFlowManager(FlowManager):
 
                         reset_shared_redis_client()
                         self.logger.info("Force closed ingestion Redis client")
+
+                    # Add aggressive cleanup for all Redis clients
+                    try:
+                        from src.arbirich.services.redis.redis_service import reset_redis_pool
+
+                        reset_redis_pool()
+                        self.logger.info("Force reset all Redis pools")
+                    except Exception as e:
+                        self.logger.error(f"Error resetting Redis pools: {e}")
+
                 except Exception as e:
-                    self.logger.error(f"Error closing Redis connection: {e}")
+                    self.logger.error(f"Error in cleanup operations: {e}")
 
         self.running = False
         self.flow = None  # Clear flow to force rebuild on next run
         self.logger.info(f"{self.flow_id} flow stop completed")
         return True
+
+    def _force_kill_processes(self):
+        """Attempt to forcefully terminate processes related to this flow."""
+        try:
+            import psutil
+
+            # Get the current process
+            current_process = psutil.Process()
+
+            # Get all child processes
+            children = current_process.children(recursive=True)
+
+            # Filter those that might be related to this flow
+            flow_id_lower = self.flow_id.lower()
+            for child in children:
+                try:
+                    # Check if process name or command line contains flow_id
+                    cmdline = " ".join(child.cmdline()).lower()
+                    if flow_id_lower in cmdline or "bytewax" in cmdline:
+                        self.logger.warning(f"Force killing process {child.pid} with cmdline: {cmdline[:50]}...")
+
+                        # Try SIGTERM first
+                        child.terminate()
+
+                        # Give it a short time to terminate gracefully
+                        gone, still_alive = psutil.wait_procs([child], timeout=0.5)
+
+                        # If still alive, use SIGKILL
+                        if child in still_alive:
+                            self.logger.warning(f"Process {child.pid} still alive after SIGTERM, using SIGKILL")
+                            child.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+                except Exception as e:
+                    self.logger.error(f"Error killing process: {e}")
+        except Exception as e:
+            self.logger.error(f"Error in force_kill_processes: {e}")

@@ -1,5 +1,6 @@
 import enum
-from typing import Any, Dict, List, Optional, Tuple
+import logging
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 
 # ------------------ Channel Enums ------------------
@@ -8,7 +9,7 @@ class ChannelName(str, enum.Enum):
 
     TRADE_OPPORTUNITIES = "trade_opportunities"
     TRADE_EXECUTIONS = "trade_executions"
-    ORDER_BOOK = "order_book"
+    ORDER_BOOK = "order_books"  # Ensure this matches the constant definition
 
     @classmethod
     def list(cls) -> List[str]:
@@ -83,13 +84,8 @@ class StrategyType(str, enum.Enum):
 
     BASIC = "basic"
     MID_PRICE = "mid_price"
-    HFT = "hft"
-    STATISTICAL = "statistical"
-    MACHINE_LEARNING = "ml"
-    GRID_TRADING = "grid"
-    MARKET_MAKING = "market_making"
-    MEAN_REVERSION = "mean_reversion"
-    TREND_FOLLOWING = "trend_following"
+    VWAP = "vwap"
+    LIQUIDITY_ADJUSTED = "liquidity_adjusted"
 
     @classmethod
     def list(cls) -> List[str]:
@@ -133,6 +129,69 @@ class ExchangeType(str, enum.Enum):
         from src.arbirich.config import get_exchange_config
 
         return get_exchange_config(exchange_name)
+
+    @classmethod
+    def get_processor_class(cls, exchange_name: str) -> Type:
+        """
+        Get the processor class for an exchange based on enum values.
+
+        Args:
+            exchange_name: Name of the exchange
+
+        Returns:
+            Processor class for the exchange (falls back to DefaultOrderBookProcessor)
+        """
+        logger = logging.getLogger(__name__)
+
+        # Default processor as fallback
+        from src.arbirich.services.exchange_processors.default_processor import DefaultOrderBookProcessor
+
+        default_processor = DefaultOrderBookProcessor
+
+        try:
+            # Normalize exchange name to match enum values
+            normalized_name = exchange_name.lower()
+
+            # Try direct import based on normalized name
+            if normalized_name == cls.BYBIT.value:
+                from src.arbirich.services.exchange_processors.bybit import BybitOrderBookProcessor
+
+                logger.info(f"Using BybitOrderBookProcessor for {exchange_name}")
+                return BybitOrderBookProcessor
+            elif normalized_name == cls.CRYPTOCOM.value:
+                from src.arbirich.services.exchange_processors.cryptocom import CryptocomOrderBookProcessor
+
+                logger.info(f"Using CryptocomOrderBookProcessor for {exchange_name}")
+                return CryptocomOrderBookProcessor
+            # Add other exchanges as they are implemented
+
+            # If no direct match, try lookup from registry
+            try:
+                from src.arbirich.services.exchange_processors.registry import get_processor_class
+
+                processor = get_processor_class(exchange_name)
+                if processor:
+                    logger.info(f"Using {processor.__name__} from registry for {exchange_name}")
+                    return processor
+            except Exception as registry_error:
+                logger.warning(f"Registry lookup failed for {exchange_name}: {registry_error}")
+
+            # Return default processor if no match found
+            logger.warning(f"No specific processor found for {exchange_name}, using default")
+            return default_processor
+
+        except ImportError as ie:
+            logger.warning(f"Import error for {exchange_name} processor: {ie}")
+            return default_processor
+        except Exception as e:
+            logger.error(f"Error getting processor for {exchange_name}: {e}")
+            return default_processor
+
+    @classmethod
+    def get_processor_name(cls, exchange_name: str) -> str:
+        """Get the processor class name for display purposes"""
+        processor_class = cls.get_processor_class(exchange_name)
+        return processor_class.__name__ if processor_class else "DefaultOrderBookProcessor"
 
 
 # ------------------ Pair Enums ------------------

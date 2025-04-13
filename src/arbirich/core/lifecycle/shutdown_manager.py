@@ -30,14 +30,15 @@ class ShutdownPhase(Enum):
     """Enum for shutdown phases to ensure proper ordering."""
 
     FLAG_SET = 0
-    CONSUMER_STOP = 1
-    PROCESSOR_STOP = 2
-    BYTEWAX_STOP = 3
-    REDIS_CLEANUP = 4
-    DATABASE_CLEANUP = 5
-    THREAD_TERMINATION = 6
-    PROCESS_TERMINATION = 7
-    COMPLETED = 8
+    WEBSOCKET_STOP = 1  # Add this new phase
+    CONSUMER_STOP = 2
+    PROCESSOR_STOP = 3
+    BYTEWAX_STOP = 4
+    REDIS_CLEANUP = 5
+    DATABASE_CLEANUP = 6
+    THREAD_TERMINATION = 7
+    PROCESS_TERMINATION = 8
+    COMPLETED = 9
 
 
 def mark_phase_complete(phase: ShutdownPhase):
@@ -212,6 +213,45 @@ def _short_circuit_exit(timeout=30, exit_code=1):
         return cancel_exit_timer
 
 
+def _force_cleanup_detection_flow():
+    """Aggressively clean up detection flow resources."""
+    try:
+        logger.critical("EMERGENCY: Force cleaning up detection flow resources")
+
+        # First try to set the force kill flag
+        try:
+            from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import (
+                mark_detection_force_kill,
+            )
+
+            mark_detection_force_kill()
+            logger.info("Set detection force kill flag")
+        except ImportError:
+            logger.warning("Could not import mark_detection_force_kill")
+
+        # Then try to reset the Redis client
+        try:
+            from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import (
+                reset_shared_redis_client,
+            )
+
+            reset_shared_redis_client()
+            logger.info("Force reset detection Redis client")
+        except ImportError:
+            logger.warning("Could not import reset_shared_redis_client")
+
+        # Find and kill any detection threads
+        for thread in threading.enumerate():
+            thread_name = thread.name.lower()
+            if "detection" in thread_name and thread != threading.current_thread():
+                logger.warning(f"Found detection thread: {thread.name} - cannot terminate directly")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error in force_cleanup_detection_flow: {e}")
+        return False
+
+
 async def execute_phased_shutdown(emergency_timeout=30):
     """
     Execute shutdown in phases with timeouts to prevent hanging.
@@ -244,6 +284,22 @@ async def execute_phased_shutdown(emergency_timeout=30):
         except Exception as e:
             logger.error(f"Error setting processor shutdown flag: {e}")
         mark_phase_complete(ShutdownPhase.FLAG_SET)
+
+        # Add a new phase specifically for WebSocket cleanup
+        logger.info("PHASE 1.1: Cleaning up WebSocket connections")
+        try:
+            # Import the WebSocket manager and close active connections
+            from src.arbirich.web.websockets import manager
+
+            if hasattr(manager, "active_connections"):
+                active_count = len(manager.active_connections)
+                logger.info(f"Closing {active_count} active WebSocket connections")
+
+                # Clear the connection list to prevent further message sends
+                manager.active_connections.clear()
+        except Exception as e:
+            logger.warning(f"Error cleaning up WebSocket connections: {e}")
+        mark_phase_complete(ShutdownPhase.WEBSOCKET_STOP)
 
         # NEW PHASE: First Stop Reporting Flow - this is critical to prevent hanging
         logger.info("PHASE 1.5: Stopping reporting flow early")
@@ -290,6 +346,14 @@ async def execute_phased_shutdown(emergency_timeout=30):
         except (asyncio.TimeoutError, Exception) as e:
             logger.warning(f"Processor shutdown timed out or failed: {e}")
         mark_phase_complete(ShutdownPhase.PROCESSOR_STOP)
+
+        # Phase 3.5: Emergency detection flow cleanup
+        logger.info("PHASE 3.5: Emergency detection flow cleanup")
+        try:
+            if not _force_cleanup_detection_flow():
+                logger.warning("Emergency detection cleanup failed")
+        except Exception as e:
+            logger.error(f"Error in emergency detection cleanup: {e}")
 
         # Phase 4: Kill Bytewax processes
         logger.info("PHASE 4: Killing Bytewax processes")

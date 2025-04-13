@@ -336,8 +336,21 @@ class WebsocketPartition(StatefulSourcePartition):
             logger.info(f"Websocket consumer for {processor_id} stopped")
 
     def snapshot(self):
-        """Get the partition state for recovery."""
-        return None
+        """Get the partition state for recovery.
+
+        This method is required by StatefulSourcePartition abstract class.
+        """
+        # Return a simple state dictionary or None
+        return {"exchange": self.exchange, "product": self.product, "last_activity": self.last_activity}
+
+    def restore(self, state):
+        """Restore the partition state.
+
+        This method is required by StatefulSourcePartition abstract class.
+        """
+        # Restore state from the snapshot if needed
+        if state and isinstance(state, dict):
+            self.last_activity = state.get("last_activity", time.time())
 
     def handle_stop_event(self, component_id):
         """Handle a stop event with deduplication"""
@@ -423,8 +436,15 @@ class MultiExchangeSource(FixedPartitionedSource):
             # Get the processor class for this exchange
             processor_class = self.processor_factory(exchange)
 
-            # Create and return the partition
-            return WebsocketPartition(exchange, product, processor_class, stop_event=self.stop_event)
+            # Make sure we're returning a proper StatefulSourcePartition instance
+            result = WebsocketPartition(exchange, product, processor_class, stop_event=self.stop_event)
+
+            # Extra check to ensure we're returning the correct type
+            if not isinstance(result, StatefulSourcePartition):
+                logger.error(f"Build part result is not a StatefulSourcePartition: {type(result)}")
+                return None
+
+            return result
         except Exception as e:
             logger.error(f"Error building partition for {for_key}: {e}")
             return None

@@ -1,6 +1,9 @@
 import logging
 from typing import Generator
 
+from fastapi import Request
+
+from src.arbirich.models import enums
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 
@@ -66,3 +69,11 @@ def get_metrics_service() -> Generator[StrategyMetricsService, None, None]:
             db_service.close()
         except Exception as e:
             logger.error(f"Error closing database service: {e}")
+
+
+async def get_template_context(request: Request):
+    """
+    Dependency for adding common template context variables.
+    Can be used in any route that renders templates.
+    """
+    return {"enums": enums}

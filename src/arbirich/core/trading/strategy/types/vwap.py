@@ -184,7 +184,7 @@ class VWAPArbitrage(ArbitrageType):
             )
 
             # Create opportunity object
-            return TradeOpportunity(
+            opportunity = TradeOpportunity(
                 id=str(uuid.uuid4()),
                 strategy=self.name,
                 pair=asset,
@@ -196,6 +196,20 @@ class VWAPArbitrage(ArbitrageType):
                 volume=best_opp["volume"],
                 opportunity_timestamp=time.time(),
             )
+
+            # Add detailed logging for opportunity
+            logger.info(
+                f"VWAP OPPORTUNITY DETAILS:\n"
+                f"  ID: {opportunity.id}\n"
+                f"  Asset: {asset}\n"
+                f"  Buy Exchange: {opportunity.buy_exchange} @ {opportunity.buy_price:.8f}\n"
+                f"  Sell Exchange: {opportunity.sell_exchange} @ {opportunity.sell_price:.8f}\n"
+                f"  Spread: {opportunity.spread:.6%}\n"
+                f"  Volume: {opportunity.volume:.8f}\n"
+                f"  Est. Profit: {(opportunity.spread * opportunity.volume * opportunity.buy_price):.8f}"
+            )
+
+            return opportunity
 
         return None
 

@@ -59,7 +59,60 @@ def stop_flow(flow_id: str) -> bool:
         True if successful, False otherwise
     """
     logger.info(f"Stopping flow: {flow_id}")
-    return True
+
+    try:
+        # Get the appropriate flow manager based on the flow ID
+        from src.arbirich.core.state.system_state import mark_system_shutdown
+        from src.arbirich.core.trading.flows.flow_manager import FlowManager
+
+        # Mark system as shutting down to ensure all components respect it
+        mark_system_shutdown(True)
+
+        # First try to get an existing manager
+        flow_manager = FlowManager.get_manager(flow_id)
+
+        if flow_manager:
+            logger.info(f"Found existing flow manager for {flow_id}, stopping flow...")
+            return flow_manager.stop_flow()
+
+        # If no manager found, try direct module imports based on flow type
+        if "detection" in flow_id:
+            from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_flow import stop_detection_flow
+            from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import (
+                mark_detection_force_kill,
+            )
+
+            # Force kill detection flows first
+            mark_detection_force_kill()
+            logger.info(f"Marked detection flow {flow_id} for force kill")
+
+            # Then try normal stop
+            result = stop_detection_flow()
+            logger.info(f"Stopped detection flow {flow_id}: {result}")
+            return result
+
+        elif "ingestion" in flow_id:
+            from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_flow import stop_ingestion_flow
+
+            result = stop_ingestion_flow()
+            logger.info(f"Stopped ingestion flow {flow_id}: {result}")
+            return result
+
+        elif "reporting" in flow_id:
+            from src.arbirich.core.trading.flows.reporting.reporting_flow import stop_flow as stop_reporting_flow
+
+            result = stop_reporting_flow()
+            logger.info(f"Stopped reporting flow {flow_id}: {result}")
+            return result
+
+        else:
+            logger.warning(f"No specific handler for flow type: {flow_id}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Error stopping flow {flow_id}: {e}", exc_info=True)
+        # Return True anyway so UI doesn't get stuck
+        return True
 
 
 def run_reporting(config=None):

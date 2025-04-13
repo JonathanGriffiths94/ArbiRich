@@ -1,366 +1,283 @@
 import json
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, TypeVar, Union
 
 import sqlalchemy as sa
+from pydantic import BaseModel
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.sql.schema import Table
 
-from src.arbirich.models.models import Strategy
-from src.arbirich.models.schema import strategies, strategy_parameters
+from src.arbirich.models.models import (
+    RiskProfile,
+    Strategy,
+    StrategyExchangePairMapping,
+    StrategyExecutionMapping,
+    StrategyParameters,
+    StrategyType,
+    StrategyTypeParameters,
+)
+from src.arbirich.models.schema import (
+    exchanges,
+    risk_profiles,
+    strategies,
+    strategy_exchange_pair_mappings,
+    strategy_execution_mapping,
+    strategy_parameters,
+    strategy_type_parameters,
+    strategy_types,
+    trading_pairs,
+)
 from src.arbirich.services.database.base_repository import BaseRepository
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class StrategyRepository(BaseRepository[Strategy]):
-    """Repository for Strategy entity operations"""
+    """Repository for Strategy entity operations with full Pydantic model integration"""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(model_class=Strategy, *args, **kwargs)
+    def __init__(self, engine: Engine, *args, **kwargs):
+        super().__init__(model_class=Strategy, engine=engine, *args, **kwargs)
         self.table = strategies
         self.params_table = strategy_parameters
+        self.type_params_table = strategy_type_parameters
+        self.strategy_types_table = strategy_types
+        self.risk_profiles_table = risk_profiles
+        self.exec_mapping_table = strategy_execution_mapping
+        self.exchange_pair_mapping_table = strategy_exchange_pair_mappings
+        self.exchanges_table = exchanges
+        self.trading_pairs_table = trading_pairs
 
     def create(self, strategy: Strategy) -> Strategy:
-        """Create a new strategy with its parameters"""
+        """Create a new strategy with all its related entities"""
         try:
             with self.engine.begin() as conn:
-                # Extract parameters for strategy_parameters table
-                min_spread = strategy.min_spread if strategy.min_spread is not None else 0.0001
-                threshold = (
-                    strategy.threshold if hasattr(strategy, "threshold") and strategy.threshold is not None else 0.0001
-                )
-                max_slippage = (
-                    strategy.max_slippage
-                    if hasattr(strategy, "max_slippage") and strategy.max_slippage is not None
-                    else None
-                )
-                min_volume = (
-                    strategy.min_volume if hasattr(strategy, "min_volume") and strategy.min_volume is not None else None
-                )
-
-                # Prepare strategy data
-                strategy_data = {
-                    "name": strategy.name,
-                    "description": strategy.description,
-                    "strategy_type_id": strategy.strategy_type_id,
-                    "risk_profile_id": strategy.risk_profile_id,
-                    "starting_capital": strategy.starting_capital,
-                    "total_profit": strategy.total_profit,
-                    "total_loss": strategy.total_loss,
-                    "net_profit": strategy.net_profit,
-                    "trade_count": strategy.trade_count,
-                    "start_timestamp": strategy.start_timestamp,
-                    "last_updated": strategy.last_updated or datetime.now(),
-                    "is_active": strategy.is_active,
-                    "created_by": strategy.created_by,
-                    "additional_info": json.dumps(strategy.additional_info) if strategy.additional_info else None,
-                }
+                # Convert Strategy to dict for db insertion
+                strategy_dict = self._prepare_strategy_dict(strategy)
 
                 # Insert strategy and get ID
-                strategy_result = conn.execute(self.table.insert().values(**strategy_data).returning(*self.table.c))
+                strategy_result = conn.execute(self.table.insert().values(**strategy_dict).returning(*self.table.c))
                 strategy_row = strategy_result.first()
                 strategy_id = strategy_row.id
 
-                # Insert strategy parameters
-                params_data = {
-                    "strategy_id": strategy_id,
-                    "min_spread": min_spread,
-                    "threshold": threshold,
-                    "max_slippage": max_slippage,
-                    "min_volume": min_volume,
-                }
+                # Create and insert parameters
+                self._create_strategy_parameters(conn, strategy_id, strategy)
 
-                conn.execute(self.params_table.insert().values(**params_data))
+                # Create and insert type parameters if provided
+                self._create_type_parameters(conn, strategy_id, strategy)
 
-                # Return full strategy object with parameters
+                # Create execution mappings if provided
+                self._create_execution_mappings(conn, strategy_id, strategy)
+
+                # Create exchange-pair mappings if provided
+                self._create_exchange_pair_mappings(conn, strategy_id, strategy)
+
+                # Return full strategy object with all relations
                 return self.get_by_id(strategy_id)
         except Exception as e:
-            self.logger.error(f"Error creating strategy: {e}")
+            self.logger.error(f"Error creating strategy {strategy.name}: {e}", exc_info=True)
             raise
 
     def get_by_id(self, strategy_id: int) -> Optional[Strategy]:
-        """Get a strategy by its ID"""
+        """Get a strategy by its ID with all related entities"""
         try:
             with self.engine.begin() as conn:
-                # First, get the strategy from the strategies table
-                result = conn.execute(self.table.select().where(self.table.c.id == strategy_id))
-                row = result.first()
+                # Get the base strategy
+                strategy_result = conn.execute(self.table.select().where(self.table.c.id == strategy_id))
+                strategy_row = strategy_result.first()
 
-                if not row:
+                if not strategy_row:
                     return None
 
-                # Create a dict from the row
-                strategy_data = row._asdict()
+                # Convert row to dict using _asdict() method for sqlalchemy Row objects
+                strategy_dict = strategy_row._asdict()
 
-                # Get parameters from the strategy_parameters table
-                params_query = sa.text("""
-                    SELECT min_spread, threshold, max_slippage, min_volume FROM strategy_parameters
-                    WHERE strategy_id = :strategy_id
-                """)
-                params_result = conn.execute(params_query, {"strategy_id": strategy_data["id"]})
-                params_row = params_result.first()
+                # Parse JSON fields
+                strategy_dict["additional_info"] = self._parse_json_field(strategy_dict.get("additional_info"))
 
-                # Add parameters to the strategy data
-                if params_row:
-                    strategy_data["min_spread"] = float(params_row.min_spread)
-                    strategy_data["threshold"] = float(params_row.threshold) if params_row.threshold else None
-                    strategy_data["max_slippage"] = float(params_row.max_slippage) if params_row.max_slippage else None
-                    strategy_data["min_volume"] = float(params_row.min_volume) if params_row.min_volume else None
-                else:
-                    # Provide default values if no parameters exist
-                    strategy_data["min_spread"] = 0.0001
-                    strategy_data["threshold"] = 0.0001
-                    strategy_data["max_slippage"] = None
-                    strategy_data["min_volume"] = None
-
-                # Get type parameters
-                type_params_query = sa.text("""
-                    SELECT target_volume, min_depth, min_depth_percentage, parameters 
-                    FROM strategy_type_parameters
-                    WHERE strategy_id = :strategy_id
-                """)
-                type_params_result = conn.execute(type_params_query, {"strategy_id": strategy_data["id"]})
-                type_params_row = type_params_result.first()
-
-                if type_params_row:
-                    strategy_data["type_parameters"] = {
-                        "target_volume": float(type_params_row.target_volume)
-                        if type_params_row.target_volume
-                        else None,
-                        "min_depth": type_params_row.min_depth,
-                        "min_depth_percentage": float(type_params_row.min_depth_percentage)
-                        if type_params_row.min_depth_percentage
-                        else None,
-                        "parameters": json.loads(type_params_row.parameters) if type_params_row.parameters else None,
-                    }
-
-                # Get strategy type information
-                strategy_type_query = sa.text("""
-                    SELECT id, name, description, implementation_class
-                    FROM strategy_types 
-                    WHERE id = :strategy_type_id
-                """)
-                strategy_type_result = conn.execute(
-                    strategy_type_query, {"strategy_type_id": strategy_data["strategy_type_id"]}
-                )
-                strategy_type_row = strategy_type_result.first()
-
-                if strategy_type_row:
-                    strategy_data["strategy_type"] = {
-                        "id": strategy_type_row.id,
-                        "name": strategy_type_row.name,
-                        "description": strategy_type_row.description,
-                        "implementation_class": strategy_type_row.implementation_class,
-                    }
-
-                # Get risk profile information
-                risk_profile_query = sa.text("""
-                    SELECT id, name, description, max_position_size_percentage, max_drawdown_percentage,
-                           max_exposure_per_asset_percentage, circuit_breaker_conditions
-                    FROM risk_profiles 
-                    WHERE id = :risk_profile_id
-                """)
-                risk_profile_result = conn.execute(
-                    risk_profile_query, {"risk_profile_id": strategy_data["risk_profile_id"]}
-                )
-                risk_profile_row = risk_profile_result.first()
-
-                if risk_profile_row:
-                    strategy_data["risk_profile"] = {
-                        "id": risk_profile_row.id,
-                        "name": risk_profile_row.name,
-                        "description": risk_profile_row.description,
-                        "max_position_size_percentage": float(risk_profile_row.max_position_size_percentage)
-                        if risk_profile_row.max_position_size_percentage
-                        else None,
-                        "max_drawdown_percentage": float(risk_profile_row.max_drawdown_percentage)
-                        if risk_profile_row.max_drawdown_percentage
-                        else None,
-                        "max_exposure_per_asset_percentage": float(risk_profile_row.max_exposure_per_asset_percentage)
-                        if risk_profile_row.max_exposure_per_asset_percentage
-                        else None,
-                        "circuit_breaker_conditions": json.loads(risk_profile_row.circuit_breaker_conditions)
-                        if risk_profile_row.circuit_breaker_conditions
-                        else None,
-                    }
-
-                # Get execution mappings
-                exec_mappings_query = sa.text("""
-                    SELECT sem.id, sem.strategy_id, sem.execution_strategy_id, sem.is_active, sem.priority,
-                           es.name as execution_name, es.description as execution_description
-                    FROM strategy_execution_mapping sem
-                    JOIN execution_strategies es ON sem.execution_strategy_id = es.id
-                    WHERE sem.strategy_id = :strategy_id
-                """)
-                exec_mappings_result = conn.execute(exec_mappings_query, {"strategy_id": strategy_data["id"]})
-
-                execution_mappings = []
-                for row in exec_mappings_result:
-                    execution_mappings.append(
+                # Get and add parameters
+                params = self._get_strategy_parameters(conn, strategy_id)
+                if params:
+                    strategy_dict.update(
                         {
-                            "id": row.id,
-                            "strategy_id": row.strategy_id,
-                            "execution_strategy_id": row.execution_strategy_id,
-                            "is_active": row.is_active,
-                            "priority": row.priority,
-                            "execution_name": row.execution_name,
-                            "execution_description": row.execution_description,
+                            "min_spread": params.min_spread,
+                            "threshold": params.threshold,
+                            "max_slippage": params.max_slippage,
+                            "min_volume": params.min_volume,
                         }
                     )
-                strategy_data["execution_mappings"] = execution_mappings
 
-                # Get exchange-pair mappings
-                exchange_mappings_query = sa.text("""
-                    SELECT sepm.id, sepm.strategy_id, sepm.exchange_id, sepm.trading_pair_id, sepm.is_active,
-                           e.name as exchange_name, tp.symbol as pair_symbol
-                    FROM strategy_exchange_pair_mappings sepm
-                    JOIN exchanges e ON sepm.exchange_id = e.id
-                    JOIN trading_pairs tp ON sepm.trading_pair_id = tp.id
-                    WHERE sepm.strategy_id = :strategy_id
-                """)
-                exchange_mappings_result = conn.execute(exchange_mappings_query, {"strategy_id": strategy_data["id"]})
-
-                exchange_pair_mappings = []
-                for row in exchange_mappings_result:
-                    exchange_pair_mappings.append(
-                        {
-                            "id": row.id,
-                            "strategy_id": row.strategy_id,
-                            "exchange_id": row.exchange_id,
-                            "trading_pair_id": row.trading_pair_id,
-                            "is_active": row.is_active,
-                            "exchange_name": row.exchange_name,
-                            "pair_symbol": row.pair_symbol,
-                        }
+                # Get and add type parameters
+                type_params = self._get_type_parameters(conn, strategy_id)
+                if type_params:
+                    strategy_dict["type_parameters"] = type_params.model_dump(
+                        exclude={"id", "strategy_id", "created_at", "updated_at"}
                     )
-                strategy_data["exchange_pair_mappings"] = exchange_pair_mappings
 
-                # Convert additional_info from JSON string to dict if it exists
-                if strategy_data.get("additional_info") and isinstance(strategy_data["additional_info"], str):
-                    try:
-                        strategy_data["additional_info"] = json.loads(strategy_data["additional_info"])
-                    except json.JSONDecodeError:
-                        pass
+                # Get and add strategy type
+                strategy_type = self._get_strategy_type(conn, strategy_dict["strategy_type_id"])
+                if strategy_type:
+                    strategy_dict["strategy_type"] = strategy_type.model_dump(exclude={"created_at"})
 
-                # Create the Strategy object with the updated data
-                return Strategy.model_validate(strategy_data)
+                # Get and add risk profile
+                risk_profile = self._get_risk_profile(conn, strategy_dict["risk_profile_id"])
+                if risk_profile:
+                    strategy_dict["risk_profile"] = risk_profile.model_dump(exclude={"created_at", "updated_at"})
+
+                # Get and add execution mappings
+                execution_mappings = self._get_execution_mappings(conn, strategy_id)
+                strategy_dict["execution_mappings"] = [mapping.model_dump() for mapping in execution_mappings]
+
+                # Get and add exchange-pair mappings
+                exchange_pair_mappings = self._get_exchange_pair_mappings(conn, strategy_id)
+                strategy_dict["exchange_pair_mappings"] = [mapping.model_dump() for mapping in exchange_pair_mappings]
+
+                # Create Strategy Pydantic model
+                return Strategy.model_validate(strategy_dict)
         except Exception as e:
-            self.logger.error(f"Error getting strategy by ID {strategy_id}: {e}")
+            self.logger.error(f"Error getting strategy by ID {strategy_id}: {e}", exc_info=True)
             raise
 
     def get_by_name(self, name: str) -> Optional[Strategy]:
         """Get a strategy by its name"""
         try:
             with self.engine.begin() as conn:
-                # First, get the strategy from the strategies table
                 result = conn.execute(self.table.select().where(self.table.c.name == name))
                 row = result.first()
 
                 if not row:
+                    self.logger.info(f"Strategy with name '{name}' not found in database")
                     return None
 
-                # Use get_by_id to reuse code and get all related entities
                 return self.get_by_id(row.id)
         except Exception as e:
-            self.logger.error(f"Error getting strategy by name {name}: {e}")
+            self.logger.error(f"Error getting strategy by name {name}: {e}", exc_info=True)
             raise
 
     def get_all(self) -> List[Strategy]:
         """Get all strategies with their parameters"""
         try:
             with self.engine.begin() as conn:
-                # Join strategies with strategy_parameters to get parameters
-                query = sa.text("""
-                    SELECT s.*, p.min_spread, p.threshold, p.max_slippage, p.min_volume
-                    FROM strategies s
-                    LEFT JOIN strategy_parameters p ON s.id = p.strategy_id
-                """)
+                result = conn.execute(self.table.select())
+                strategy_ids = [row.id for row in result]
 
-                result = conn.execute(query)
-                strategies_list = []
-
-                for row in result:
-                    # Create a dict from the row
-                    strategy_data = {col: getattr(row, col) for col in row._mapping.keys()}
-
-                    # Convert parameters to float if they exist
-                    if "min_spread" in strategy_data and strategy_data["min_spread"] is not None:
-                        strategy_data["min_spread"] = float(strategy_data["min_spread"])
-                    else:
-                        strategy_data["min_spread"] = 0.0001  # Default value
-
-                    if "threshold" in strategy_data and strategy_data["threshold"] is not None:
-                        strategy_data["threshold"] = float(strategy_data["threshold"])
-
-                    if "max_slippage" in strategy_data and strategy_data["max_slippage"] is not None:
-                        strategy_data["max_slippage"] = float(strategy_data["max_slippage"])
-
-                    if "min_volume" in strategy_data and strategy_data["min_volume"] is not None:
-                        strategy_data["min_volume"] = float(strategy_data["min_volume"])
-
-                    # Convert additional_info from JSON string to dict if it exists
-                    if "additional_info" in strategy_data and isinstance(strategy_data["additional_info"], str):
-                        try:
-                            strategy_data["additional_info"] = json.loads(strategy_data["additional_info"])
-                        except json.JSONDecodeError:
-                            pass
-
-                    # Create Strategy object
-                    strategy = Strategy.model_validate(strategy_data)
-                    strategies_list.append(strategy)
-
-                return strategies_list
+                return [
+                    strategy for strategy_id in strategy_ids if (strategy := self.get_by_id(strategy_id)) is not None
+                ]
         except Exception as e:
-            self.logger.error(f"Error getting all strategies: {e}")
+            self.logger.error(f"Error getting all strategies: {e}", exc_info=True)
             raise
 
     def get_active(self) -> List[Strategy]:
         """Get all active strategies with their parameters"""
         try:
             with self.engine.begin() as conn:
-                # Join strategies with strategy_parameters to get parameters
-                query = sa.text("""
-                    SELECT s.*, p.min_spread, p.threshold, p.max_slippage, p.min_volume
-                    FROM strategies s
-                    LEFT JOIN strategy_parameters p ON s.id = p.strategy_id
-                    WHERE s.is_active = TRUE
-                """)
+                result = conn.execute(self.table.select().where(self.table.c.is_active))
+                strategy_ids = [row.id for row in result]
 
-                result = conn.execute(query)
-                strategies_list = []
-
-                for row in result:
-                    # Create a dict from the row
-                    strategy_data = {col: getattr(row, col) for col in row._mapping.keys()}
-
-                    # Convert parameters to float if they exist
-                    if "min_spread" in strategy_data and strategy_data["min_spread"] is not None:
-                        strategy_data["min_spread"] = float(strategy_data["min_spread"])
-                    else:
-                        strategy_data["min_spread"] = 0.0001  # Default value
-
-                    if "threshold" in strategy_data and strategy_data["threshold"] is not None:
-                        strategy_data["threshold"] = float(strategy_data["threshold"])
-
-                    if "max_slippage" in strategy_data and strategy_data["max_slippage"] is not None:
-                        strategy_data["max_slippage"] = float(strategy_data["max_slippage"])
-
-                    if "min_volume" in strategy_data and strategy_data["min_volume"] is not None:
-                        strategy_data["min_volume"] = float(strategy_data["min_volume"])
-
-                    # Convert additional_info from JSON string to dict if it exists
-                    if "additional_info" in strategy_data and isinstance(strategy_data["additional_info"], str):
-                        try:
-                            strategy_data["additional_info"] = json.loads(strategy_data["additional_info"])
-                        except json.JSONDecodeError:
-                            pass
-
-                    # Create Strategy object
-                    strategy = Strategy.model_validate(strategy_data)
-                    strategies_list.append(strategy)
-
-                return strategies_list
+                return [
+                    strategy for strategy_id in strategy_ids if (strategy := self.get_by_id(strategy_id)) is not None
+                ]
         except Exception as e:
-            self.logger.error(f"Error getting active strategies: {e}")
+            self.logger.error(f"Error getting active strategies: {e}", exc_info=True)
             raise
+
+    def update(self, strategy: Strategy) -> Optional[Strategy]:
+        """Update an existing strategy with all its related entities"""
+        try:
+            if not strategy.id:
+                self.logger.error("Cannot update strategy without ID")
+                return None
+
+            with self.engine.begin() as conn:
+                # Verify strategy exists
+                check_result = conn.execute(self.table.select().where(self.table.c.id == strategy.id))
+                if not check_result.first():
+                    self.logger.error(f"Strategy with ID {strategy.id} not found for update")
+                    return None
+
+                # Convert Strategy to dict for db update
+                strategy_dict = self._prepare_strategy_dict(strategy)
+                strategy_dict["last_updated"] = datetime.now()
+
+                # Update strategy table
+                conn.execute(self.table.update().where(self.table.c.id == strategy.id).values(**strategy_dict))
+
+                # Update or create parameters
+                self._update_strategy_parameters(conn, strategy.id, strategy)
+
+                # Update or create type parameters
+                self._update_type_parameters(conn, strategy.id, strategy)
+
+                # Handle execution mappings
+                self._update_execution_mappings(conn, strategy.id, strategy)
+
+                # Handle exchange-pair mappings
+                self._update_exchange_pair_mappings(conn, strategy.id, strategy)
+
+                # Return updated strategy with all relations
+                return self.get_by_id(strategy.id)
+        except Exception as e:
+            self.logger.error(
+                f"Error updating strategy {strategy.name if strategy.name else strategy.id}: {e}", exc_info=True
+            )
+            raise
+
+    def delete(self, strategy_id: int) -> bool:
+        """Delete a strategy and all its related entities"""
+        try:
+            with self.engine.begin() as conn:
+                # First check if strategy exists
+                check_result = conn.execute(self.table.select().where(self.table.c.id == strategy_id))
+                if not check_result.first():
+                    self.logger.warning(f"Strategy ID {strategy_id} not found for deletion")
+                    return False
+
+                # Delete related records in this order to maintain referential integrity
+                # 1. Delete exchange-pair mappings
+                conn.execute(
+                    self.exchange_pair_mapping_table.delete().where(
+                        self.exchange_pair_mapping_table.c.strategy_id == strategy_id
+                    )
+                )
+
+                # 2. Delete execution mappings
+                conn.execute(
+                    self.exec_mapping_table.delete().where(self.exec_mapping_table.c.strategy_id == strategy_id)
+                )
+
+                # 3. Delete type parameters
+                conn.execute(self.type_params_table.delete().where(self.type_params_table.c.strategy_id == strategy_id))
+
+                # 4. Delete strategy parameters
+                conn.execute(self.params_table.delete().where(self.params_table.c.strategy_id == strategy_id))
+
+                # 5. Finally delete the strategy itself
+                conn.execute(self.table.delete().where(self.table.c.id == strategy_id))
+
+                self.logger.info(f"Successfully deleted strategy ID {strategy_id} and all related data")
+                return True
+        except Exception as e:
+            self.logger.error(f"Error deleting strategy ID {strategy_id}: {e}", exc_info=True)
+            return False
+
+    def delete_by_name(self, strategy_name: str) -> bool:
+        """Delete a strategy and its related data by name"""
+        try:
+            with self.engine.begin() as conn:
+                # First get the ID
+                result = conn.execute(self.table.select().where(self.table.c.name == strategy_name))
+                row = result.first()
+
+                if not row:
+                    self.logger.warning(f"Strategy '{strategy_name}' not found for deletion")
+                    return False
+
+                # Use the ID-based delete method
+                return self.delete(row.id)
+        except Exception as e:
+            self.logger.error(f"Error deleting strategy '{strategy_name}': {e}", exc_info=True)
+            return False
 
     def set_active_status(self, strategy_id: int, is_active: bool) -> bool:
         """Set strategy active status"""
@@ -369,29 +286,29 @@ class StrategyRepository(BaseRepository[Strategy]):
                 result = conn.execute(
                     self.table.update()
                     .where(self.table.c.id == strategy_id)
-                    .values(is_active=is_active)
+                    .values(is_active=is_active, last_updated=datetime.now())
                     .returning(self.table.c.id)
                 )
                 updated_id = result.scalar()
                 return updated_id is not None
         except Exception as e:
-            self.logger.error(f"Error updating strategy status for ID {strategy_id}: {e}")
+            self.logger.error(f"Error updating strategy status for ID {strategy_id}: {e}", exc_info=True)
             return False
 
     def set_active_status_by_name(self, strategy_name: str, is_active: bool) -> bool:
         """Update strategy status by name."""
         try:
             with self.engine.begin() as conn:
-                result = conn.execute(
-                    self.table.update()
-                    .where(self.table.c.name == strategy_name)
-                    .values(is_active=is_active)
-                    .returning(self.table.c.id)
-                )
-                updated_id = result.scalar()
-                return updated_id is not None
+                result = conn.execute(self.table.select().where(self.table.c.name == strategy_name))
+                row = result.first()
+
+                if not row:
+                    self.logger.warning(f"Strategy '{strategy_name}' not found for status update")
+                    return False
+
+                return self.set_active_status(row.id, is_active)
         except Exception as e:
-            self.logger.error(f"Error updating strategy status for '{strategy_name}': {e}")
+            self.logger.error(f"Error updating strategy status for '{strategy_name}': {e}", exc_info=True)
             return False
 
     def activate_by_name(self, strategy_name: str) -> bool:
@@ -402,164 +319,707 @@ class StrategyRepository(BaseRepository[Strategy]):
         """Deactivate a strategy by name."""
         return self.set_active_status_by_name(strategy_name, False)
 
-    def update_stats(self, strategy_name: str, profit: float = 0, loss: float = 0, trade_count: int = 0):
-        """Update strategy statistics after a trade execution"""
+    def update_stats(self, strategy_id: int, profit: float = 0, loss: float = 0, trade_count: int = 0) -> bool:
+        """Update strategy statistics after trade execution by ID"""
         try:
             with self.engine.begin() as conn:
                 # Get current stats
-                query = sa.select([self.table.c.total_profit, self.table.c.total_loss, self.table.c.trade_count]).where(
-                    self.table.c.name == strategy_name
-                )
+                query = sa.select(
+                    [self.table.c.total_profit, self.table.c.total_loss, self.table.c.trade_count, self.table.c.name]
+                ).where(self.table.c.id == strategy_id)
 
                 result = conn.execute(query).first()
-                if result:
-                    # Convert to compatible types
-                    current_profit = Decimal(str(result.total_profit))
-                    current_loss = Decimal(str(result.total_loss))
-                    current_trade_count = result.trade_count
+                if not result:
+                    self.logger.warning(f"Strategy ID {strategy_id} not found for stats update")
+                    return False
 
-                    # Convert input params to Decimal to match database type
-                    profit_decimal = Decimal(str(profit))
-                    loss_decimal = Decimal(str(loss))
+                # Convert to compatible types
+                current_profit = Decimal(str(result.total_profit))
+                current_loss = Decimal(str(result.total_loss))
+                current_trade_count = result.trade_count
+                strategy_name = result.name
 
-                    # Calculate new values
-                    new_total_profit = current_profit + profit_decimal
-                    new_total_loss = current_loss + loss_decimal
-                    new_net_profit = new_total_profit - new_total_loss
+                # Convert input params to Decimal
+                profit_decimal = Decimal(str(profit))
+                loss_decimal = Decimal(str(loss))
 
-                    # Update with new values
-                    conn.execute(
-                        self.table.update()
-                        .where(self.table.c.name == strategy_name)
-                        .values(
-                            total_profit=new_total_profit,
-                            total_loss=new_total_loss,
-                            net_profit=new_net_profit,
-                            trade_count=current_trade_count + trade_count,
-                            last_updated=datetime.now(),
-                        )
+                # Calculate new values
+                new_total_profit = current_profit + profit_decimal
+                new_total_loss = current_loss + loss_decimal
+                new_net_profit = new_total_profit - new_total_loss
+                new_trade_count = current_trade_count + trade_count
+
+                # Update with new values
+                conn.execute(
+                    self.table.update()
+                    .where(self.table.c.id == strategy_id)
+                    .values(
+                        total_profit=new_total_profit,
+                        total_loss=new_total_loss,
+                        net_profit=new_net_profit,
+                        trade_count=new_trade_count,
+                        last_updated=datetime.now(),
                     )
+                )
 
-                    self.logger.info(
-                        f"Updated stats for {strategy_name}: "
-                        f"profit +{profit}, loss +{loss}, net profit = {new_net_profit}, trades +{trade_count}"
-                    )
-                else:
-                    self.logger.warning(f"Strategy {strategy_name} not found in database")
+                self.logger.info(
+                    f"Updated stats for {strategy_name} (ID: {strategy_id}): "
+                    f"profit +{profit}, loss +{loss}, net profit = {new_net_profit}, trades +{trade_count}"
+                )
+                return True
         except Exception as e:
-            self.logger.error(f"Error updating strategy stats: {e}", exc_info=True)
+            self.logger.error(f"Error updating strategy stats for ID {strategy_id}: {e}", exc_info=True)
+            return False
 
-    def get_exchange_pair_mappings(self, strategy_id: int) -> List[Dict[str, Any]]:
-        """Get all exchange-pair mappings for a strategy"""
+    def update_stats_by_name(
+        self, strategy_name: str, profit: float = 0, loss: float = 0, trade_count: int = 0
+    ) -> bool:
+        """Update strategy statistics after a trade execution by name"""
         try:
             with self.engine.begin() as conn:
-                # Join the mappings table with exchanges and trading_pairs to get names and symbols
-                query = sa.text("""
-                    SELECT 
-                        m.id as mapping_id,
-                        s.name as strategy_name,
-                        e.name as exchange_name,
-                        tp.symbol as pair_symbol,
-                        m.is_active as is_active
-                    FROM 
-                        strategy_exchange_pair_mappings m
-                    JOIN 
-                        strategies s ON m.strategy_id = s.id
-                    JOIN 
-                        exchanges e ON m.exchange_id = e.id
-                    JOIN 
-                        trading_pairs tp ON m.trading_pair_id = tp.id
-                    WHERE 
-                        m.strategy_id = :strategy_id
-                """)
+                # Get ID
+                result = conn.execute(self.table.select().where(self.table.c.name == strategy_name))
+                row = result.first()
 
-                result = conn.execute(query, {"strategy_id": strategy_id})
-                mappings = []
+                if not row:
+                    self.logger.warning(f"Strategy '{strategy_name}' not found for stats update")
+                    return False
 
-                for row in result:
-                    mappings.append(
-                        {
-                            "id": row.mapping_id,
-                            "strategy_name": row.strategy_name,
-                            "exchange_name": row.exchange_name,
-                            "pair_symbol": row.pair_symbol,
-                            "is_active": row.is_active,
-                        }
+                return self.update_stats(row.id, profit, loss, trade_count)
+        except Exception as e:
+            self.logger.error(f"Error updating stats for strategy '{strategy_name}': {e}", exc_info=True)
+            return False
+
+    def add_exchange_pair_mapping(
+        self, strategy_id: int, exchange_id: int, trading_pair_id: int, is_active: bool = True
+    ) -> bool:
+        """Add a new exchange-pair mapping to a strategy"""
+        try:
+            with self.engine.begin() as conn:
+                # Check if the mapping already exists
+                check_query = sa.select([self.exchange_pair_mapping_table.c.id]).where(
+                    sa.and_(
+                        self.exchange_pair_mapping_table.c.strategy_id == strategy_id,
+                        self.exchange_pair_mapping_table.c.exchange_id == exchange_id,
+                        self.exchange_pair_mapping_table.c.trading_pair_id == trading_pair_id,
+                    )
+                )
+
+                check_result = conn.execute(check_query)
+                existing_row = check_result.first()
+
+                if existing_row:
+                    # Update the existing mapping
+                    conn.execute(
+                        self.exchange_pair_mapping_table.update()
+                        .where(self.exchange_pair_mapping_table.c.id == existing_row.id)
+                        .values(is_active=is_active, updated_at=datetime.now())
+                    )
+                    self.logger.info(f"Updated existing exchange-pair mapping for strategy ID {strategy_id}")
+                else:
+                    # Insert a new mapping
+                    # Create a StrategyExchangePairMapping model
+                    mapping = StrategyExchangePairMapping(
+                        strategy_id=strategy_id,
+                        exchange_id=exchange_id,
+                        trading_pair_id=trading_pair_id,
+                        is_active=is_active,
                     )
 
-                return mappings
+                    # Insert into database
+                    conn.execute(self.exchange_pair_mapping_table.insert().values(mapping.model_dump(exclude={"id"})))
+                    self.logger.info(f"Added new exchange-pair mapping for strategy ID {strategy_id}")
+
+                return True
         except Exception as e:
-            self.logger.error(f"Error getting strategy-exchange-pair mappings for strategy {strategy_id}: {e}")
+            self.logger.error(f"Error adding exchange-pair mapping for strategy ID {strategy_id}: {e}", exc_info=True)
+            return False
+
+    def add_execution_strategy(
+        self, strategy_id: int, execution_strategy_id: int, priority: int = 100, is_active: bool = True
+    ) -> bool:
+        """Add or update an execution strategy mapping for a strategy"""
+        try:
+            with self.engine.begin() as conn:
+                # Check if the mapping already exists
+                check_query = sa.select([self.exec_mapping_table.c.id]).where(
+                    sa.and_(
+                        self.exec_mapping_table.c.strategy_id == strategy_id,
+                        self.exec_mapping_table.c.execution_strategy_id == execution_strategy_id,
+                    )
+                )
+
+                check_result = conn.execute(check_query)
+                existing_row = check_result.first()
+
+                if existing_row:
+                    # Update the existing mapping
+                    conn.execute(
+                        self.exec_mapping_table.update()
+                        .where(self.exec_mapping_table.c.id == existing_row.id)
+                        .values(is_active=is_active, priority=priority)
+                    )
+                    self.logger.info(f"Updated existing execution strategy mapping for strategy ID {strategy_id}")
+                else:
+                    # Create a StrategyExecutionMapping model
+                    mapping = StrategyExecutionMapping(
+                        strategy_id=strategy_id,
+                        execution_strategy_id=execution_strategy_id,
+                        is_active=is_active,
+                        priority=priority,
+                    )
+
+                    # Insert into database
+                    conn.execute(self.exec_mapping_table.insert().values(mapping.model_dump(exclude={"id"})))
+                    self.logger.info(f"Added new execution strategy mapping for strategy ID {strategy_id}")
+
+                return True
+        except Exception as e:
+            self.logger.error(f"Error adding execution strategy for strategy ID {strategy_id}: {e}", exc_info=True)
+            return False
+
+    # Helper methods for working with models
+
+    def _prepare_strategy_dict(self, strategy: Strategy) -> Dict[str, Any]:
+        """Prepare a strategy dict for database operations, excluding related entities"""
+        # Use model_dump to get a dict of all fields
+        strategy_dict = strategy.model_dump(
+            exclude={
+                "id",
+                "parameters",
+                "type_parameters",
+                "risk_profile",
+                "strategy_type",
+                "execution_mappings",
+                "exchange_pair_mappings",
+                "min_spread",
+                "threshold",
+                "max_slippage",
+                "min_volume",
+                "latest_metrics",
+                "metrics",
+            }
+        )
+
+        # Serialize JSON fields
+        strategy_dict["additional_info"] = self._serialize_json_field(strategy_dict.get("additional_info"))
+
+        return strategy_dict
+
+    def _row_to_model(self, row: sa.engine.row.Row, model_class: Type[T]) -> T:
+        """Convert a SQLAlchemy row to a Pydantic model"""
+        # Convert row to dict using _asdict() method which is reliable for SQLAlchemy Row objects
+        data = row._asdict()
+
+        # Parse any JSON fields if needed
+        for field_name, field_value in data.items():
+            if isinstance(field_value, str) and (
+                field_name.endswith("_info")
+                or field_name in ["parameters", "circuit_breaker_conditions", "mapping", "withdrawal_fee"]
+            ):
+                data[field_name] = self._parse_json_field(field_value)
+
+        # Create and return the model
+        return model_class.model_validate(data)
+
+    def _get_model_by_id(self, conn: Connection, table: Table, model_class: Type[T], id_value: int) -> Optional[T]:
+        """Generic method to get a model by ID"""
+        result = conn.execute(table.select().where(table.c.id == id_value))
+        row = result.first()
+
+        if not row:
+            return None
+
+        return self._row_to_model(row, model_class)
+
+    def _create_strategy_parameters(self, conn: Connection, strategy_id: int, strategy: Strategy) -> None:
+        """Create strategy parameters for a new strategy"""
+        # Create a StrategyParameters model
+        params = StrategyParameters(
+            strategy_id=strategy_id,
+            min_spread=strategy.min_spread if strategy.min_spread is not None else 0.0001,
+            threshold=strategy.threshold if strategy.threshold is not None else 0.0001,
+            max_slippage=strategy.max_slippage,
+            min_volume=strategy.min_volume,
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+
+        # Insert into database
+        conn.execute(self.params_table.insert().values(params.model_dump(exclude={"id"})))
+
+    def _update_strategy_parameters(self, conn: Connection, strategy_id: int, strategy: Strategy) -> None:
+        """Update or create strategy parameters"""
+        # Check if parameters exist
+        params_result = conn.execute(self.params_table.select().where(self.params_table.c.strategy_id == strategy_id))
+        params_row = params_result.first()
+
+        # Create params model with updated values
+        params = StrategyParameters(
+            strategy_id=strategy_id,
+            min_spread=strategy.min_spread if strategy.min_spread is not None else 0.0001,
+            threshold=strategy.threshold if strategy.threshold is not None else 0.0001,
+            max_slippage=strategy.max_slippage,
+            min_volume=strategy.min_volume,
+            updated_at=datetime.now(),
+        )
+
+        if params_row:
+            # Update existing parameters
+            conn.execute(
+                self.params_table.update()
+                .where(self.params_table.c.strategy_id == strategy_id)
+                .values(
+                    min_spread=params.min_spread,
+                    threshold=params.threshold,
+                    max_slippage=params.max_slippage,
+                    min_volume=params.min_volume,
+                    updated_at=params.updated_at,
+                )
+            )
+        else:
+            # Insert new parameters
+            params.created_at = datetime.now()
+            conn.execute(self.params_table.insert().values(params.model_dump(exclude={"id"})))
+
+    def _create_type_parameters(self, conn: Connection, strategy_id: int, strategy: Strategy) -> None:
+        """Create type parameters for a new strategy if provided"""
+        if not hasattr(strategy, "type_parameters") or not strategy.type_parameters:
+            return
+
+        # Extract type parameters
+        type_params_data = strategy.type_parameters
+        if isinstance(type_params_data, dict):
+            # Create StrategyTypeParameters model
+            type_params = StrategyTypeParameters(
+                strategy_id=strategy_id,
+                target_volume=type_params_data.get("target_volume"),
+                min_depth=type_params_data.get("min_depth"),
+                min_depth_percentage=type_params_data.get("min_depth_percentage"),
+                parameters=type_params_data.get("parameters"),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+
+            # Insert into database
+            conn.execute(self.type_params_table.insert().values(type_params.model_dump(exclude={"id"})))
+
+    def _update_type_parameters(self, conn: Connection, strategy_id: int, strategy: Strategy) -> None:
+        """Update or create type parameters if provided"""
+        if not hasattr(strategy, "type_parameters") or not strategy.type_parameters:
+            return
+
+        # Check if type parameters exist
+        type_params_result = conn.execute(
+            self.type_params_table.select().where(self.type_params_table.c.strategy_id == strategy_id)
+        )
+        type_params_row = type_params_result.first()
+
+        # Extract type parameters
+        type_params_data = strategy.type_parameters
+        if isinstance(type_params_data, dict):
+            # Create StrategyTypeParameters model with updated values
+            type_params = StrategyTypeParameters(
+                strategy_id=strategy_id,
+                target_volume=type_params_data.get("target_volume"),
+                min_depth=type_params_data.get("min_depth"),
+                min_depth_percentage=type_params_data.get("min_depth_percentage"),
+                parameters=type_params_data.get("parameters"),
+                updated_at=datetime.now(),
+            )
+
+            # Prepare the parameters field for database
+            params_json = self._serialize_json_field(type_params.parameters)
+
+            if type_params_row:
+                # Update existing parameters
+                conn.execute(
+                    self.type_params_table.update()
+                    .where(self.type_params_table.c.strategy_id == strategy_id)
+                    .values(
+                        target_volume=type_params.target_volume,
+                        min_depth=type_params.min_depth,
+                        min_depth_percentage=type_params.min_depth_percentage,
+                        parameters=params_json,
+                        updated_at=type_params.updated_at,
+                    )
+                )
+            else:
+                # Insert new parameters
+                type_params.created_at = datetime.now()
+                conn.execute(
+                    self.type_params_table.insert().values(
+                        strategy_id=type_params.strategy_id,
+                        target_volume=type_params.target_volume,
+                        min_depth=type_params.min_depth,
+                        min_depth_percentage=type_params.min_depth_percentage,
+                        parameters=params_json,
+                        created_at=type_params.created_at,
+                        updated_at=type_params.updated_at,
+                    )
+                )
+
+    def _create_execution_mappings(self, conn: Connection, strategy_id: int, strategy: Strategy) -> None:
+        """Create execution mappings for a new strategy if provided"""
+        if not hasattr(strategy, "execution_mappings") or not strategy.execution_mappings:
+            return
+
+        for mapping_data in strategy.execution_mappings:
+            # Create StrategyExecutionMapping model
+            if isinstance(mapping_data, dict):
+                mapping = StrategyExecutionMapping(
+                    strategy_id=strategy_id,
+                    execution_strategy_id=mapping_data.get("execution_strategy_id"),
+                    is_active=mapping_data.get("is_active", True),
+                    priority=mapping_data.get("priority", 100),
+                    created_at=datetime.now(),
+                )
+
+                # Insert into database
+                conn.execute(self.exec_mapping_table.insert().values(mapping.model_dump(exclude={"id"})))
+            elif isinstance(mapping_data, StrategyExecutionMapping):
+                # Already a model, just update the strategy_id
+                mapping_data.strategy_id = strategy_id
+                if not mapping_data.created_at:
+                    mapping_data.created_at = datetime.now()
+
+                # Insert into database
+                conn.execute(self.exec_mapping_table.insert().values(mapping_data.model_dump(exclude={"id"})))
+
+    def _update_execution_mappings(self, conn: Connection, strategy_id: int, strategy: Strategy) -> None:
+        """Update execution mappings for a strategy"""
+        if not hasattr(strategy, "execution_mappings") or not strategy.execution_mappings:
+            return
+
+        # Check if we should replace all mappings
+        if getattr(strategy, "replace_execution_mappings", False):
+            # Delete all existing mappings
+            conn.execute(self.exec_mapping_table.delete().where(self.exec_mapping_table.c.strategy_id == strategy_id))
+
+            # Create new mappings
+            self._create_execution_mappings(conn, strategy_id, strategy)
+        else:
+            # Update existing or create new mappings
+            for mapping_data in strategy.execution_mappings:
+                if isinstance(mapping_data, dict):
+                    mapping_id = mapping_data.get("id")
+                    if mapping_id:
+                        # Update existing mapping
+                        conn.execute(
+                            self.exec_mapping_table.update()
+                            .where(self.exec_mapping_table.c.id == mapping_id)
+                            .values(
+                                execution_strategy_id=mapping_data.get("execution_strategy_id"),
+                                is_active=mapping_data.get("is_active", True),
+                                priority=mapping_data.get("priority", 100),
+                            )
+                        )
+                    else:
+                        # Create new mapping
+                        mapping = StrategyExecutionMapping(
+                            strategy_id=strategy_id,
+                            execution_strategy_id=mapping_data.get("execution_strategy_id"),
+                            is_active=mapping_data.get("is_active", True),
+                            priority=mapping_data.get("priority", 100),
+                            created_at=datetime.now(),
+                        )
+
+                        conn.execute(self.exec_mapping_table.insert().values(mapping.model_dump(exclude={"id"})))
+                elif isinstance(mapping_data, StrategyExecutionMapping):
+                    # Handle Pydantic model instances
+                    if mapping_data.id:
+                        # Update existing mapping
+                        conn.execute(
+                            self.exec_mapping_table.update()
+                            .where(self.exec_mapping_table.c.id == mapping_data.id)
+                            .values(
+                                execution_strategy_id=mapping_data.execution_strategy_id,
+                                is_active=mapping_data.is_active,
+                                priority=mapping_data.priority,
+                            )
+                        )
+                    else:
+                        # Create new mapping
+                        mapping_data.strategy_id = strategy_id
+                        if not mapping_data.created_at:
+                            mapping_data.created_at = datetime.now()
+
+                        conn.execute(self.exec_mapping_table.insert().values(mapping_data.model_dump(exclude={"id"})))
+
+    def _create_exchange_pair_mappings(self, conn: Connection, strategy_id: int, strategy: Strategy) -> None:
+        """Create exchange-pair mappings for a new strategy if provided"""
+        if not hasattr(strategy, "exchange_pair_mappings") or not strategy.exchange_pair_mappings:
+            return
+
+        for mapping_data in strategy.exchange_pair_mappings:
+            # Create StrategyExchangePairMapping model
+            if isinstance(mapping_data, dict):
+                mapping = StrategyExchangePairMapping(
+                    strategy_id=strategy_id,
+                    exchange_id=mapping_data.get("exchange_id"),
+                    trading_pair_id=mapping_data.get("trading_pair_id"),
+                    is_active=mapping_data.get("is_active", True),
+                    created_at=datetime.now(),
+                    updated_at=datetime.now(),
+                )
+
+                # Insert into database
+                conn.execute(self.exchange_pair_mapping_table.insert().values(mapping.model_dump(exclude={"id"})))
+            elif isinstance(mapping_data, StrategyExchangePairMapping):
+                # Already a model, just update the strategy_id
+                mapping_data.strategy_id = strategy_id
+                if not mapping_data.created_at:
+                    mapping_data.created_at = datetime.now()
+                if not mapping_data.updated_at:
+                    mapping_data.updated_at = datetime.now()
+
+                # Insert into database
+                conn.execute(self.exchange_pair_mapping_table.insert().values(mapping_data.model_dump(exclude={"id"})))
+
+    def _update_exchange_pair_mappings(self, conn: Connection, strategy_id: int, strategy: Strategy) -> None:
+        """Update exchange-pair mappings for a strategy"""
+        if not hasattr(strategy, "exchange_pair_mappings") or not strategy.exchange_pair_mappings:
+            return
+
+        # Check if we should replace all mappings
+        if getattr(strategy, "replace_exchange_pair_mappings", False):
+            # Delete all existing mappings
+            conn.execute(
+                self.exchange_pair_mapping_table.delete().where(
+                    self.exchange_pair_mapping_table.c.strategy_id == strategy_id
+                )
+            )
+
+            # Create new mappings
+            self._create_exchange_pair_mappings(conn, strategy_id, strategy)
+        else:
+            # Update existing or create new mappings
+            for mapping_data in strategy.exchange_pair_mappings:
+                if isinstance(mapping_data, dict):
+                    mapping_id = mapping_data.get("id")
+                    if mapping_id:
+                        # Update existing mapping
+                        conn.execute(
+                            self.exchange_pair_mapping_table.update()
+                            .where(self.exchange_pair_mapping_table.c.id == mapping_id)
+                            .values(
+                                exchange_id=mapping_data.get("exchange_id"),
+                                trading_pair_id=mapping_data.get("trading_pair_id"),
+                                is_active=mapping_data.get("is_active", True),
+                                updated_at=datetime.now(),
+                            )
+                        )
+                    else:
+                        # Create new mapping
+                        mapping = StrategyExchangePairMapping(
+                            strategy_id=strategy_id,
+                            exchange_id=mapping_data.get("exchange_id"),
+                            trading_pair_id=mapping_data.get("trading_pair_id"),
+                            is_active=mapping_data.get("is_active", True),
+                            created_at=datetime.now(),
+                            updated_at=datetime.now(),
+                        )
+
+                        conn.execute(
+                            self.exchange_pair_mapping_table.insert().values(mapping.model_dump(exclude={"id"}))
+                        )
+                elif isinstance(mapping_data, StrategyExchangePairMapping):
+                    # Handle Pydantic model instances
+                    if mapping_data.id:
+                        # Update existing mapping
+                        conn.execute(
+                            self.exchange_pair_mapping_table.update()
+                            .where(self.exchange_pair_mapping_table.c.id == mapping_data.id)
+                            .values(
+                                exchange_id=mapping_data.exchange_id,
+                                trading_pair_id=mapping_data.trading_pair_id,
+                                is_active=mapping_data.is_active,
+                                updated_at=datetime.now(),
+                            )
+                        )
+                    else:
+                        # Create new mapping
+                        mapping_data.strategy_id = strategy_id
+                        if not mapping_data.created_at:
+                            mapping_data.created_at = datetime.now()
+                        mapping_data.updated_at = datetime.now()
+
+                        conn.execute(
+                            self.exchange_pair_mapping_table.insert().values(mapping_data.model_dump(exclude={"id"}))
+                        )
+
+    def _get_strategy_parameters(self, conn: Connection, strategy_id: int) -> Optional[StrategyParameters]:
+        """Get strategy parameters for a strategy"""
+        try:
+            result = conn.execute(self.params_table.select().where(self.params_table.c.strategy_id == strategy_id))
+            row = result.first()
+
+            if not row:
+                raise ValueError(f"No parameters found for strategy ID {strategy_id}")
+
+            # Convert row to dict
+            params_dict = row._asdict()
+
+            # Parse the additional_parameters JSON if present
+            if "additional_parameters" in params_dict and params_dict["additional_parameters"]:
+                params_dict["additional_parameters"] = self._parse_json_field(params_dict["additional_parameters"])
+            else:
+                raise ValueError(f"Missing additional_parameters for strategy ID {strategy_id}")
+
+            return StrategyParameters.model_validate(params_dict)
+        except Exception as e:
+            self.logger.error(f"Error getting strategy parameters for strategy ID {strategy_id}: {e}", exc_info=True)
+            raise  # Re-raise the exception instead of returning None
+
+    def _get_type_parameters(self, conn: Connection, strategy_id: int) -> Optional[StrategyTypeParameters]:
+        """Get type parameters for a strategy"""
+        result = conn.execute(
+            self.type_params_table.select().where(self.type_params_table.c.strategy_id == strategy_id)
+        )
+        row = result.first()
+
+        if not row:
+            return None
+
+        return self._row_to_model(row, StrategyTypeParameters)
+
+    def _get_strategy_type(self, conn: Connection, strategy_type_id: int) -> Optional[StrategyType]:
+        """Get strategy type by ID"""
+        return self._get_model_by_id(conn, self.strategy_types_table, StrategyType, strategy_type_id)
+
+    def _get_risk_profile(self, conn: Connection, risk_profile_id: int) -> Optional[RiskProfile]:
+        """Get risk profile by ID"""
+        return self._get_model_by_id(conn, self.risk_profiles_table, RiskProfile, risk_profile_id)
+
+    def _get_execution_mappings(self, conn: Connection, strategy_id: int) -> List[StrategyExecutionMapping]:
+        """Get all execution mappings for a strategy with execution strategy details"""
+        # Use raw SQL for the join to get both mapping and execution strategy details
+        query = sa.text("""
+            SELECT sem.*, es.name as execution_name, es.description as execution_description
+            FROM strategy_execution_mapping sem
+            JOIN execution_strategies es ON sem.execution_strategy_id = es.id
+            WHERE sem.strategy_id = :strategy_id
+            ORDER BY sem.priority ASC
+        """)
+
+        result = conn.execute(query, {"strategy_id": strategy_id})
+        mappings = []
+
+        for row in result:
+            # Convert row to dict using _asdict()
+            row_dict = row._asdict()
+
+            # Create StrategyExecutionMapping model
+            mapping = StrategyExecutionMapping.model_validate(
+                {
+                    "id": row_dict["id"],
+                    "strategy_id": row_dict["strategy_id"],
+                    "execution_strategy_id": row_dict["execution_strategy_id"],
+                    "is_active": row_dict["is_active"],
+                    "priority": row_dict["priority"],
+                    "created_at": row_dict["created_at"],
+                    # Add execution strategy details
+                    "execution_name": row_dict["execution_name"],
+                    "execution_description": row_dict["execution_description"],
+                }
+            )
+
+            mappings.append(mapping)
+
+        return mappings
+
+    def _get_exchange_pair_mappings(self, conn: Connection, strategy_id: int) -> List[StrategyExchangePairMapping]:
+        """Get all exchange-pair mappings for a strategy with exchange and pair details"""
+        try:
+            # Use raw SQL for the join to get both mapping and exchange/pair details
+            query = sa.text("""
+                SELECT 
+                    sepm.id, 
+                    sepm.strategy_id, 
+                    sepm.exchange_id, 
+                    sepm.trading_pair_id, 
+                    sepm.is_active,
+                    sepm.created_at,
+                    sepm.updated_at,
+                    e.name as exchange_name, 
+                    tp.symbol as pair_symbol,
+                    tp.base_currency,
+                    tp.quote_currency
+                FROM strategy_exchange_pair_mappings sepm
+                JOIN exchanges e ON sepm.exchange_id = e.id
+                JOIN trading_pairs tp ON sepm.trading_pair_id = tp.id
+                WHERE sepm.strategy_id = :strategy_id
+            """)
+
+            result = conn.execute(query, {"strategy_id": strategy_id})
+            mappings = []
+
+            for row in result:
+                # Convert row to dict using _asdict()
+                row_dict = row._asdict()
+
+                # Create StrategyExchangePairMapping model
+                mapping = StrategyExchangePairMapping.model_validate(
+                    {
+                        "id": row_dict["id"],
+                        "strategy_id": row_dict["strategy_id"],
+                        "exchange_id": row_dict["exchange_id"],
+                        "trading_pair_id": row_dict["trading_pair_id"],
+                        "is_active": row_dict["is_active"],
+                        "created_at": row_dict["created_at"],
+                        "updated_at": row_dict["updated_at"],
+                        # Add exchange and pair details
+                        "exchange_name": row_dict["exchange_name"],
+                        "pair_symbol": row_dict["pair_symbol"],
+                        "base_currency": row_dict["base_currency"],
+                        "quote_currency": row_dict["quote_currency"],
+                    }
+                )
+
+                mappings.append(mapping)
+
+            return mappings
+        except Exception as e:
+            self.logger.error(f"Error getting exchange-pair mappings for strategy {strategy_id}: {e}", exc_info=True)
             return []
 
-    def update(self, strategy: Strategy) -> Strategy:
-        """Update an existing strategy"""
+    def _parse_json_field(self, json_data: Optional[Union[str, dict]]) -> Optional[Dict[str, Any]]:
+        """Safely parse a JSON field from the database"""
+        if json_data is None:
+            return {}
+
+        if isinstance(json_data, dict):
+            return json_data
+
         try:
-            with self.engine.begin() as conn:
-                # Extract parameters for strategy_parameters table
-                min_spread = strategy.min_spread if strategy.min_spread is not None else 0.0001
-                threshold = (
-                    strategy.threshold if hasattr(strategy, "threshold") and strategy.threshold is not None else 0.0001
-                )
-                max_slippage = (
-                    strategy.max_slippage
-                    if hasattr(strategy, "max_slippage") and strategy.max_slippage is not None
-                    else None
-                )
-                min_volume = (
-                    strategy.min_volume if hasattr(strategy, "min_volume") and strategy.min_volume is not None else None
-                )
+            if isinstance(json_data, str):
+                return json.loads(json_data)
+            else:
+                self.logger.warning(f"Unexpected JSON data type: {type(json_data)}")
+                return {}
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse JSON data: {e}, data: {json_data[:100]}...", exc_info=True)
+            return {}
 
-                # Prepare strategy data for update
-                strategy_data = {
-                    "name": strategy.name,
-                    "description": strategy.description,
-                    "strategy_type_id": strategy.strategy_type_id,
-                    "risk_profile_id": strategy.risk_profile_id,
-                    "starting_capital": strategy.starting_capital,
-                    "total_profit": strategy.total_profit,
-                    "total_loss": strategy.total_loss,
-                    "net_profit": strategy.net_profit,
-                    "trade_count": strategy.trade_count,
-                    "is_active": strategy.is_active,
-                    "last_updated": datetime.now(),
-                    "additional_info": json.dumps(strategy.additional_info) if strategy.additional_info else None,
-                }
+    def _serialize_json_field(self, data: Optional[Union[Dict[str, Any], str]]) -> Optional[str]:
+        """Serialize a dict to JSON for database storage"""
+        if data is None:
+            return None
 
-                # Update strategy table
-                conn.execute(self.table.update().where(self.table.c.id == strategy.id).values(**strategy_data))
-
-                # Update or insert strategy parameters
-                params_query = sa.text("SELECT id FROM strategy_parameters WHERE strategy_id = :strategy_id")
-                params_result = conn.execute(params_query, {"strategy_id": strategy.id})
-                params_row = params_result.first()
-
-                params_data = {
-                    "min_spread": min_spread,
-                    "threshold": threshold,
-                    "max_slippage": max_slippage,
-                    "min_volume": min_volume,
-                }
-
-                if params_row:
-                    # Update existing parameters
-                    conn.execute(
-                        sa.text("""
-                            UPDATE strategy_parameters 
-                            SET min_spread = :min_spread, 
-                                threshold = :threshold, 
-                                max_slippage = :max_slippage, 
-                                min_volume = :min_volume
-                            WHERE strategy_id = :strategy_id
-                        """),
-                        {**params_data, "strategy_id": strategy.id},
-                    )
-                else:
-                    # Insert new parameters
-                    conn.execute(self.params_table.insert().values(strategy_id=strategy.id, **params_data))
-
-                # Return updated strategy with parameters
-                return self.get_by_id(strategy.id)
+        try:
+            if isinstance(data, dict):
+                return json.dumps(data)
+            elif isinstance(data, str):
+                # Validate it's proper JSON by parsing it
+                try:
+                    json.loads(data)
+                    return data
+                except json.JSONDecodeError:
+                    self.logger.warning(f"Invalid JSON string provided: {data[:100]}...", exc_info=True)
+                    return json.dumps({})
+            else:
+                self.logger.warning(f"Unexpected data type for JSON serialization: {type(data)}", exc_info=True)
+                return json.dumps({})
         except Exception as e:
-            self.logger.error(f"Error updating strategy {strategy.name}: {e}")
-            raise
+            self.logger.error(f"Error serializing JSON data: {e}", exc_info=True)
+            return json.dumps({})

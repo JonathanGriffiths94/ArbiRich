@@ -76,20 +76,44 @@ class CryptocomOrderBookProcessor(BaseOrderBookProcessor):
         logger.info(f"Sending subscription: {self.subscribe_message}")
         await websocket.send(self.subscribe_message)
 
-        # Wait for subscription confirmation
-        for _ in range(5):  # Try a few times
-            message = await websocket.recv()
-            data = json.loads(message)
-            if "id" in data and data.get("method") == "subscribe":
-                logger.info("Subscription confirmed")
-                return
+        # Wait for subscription confirmation with a timeout
+        subscription_timeout = 10.0  # 10 seconds timeout
+        start_time = time.time()
+        messages_received = 0
 
-            # If we get data immediately, that's also good
-            if "result" in data and "data" in data["result"]:
-                logger.info("Received data during subscription, confirming subscription")
-                return
+        while time.time() - start_time < subscription_timeout:
+            try:
+                message = await asyncio.wait_for(websocket.recv(), timeout=2.0)
+                messages_received += 1
+                logger.info(f"Subscription response message #{messages_received}: {message[:100]}...")
 
-        logger.warning("No subscription confirmation received, continuing anyway")
+                data = json.loads(message)
+                # Check for subscription confirmation
+                if "id" in data and data.get("method") == "subscribe":
+                    logger.info("Subscription explicitly confirmed")
+                    return
+
+                # Check for data messages which imply subscription is working
+                if "result" in data and "data" in data["result"]:
+                    logger.info(f"Received data during subscription, data has {len(data['result']['data'])} entries")
+                    return
+
+                # If we've received 5+ messages, assume subscription is working
+                if messages_received >= 5:
+                    logger.info(f"Received {messages_received} messages, assuming subscription is active")
+                    return
+            except asyncio.TimeoutError:
+                logger.warning("Timeout waiting for subscription response, retrying...")
+
+        # If we've waited long enough without confirmation but received some messages,
+        # assume the subscription worked
+        if messages_received > 0:
+            logger.warning(
+                f"No explicit subscription confirmation, but received {messages_received} messages. Continuing."
+            )
+            return
+
+        logger.warning("No subscription confirmation received after timeout, continuing anyway")
 
     async def buffer_events(self, websocket):
         """Buffer initial events to get a snapshot."""

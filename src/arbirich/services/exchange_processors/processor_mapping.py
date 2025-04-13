@@ -28,7 +28,6 @@ EXCHANGE_NAME_MAP = {
     # Standard names
     "bybit": "bybit",
     "cryptocom": "cryptocom",
-    "crypto.com": "cryptocom",
     "binance": "binance",
     # Common variations (case insensitive mapping)
     "bybit.com": "bybit",
@@ -53,12 +52,6 @@ if CRYPTOCOM_PROCESSOR_AVAILABLE:
 def normalize_exchange_name(exchange_name: str) -> str:
     """
     Normalize exchange names to their standard form.
-
-    Args:
-        exchange_name: Raw exchange name
-
-    Returns:
-        Normalized exchange name
     """
     # Convert to lowercase for case-insensitive lookup
     name_lower = exchange_name.lower()

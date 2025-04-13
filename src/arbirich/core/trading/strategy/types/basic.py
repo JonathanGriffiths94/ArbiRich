@@ -4,6 +4,7 @@ import time
 import uuid
 from typing import Dict, Optional
 
+from src.arbirich.models.enums import StrategyType
 from src.arbirich.models.models import OrderBookState, TradeOpportunity
 
 from .arbitrage_type import ArbitrageType
@@ -25,14 +26,27 @@ class BasicArbitrage(ArbitrageType):
             strategy_name: Human-readable name of the strategy
             config: Configuration dictionary
         """
-        self.id = strategy_id
-        self.name = strategy_name
-        super().__init__(config)
+        # Handle both constructor styles for backward compatibility
+        if strategy_name is not None and config is not None:
+            # New style constructor with separate parameters
+            self.id = strategy_id
+            self.name = strategy_name
+            super().__init__(config)
+        else:
+            # Old style constructor where first param is name or config
+            if isinstance(strategy_id, dict):
+                config = strategy_id
+                self.name = config.get("name", StrategyType.BASIC.value)
+                self.id = str(self.name)
+                super().__init__(config)
+            else:
+                self.name = strategy_id or StrategyType.BASIC.value
+                self.id = str(self.name)
+                super().__init__(config or {})
 
         self.threshold = self.config.get("threshold", 0.001)  # Default 0.1%
 
-        # Initialize the execution method
-        self._initialize_execution_method()
+        logger.info(f"Initialized BasicArbitrage strategy: {self.name} with threshold {self.threshold}")
 
     def detect_opportunities(self, state: OrderBookState) -> Dict[str, TradeOpportunity]:
         """
@@ -51,6 +65,9 @@ class BasicArbitrage(ArbitrageType):
             opportunity = self.detect_arbitrage(asset, state)
             if opportunity:
                 opportunities[asset] = opportunity
+                logger.info(f"Detected opportunity for {asset}")
+            else:
+                logger.debug(f"No opportunity detected for {asset}")
 
         return opportunities
 
@@ -68,81 +85,118 @@ class BasicArbitrage(ArbitrageType):
         logger.debug(f"Checking basic arbitrage for {asset} with threshold {self.threshold:.6f}")
 
         if asset not in state.symbols:
+            logger.debug(f"Asset {asset} not found in state")
             return None
 
-        if len(state.symbols[asset]) < 2:
+        exchanges = list(state.symbols[asset].keys())
+        if len(exchanges) < 2:
             # Need at least 2 exchanges to compare
+            logger.debug(f"Not enough exchanges for {asset} (need at least 2, found {len(exchanges)})")
             return None
 
-        # Find best bid and ask across all exchanges
-        best_bid = {"price": -1.0, "exchange": None, "quantity": 0.0}
-        best_ask = {"price": float("inf"), "exchange": None, "quantity": 0.0}
+        # Track best bid and ask per exchange
+        exchange_prices = {}
 
-        # Iterate through all exchanges for this symbol
+        # Log the exchanges we're checking
+        logger.info(f"💹 ARBITRAGE CHECK: Comparing {len(exchanges)} exchanges for {asset}: {exchanges}")
+
+        # Iterate through all exchanges for this symbol and collect the best prices
         for exchange, order_book in state.symbols[asset].items():
             # Skip if book is empty or invalid
-            if not order_book.bids or not order_book.asks:
+            if (
+                not hasattr(order_book, "bids")
+                or not hasattr(order_book, "asks")
+                or not order_book.bids
+                or not order_book.asks
+            ):
+                logger.debug(f"❌ Empty or invalid order book for {exchange}:{asset}")
                 continue
+
+            exchange_prices[exchange] = {"bid": None, "ask": None}
 
             # Find highest bid using the get_best_bid helper method
             try:
                 highest_bid = order_book.get_best_bid()
-                if highest_bid and highest_bid.price > best_bid["price"]:
-                    best_bid["price"] = highest_bid.price
-                    best_bid["exchange"] = exchange
-                    best_bid["quantity"] = highest_bid.quantity
+                if highest_bid:
+                    logger.debug(f"📊 {exchange} best bid: {highest_bid.price:.8f} (qty: {highest_bid.quantity:.8f})")
+                    exchange_prices[exchange]["bid"] = {"price": highest_bid.price, "quantity": highest_bid.quantity}
+                else:
+                    logger.debug(f"❌ No valid bid for {exchange}:{asset}")
             except Exception as e:
                 logger.error(f"Error processing bids for {exchange}: {e}")
 
             # Find lowest ask using the get_best_ask helper method
             try:
                 lowest_ask = order_book.get_best_ask()
-                if lowest_ask and lowest_ask.price < best_ask["price"]:
-                    best_ask["price"] = lowest_ask.price
-                    best_ask["exchange"] = exchange
-                    best_ask["quantity"] = lowest_ask.quantity
+                if lowest_ask:
+                    logger.debug(f"📊 {exchange} best ask: {lowest_ask.price:.8f} (qty: {lowest_ask.quantity:.8f})")
+                    exchange_prices[exchange]["ask"] = {"price": lowest_ask.price, "quantity": lowest_ask.quantity}
+                else:
+                    logger.debug(f"❌ No valid ask for {exchange}:{asset}")
             except Exception as e:
                 logger.error(f"Error processing asks for {exchange}: {e}")
 
-        # Check if we have valid bid and ask from different exchanges
-        if (
-            best_bid["exchange"] is not None
-            and best_ask["exchange"] is not None
-            and best_bid["exchange"] != best_ask["exchange"]
-        ):
-            # Calculate spread
-            spread = (best_bid["price"] - best_ask["price"]) / best_ask["price"]
+        # Find the best opportunity across different exchanges
+        best_opportunity = None
+        best_spread = self.threshold  # Start with the minimum acceptable spread
 
-            # Check if spread exceeds threshold
-            if spread > self.threshold:
-                logger.info(
-                    f"Found basic arbitrage opportunity for {asset}: "
-                    f"Buy from {best_ask['exchange']} at {best_ask['price']}, "
-                    f"Sell on {best_bid['exchange']} at {best_bid['price']}, "
-                    f"Spread: {spread:.4%}"
+        # Compare each exchange's bid with other exchanges' asks
+        for bid_exchange, bid_data in exchange_prices.items():
+            if not bid_data["bid"]:
+                continue  # Skip if no valid bid
+
+            for ask_exchange, ask_data in exchange_prices.items():
+                if ask_exchange == bid_exchange or not ask_data["ask"]:
+                    continue  # Skip same exchange or invalid ask
+
+                # Calculate potential spread
+                spread = (bid_data["bid"]["price"] - ask_data["ask"]["price"]) / ask_data["ask"]["price"]
+
+                logger.debug(
+                    f"Cross-exchange check: {ask_exchange} ask {ask_data['ask']['price']:.8f} → {bid_exchange} bid {bid_data['bid']['price']:.8f}, spread: {spread:.6f}"
                 )
 
-                # Calculate max tradable volume
-                volume = min(best_bid["quantity"], best_ask["quantity"])
-                if volume <= 0:
-                    logger.warning(f"Zero or negative volume for opportunity: {volume}")
-                    return None
+                # Check if this is the best spread so far
+                if spread > best_spread:
+                    best_spread = spread
+                    volume = min(bid_data["bid"]["quantity"], ask_data["ask"]["quantity"])
+                    best_opportunity = {
+                        "buy_exchange": ask_exchange,
+                        "sell_exchange": bid_exchange,
+                        "buy_price": ask_data["ask"]["price"],
+                        "sell_price": bid_data["bid"]["price"],
+                        "spread": spread,
+                        "volume": volume,
+                    }
+                    logger.debug(
+                        f"📈 New best opportunity: buy on {ask_exchange} at {ask_data['ask']['price']:.8f}, sell on {bid_exchange} at {bid_data['bid']['price']:.8f}, spread: {spread:.6f}"
+                    )
 
-                # Create opportunity object
-                return TradeOpportunity(
-                    id=str(uuid.uuid4()),
-                    strategy=self.name,
-                    pair=asset,
-                    buy_exchange=best_ask["exchange"],
-                    sell_exchange=best_bid["exchange"],
-                    buy_price=best_ask["price"],
-                    sell_price=best_bid["price"],
-                    spread=spread,
-                    volume=volume,
-                    opportunity_timestamp=time.time(),
-                )
+        # If a valid opportunity was found, create and return the TradeOpportunity
+        if best_opportunity:
+            logger.info(
+                f"💰 FOUND ARBITRAGE OPPORTUNITY for {asset}:\n"
+                f"  • Buy from {best_opportunity['buy_exchange']} at {best_opportunity['buy_price']:.8f}\n"
+                f"  • Sell on {best_opportunity['sell_exchange']} at {best_opportunity['sell_price']:.8f}\n"
+                f"  • Spread: {best_opportunity['spread']:.4%}\n"
+                f"  • Profit: {(best_opportunity['spread'] * best_opportunity['volume'] * best_opportunity['buy_price']):.8f}"
+            )
 
-        return None
+            return TradeOpportunity(
+                id=str(uuid.uuid4()),
+                strategy=self.name,
+                pair=asset,
+                buy_exchange=best_opportunity["buy_exchange"],
+                sell_exchange=best_opportunity["sell_exchange"],
+                buy_price=best_opportunity["buy_price"],
+                sell_price=best_opportunity["sell_price"],
+                spread=best_opportunity["spread"],
+                volume=best_opportunity["volume"],
+                opportunity_timestamp=time.time(),
+            )
+        else:
+            logger.debug(f"❌ No profitable arbitrage opportunity found for {asset}")
+            return None
 
     def validate_opportunity(self, opportunity: TradeOpportunity) -> bool:
         """Validate if the opportunity meets criteria"""
