@@ -1,21 +1,19 @@
 import json
 import logging
 import time
-from dataclasses import dataclass
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from bytewax import operators as op
+import redis
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified
+from arbirich.constants import ORDER_BOOK_CHANNEL
 from src.arbirich.models.models import OrderBookUpdate
-from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
+from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.redis.redis_service import get_shared_redis_client, register_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Redis client for this module
 _redis_client = None
 
 
@@ -39,221 +37,287 @@ register_redis_client("detection", reset_shared_redis_client)
 
 
 class RedisExchangePartition(StatefulSourcePartition):
-    def __init__(self, exchange: str, channel: str = "order_book", pairs: Optional[List[str]] = None, stop_event=None):
+    """
+    Redis source partition for order book updates specific to an exchange.
+    """
+
+    def __init__(self, exchange: str, strategy_name: str):
         self.exchange = exchange
-        self.channel = channel
-        self.pairs = pairs
-        self.stop_event = stop_event  # Store the stop event
-        # Use shared Redis client instead of creating a new one
+        self.strategy_name = strategy_name
         self.redis_client = get_shared_redis_client()
+        self.pubsub = None
         self.last_activity = time.time()
-        self.error_backoff = 1  # Initial backoff in seconds
-        self.max_backoff = 30  # Maximum backoff in seconds
-        # Use channel manager for consistent channel naming
-        self.channel_manager = get_channel_manager()
-        if channel == "order_book":
-            self.channel = self.channel_manager.get_orderbook_channel(exchange)
+        self.pairs = self._get_strategy_pairs()
+
+        # Initialize pubsub
+        self._initialize_pubsub()
+
+    def _get_strategy_pairs(self) -> List[str]:
+        """Get trading pairs for this strategy from database"""
+        try:
+            with DatabaseService() as db:
+                strategy = db.get_strategy_by_name(self.strategy_name)
+                if not strategy or not strategy.additional_info:
+                    logger.warning(f"No strategy found or no pairs defined for {self.strategy_name}")
+                    return []
+
+                # Extract pairs from strategy config
+                if isinstance(strategy.additional_info, dict):
+                    pairs = strategy.additional_info.get("pairs", [])
+                else:
+                    # Parse JSON if stored as string
+                    import json
+
+                    try:
+                        additional_info = json.loads(strategy.additional_info)
+                        pairs = additional_info.get("pairs", [])
+                    except json.JSONDecodeError:
+                        logger.error(f"Could not parse additional_info for strategy {self.strategy_name}")
+                        return []
+
+                # Normalize pairs to string format
+                normalized_pairs = []
+                for pair in pairs:
+                    if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                        normalized_pairs.append(f"{pair[0]}-{pair[1]}")
+                    elif isinstance(pair, str):
+                        normalized_pairs.append(pair)
+
+                logger.info(f"Strategy {self.strategy_name} uses pairs: {normalized_pairs}")
+                return normalized_pairs
+        except Exception as e:
+            logger.error(f"Error getting pairs for strategy {self.strategy_name}: {e}")
+            return []
+
+    def _initialize_pubsub(self):
+        """Initialize Redis PubSub and subscribe to relevant channels"""
+        if not self.redis_client:
+            logger.error("No Redis client available")
+            return
+
+        if not self.pubsub:
+            self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
+
+        # Subscribe to specific channels for each pair
+        channels = []
+        for pair in self.pairs:
+            # Create the specific channel name for this exchange and pair
+            channel = f"{ORDER_BOOK_CHANNEL}:{self.exchange}:{pair}"
+            channels.append(channel)
+            logger.info(f"Subscribing to channel: {channel}")
+
+        # Subscribe to all channels
+        if channels:  # Only subscribe if we have channels to subscribe to
+            self.pubsub.subscribe(*channels)
+            logger.info(
+                f"Initialized RedisExchangePartition for {self.exchange} and subscribed to channels: {channels}"
+            )
         else:
-            self.channel = channel
-        # Subscribe to the Redis pubsub channel explicitly
-        self.pubsub = self.redis_client.client.pubsub()
-        self.pubsub.subscribe(self.channel)
-        self._running = True
-        logger.info(f"Initialized RedisExchangePartition for {exchange} and subscribed to channel {channel}")
+            # If no specific pairs found, just initialize without subscribing
+            logger.warning(f"No channels to subscribe for {self.exchange}, skipping subscription")
+            logger.info(f"Initialized RedisExchangePartition for {self.exchange} without channel subscriptions")
 
-    def subscribe_with_retry(self, channels, max_retries=3, retry_delay=1.0):
+    def snapshot(self) -> Optional[Dict]:
+        """Take snapshot of current state"""
+        return {"exchange": self.exchange, "last_activity": self.last_activity}
+
+    def restore(self, state: Dict):
+        """Restore from snapshot"""
+        self.last_activity = state.get("last_activity", time.time())
+
+    def next_batch(self) -> List[Tuple[str, OrderBookUpdate]]:
         """
-        Subscribe to Redis channels with retry logic.
-
-        Args:
-            channels: List of channels to subscribe to
-            max_retries: Maximum number of retry attempts
-            retry_delay: Delay between retries in seconds
+        Get a batch of order book updates. Required by Bytewax's StatefulSourcePartition.
 
         Returns:
-            True if subscription succeeded, False otherwise
+            List of tuples (exchange, OrderBookUpdate)
         """
-        logger.info(f"Subscribing to channels with retry: {channels}")
-
-        for attempt in range(max_retries):
-            try:
-                # Ensure we have a valid Redis client
-                if not self.redis_client or not self.redis_client.client:
-                    logger.warning(f"Redis client unavailable on attempt {attempt + 1}, reconnecting...")
-                    self.redis_client = get_shared_redis_client()
-                    if not self.redis_client:
-                        logger.error("Failed to get Redis client")
-                        time.sleep(retry_delay)
-                        continue
-
-                # Create or reset the pubsub
-                if hasattr(self, "pubsub") and self.pubsub:
-                    try:
-                        self.pubsub.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing existing pubsub: {e}")
-
-                self.pubsub = self.redis_client.client.pubsub()
-
-                # Perform the subscription
-                self.pubsub.subscribe(*channels)
-                logger.info(f"Successfully subscribed to {len(channels)} channels: {channels}")
-
-                # Verify the subscription worked by checking for confirmation messages
-                for _ in range(len(channels)):
-                    message = self.pubsub.get_message(timeout=1.0)
-                    if message and message.get("type") == "subscribe":
-                        logger.debug(f"Received subscription confirmation: {message}")
-                    else:
-                        logger.warning(f"Did not receive subscription confirmation: {message}")
-                        # We'll retry the whole process
-                        raise Exception("Failed to get subscription confirmation")
-
-                # All channels subscribed successfully
-                return True
-
-            except Exception as e:
-                logger.error(f"Error subscribing to channels (attempt {attempt + 1}/{max_retries}): {e}")
-                time.sleep(retry_delay)
-
-        # If we got here, all retries failed
-        logger.error(f"Failed to subscribe to channels after {max_retries} attempts: {channels}")
-        return False
-
-    def next_batch(self) -> list:
         try:
-            # Check if the system is shutting down
-            if is_system_shutting_down():
-                component_id = f"detection:{self.exchange}"
-                if mark_component_notified("detection", component_id):
-                    logger.info(f"Stop event detected for {component_id}")
-                    # Clean up resources
+            # Try to get a single item using the next() method
+            item = self.next()
+
+            # If we got an item, return it as a single-item list
+            if item:
+                return [item]
+
+            # Otherwise return an empty list
+            return []
+        except redis.exceptions.ConnectionError as e:
+            logger.error(f"Redis connection error in {self.exchange} partition: {e}")
+            # Try to reconnect
+            try:
+                logger.info(f"Attempting to reconnect Redis for {self.exchange} partition")
+                # Close existing pubsub if it exists
+                if self.pubsub:
                     try:
                         self.pubsub.unsubscribe()
                         self.pubsub.close()
-                        logger.info(f"Successfully unsubscribed {component_id} from Redis channels")
-                    except Exception as e:
-                        logger.error(f"Error unsubscribing {component_id} from Redis channels: {e}")
-                self._running = False
-                return []
+                    except Exception as close_error:
+                        logger.warning(f"Error closing pubsub: {close_error}")
 
-            # Check Redis connection health periodically
-            if time.time() - self.last_activity > 30:  # Check every 30 seconds
-                if not self.redis_client.is_healthy():
-                    logger.warning(f"Redis connection unhealthy for {self.exchange}, reconnecting...")
-                    self.redis_client = get_shared_redis_client()
-                    # Resubscribe after reconnecting
-                    self.pubsub = self.redis_client.client.pubsub()
-                    self.pubsub.subscribe(self.channel)
-                self.last_activity = time.time()
+                # Reset connection
+                self.pubsub = None
+                self.redis_client = get_shared_redis_client()
 
-            # Get message from Redis pubsub
-            message = self.pubsub.get_message(timeout=0.01)  # Use a short timeout
+                # Re-initialize pubsub
+                self._initialize_pubsub()
+                logger.info(f"Successfully reconnected Redis for {self.exchange}")
+            except Exception as reconnect_error:
+                logger.error(f"Failed to reconnect Redis: {reconnect_error}")
 
-            if message and message["type"] == "message":
-                data = message.get("data")
-                if isinstance(data, bytes):
-                    data = data.decode("utf-8")
-
-                try:
-                    # Try to parse JSON data
-                    data_dict = json.loads(data)
-
-                    # Only process messages for this exchange
-                    if data_dict.get("exchange") == self.exchange:
-                        symbol = data_dict.get("symbol")
-                        logger.debug(f"Received message for {self.exchange}: {symbol}")
-
-                        # Filter by pairs if specified
-                        if self.pairs and symbol not in self.pairs:
-                            logger.debug(f"Skipping message for {symbol} - not in specified pairs {self.pairs}")
-                            return []
-
-                        # Convert to OrderBookUpdate model
-                        try:
-                            order_book = OrderBookUpdate(
-                                exchange=self.exchange,
-                                symbol=symbol,
-                                bids=data_dict.get("bids", {}),
-                                asks=data_dict.get("asks", {}),
-                                timestamp=data_dict.get("timestamp", time.time()),
-                                sequence=data_dict.get("sequence"),
-                            )
-                            logger.debug(f"Created OrderBookUpdate for {self.exchange}:{symbol}")
-                            return [(self.exchange, order_book)]
-                        except Exception as e:
-                            logger.error(f"Error creating OrderBookUpdate: {e}")
-                            # Fall back to returning the raw dictionary if model creation fails
-                            return [(self.exchange, data_dict)]
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to decode JSON message: {data}")
-                except Exception as e:
-                    logger.error(f"Error processing message: {e}, data: {data}")
-
-            # If we got here, either no message or message was not for this exchange
+            # Return empty list to allow flow to continue
             return []
-
         except Exception as e:
-            # Use exponential backoff for error retries
-            logger.error(f"Error fetching next message for {self.exchange}: {e}")
-            time.sleep(min(self.error_backoff, self.max_backoff))
-            self.error_backoff = min(self.error_backoff * 2, self.max_backoff)
+            logger.error(f"Unexpected error in next_batch for {self.exchange}: {e}")
             return []
 
-    def snapshot(self):
-        # No state to snapshot
+    def next(self) -> Optional[Tuple[str, OrderBookUpdate]]:
+        """
+        Get the next order book update for this exchange.
+
+        Returns:
+            Tuple of (exchange, OrderBookUpdate) or None if no message is available
+        """
+        if not self.pubsub:
+            try:
+                self._initialize_pubsub()
+                if not self.pubsub:
+                    return None
+            except Exception as e:
+                logger.error(f"Error initializing pubsub for {self.exchange}: {e}")
+                return None
+
+        try:
+            # Process messages
+            message = self.pubsub.get_message(timeout=0.01)
+            if not message:
+                return None
+
+            # Update activity timestamp
+            self.last_activity = time.time()
+
+            # Process message data
+            channel = message.get("channel", b"").decode("utf-8")
+            data = message.get("data")
+
+            if not data:
+                return None
+
+            try:
+                # Decode data if it's bytes
+                if isinstance(data, bytes):
+                    data = json.loads(data.decode("utf-8"))
+
+                # Create OrderBookUpdate object
+                if isinstance(data, dict):
+                    # Use the full exchange:pair identifier from the channel name
+                    # Extract from channel if possible
+                    if ":" in channel:
+                        parts = channel.split(":")
+                        if len(parts) >= 2:
+                            exchange_id = parts[1]  # Get exchange part
+                            if len(parts) >= 3:
+                                # Include the trading pair in the exchange identifier
+                                symbol = parts[2]
+                            else:
+                                symbol = data.get("symbol", "unknown")
+                    else:
+                        exchange_id = self.exchange
+                        symbol = data.get("symbol", "unknown")
+
+                    # Create OrderBookUpdate with proper exchange and symbol
+                    order_book = OrderBookUpdate(
+                        id=data.get("id", ""),
+                        exchange=exchange_id,
+                        symbol=symbol,
+                        bids=data.get("bids", {}),
+                        asks=data.get("asks", {}),
+                        timestamp=data.get("timestamp", time.time()),
+                        sequence=data.get("sequence"),
+                    )
+
+                    return (self.exchange, order_book)
+            except Exception as e:
+                logger.error(f"Error processing order book update for {self.exchange}: {e}")
+
+            return None
+        except redis.exceptions.ConnectionError:
+            # Let the connection error be caught by next_batch for reconnection handling
+            raise
+        except Exception as e:
+            logger.error(f"Error processing order book update for {self.exchange}: {e}")
+
         return None
 
+    def close(self):
+        """Close the PubSub connection"""
+        if self.pubsub:
+            try:
+                self.pubsub.unsubscribe()
+                self.pubsub.close()
+            except Exception as e:
+                logger.error(f"Error closing PubSub for {self.exchange}: {e}")
 
-@dataclass
-class RedisOpportunitySource(FixedPartitionedSource):
-    def __init__(self, exchange_channels, pairs, stop_event=None):
+
+class RedisOrderBookSource(FixedPartitionedSource):
+    """
+    Redis source for order book updates from multiple exchanges.
+    """
+
+    def __init__(
+        self,
+        exchanges: List[str] = None,
+        strategy_name: str = None,
+        exchange_channels: Dict[str, str] = None,
+        pairs: List[str] = None,
+        stop_event=None,
+    ):
         """
-        Initialize the Redis opportunity source.
+        Initialize Redis source for order book updates.
 
         Args:
-            exchange_channels: Dict mapping exchange names to channels
-            pairs: List of trading pairs
-            stop_event: Optional threading.Event for stopping the source
+            exchanges: List of exchange IDs to listen for
+            strategy_name: Name of the strategy
+            exchange_channels: Dictionary mapping exchange names to channel names
+            pairs: List of trading pairs to monitor
+            stop_event: Event to signal when to stop
         """
-        self.exchange_channels = exchange_channels
-        self.pairs = pairs
+        # Handle either exchanges list or exchange_channels dict
+        if exchange_channels:
+            self.exchanges = list(exchange_channels.keys())
+        else:
+            self.exchanges = exchanges or []
+
+        self.strategy_name = strategy_name
+        self.exchange_channels = exchange_channels or {}
+        self.pairs = pairs or []
         self.stop_event = stop_event
+        self.partitions = {}
+        logger.info(f"List of partitions: {self.exchanges}")
 
-    def list_parts(self):
-        parts = list(self.exchange_channels.keys())
-        if not parts:
-            logger.error("No partitions were created! Check your exchange-channel mapping.")
-        logger.info(f"List of partitions: {parts}")
-        return parts
+    def list_parts(self) -> List[str]:
+        """List partitions (exchanges)"""
+        return self.exchanges
 
-    def build_part(self, step_id, for_key, _resume_state):
-        try:
-            exchange = for_key
-            channel = self.exchange_channels.get(exchange, "order_book")  # Default to "order_book" if not specified
+    def build_part(self, step_id, for_key, resume_state) -> RedisExchangePartition:
+        """
+        Build partition for an exchange.
 
-            pairs = [f"{base}-{quote}" for base, quote in self.pairs] if self.pairs else None
-            logger.info(f"Building partition for exchange: {exchange}")
-            return RedisExchangePartition(exchange, channel, pairs, stop_event=self.stop_event)
-        except Exception as e:
-            logger.error(f"Invalid partition key: {for_key}, Error: {e}")
-            return None
+        Args:
+            step_id: The step ID in the dataflow
+            for_key: The key (exchange) to build a partition for
+            resume_state: Optional state to resume from
 
+        Returns:
+            A RedisExchangePartition instance
+        """
+        logger.info(f"Building partition for exchange: {for_key}")
+        return RedisExchangePartition(for_key, self.strategy_name)
 
-def use_redis_opportunity_source(flow, op_name, exchange_channels, pairs, stop_event=None):
-    """
-    Add a Redis opportunity source to the flow.
-
-    Parameters:
-        flow: The Dataflow instance
-        op_name: The operator name
-        exchange_channels: Dict of exchange to channels
-        pairs: List of trading pairs
-        stop_event: Optional threading.Event for stopping the source
-
-    Returns:
-        The input stream
-    """
-    source = RedisOpportunitySource(exchange_channels, pairs, stop_event=stop_event)
-
-    return op.input(op_name, flow, source)
+    def close(self):
+        """Close all partitions"""
+        for exchange, partition in self.partitions.items():
+            try:
+                partition.close()
+            except Exception as e:
+                logger.error(f"Error closing partition for {exchange}: {e}")

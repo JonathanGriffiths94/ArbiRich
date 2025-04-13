@@ -15,60 +15,80 @@ class ExecutionComponent(Component):
     def __init__(self, name: str, config: Dict[str, Any]):
         super().__init__(name, config)
         self.update_interval = config.get("update_interval", 1.0)  # seconds
-        self.strategy_name = config.get("strategy_name", "default")
+        self.debug_mode = config.get("debug_mode", False)
         self.active_flows = {}
-
-        # Ensure we have a valid strategy name that matches what's used in other components
-        if self.strategy_name == "default" and "strategy" in config:
-            self.strategy_name = config["strategy"]
-
-        # Important: Make sure we listen to the right channels
-        self.logger.info(f"Execution component initialized for strategy: {self.strategy_name}")
+        self.strategies = {}
+        self.flow_manager = None  # Initialize flow_manager attribute
 
     async def initialize(self) -> bool:
-        """Initialize execution flows"""
+        """Initialize execution component with database strategies."""
         try:
-            from src.arbirich.config.config import ALL_STRATEGIES
+            # Updated import paths to reflect new structure
             from src.arbirich.core.trading.flows.bytewax_flows.execution.execution_flow import build_execution_flow
             from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
+            from src.arbirich.services.database.database_service import DatabaseService
 
-            # Validate strategy name against known strategies
-            if self.strategy_name not in ALL_STRATEGIES and self.strategy_name != "default":
-                self.logger.warning(f"Unknown strategy name: {self.strategy_name}, using generic channel")
+            with DatabaseService() as db_service:
+                # Get active strategies
+                active_strategies = db_service.get_active_strategies()
 
-            # Create flow ID
-            flow_id = f"execution_{self.strategy_name}"
+                if not active_strategies:
+                    self.logger.warning("No active strategies found for execution component")
+                    # Return True anyway to allow component to start
+                    self.strategies = {}
+                    return True
 
-            # Get or create flow manager for this flow
-            self.flow_manager = BytewaxFlowManager.get_or_create(flow_id)
+                # Initialize strategies
+                for strategy in active_strategies:
+                    strategy_id = str(strategy.id)
+                    strategy_name = strategy.name
 
-            # Set up the flow building function
-            # Configure the flow builder with our parameters
-            self.flow_manager.build_flow = lambda: build_execution_flow(
-                strategy_name=self.strategy_name, debug_mode=self.config.get("debug_mode", False)
-            )
+                    self.logger.info(f"Initializing execution component for strategy: {strategy_name}")
 
-            self.active_flows[flow_id] = {
-                "strategy_name": self.strategy_name,
-                "channels": [f"trade_opportunities:{self.strategy_name}", "trade_opportunities"],
-            }
+                    # Create a flow ID and manager for this strategy
+                    flow_id = f"execution_{strategy_name}"
+                    flow_manager = BytewaxFlowManager.get_or_create(flow_id)
 
-            self.logger.info(f"Initialized execution component for strategy: {self.strategy_name}")
-            self.logger.info(f"Listening on channels: {self.active_flows[flow_id]['channels']}")
-            return True
+                    # Configure the flow builder
+                    flow_manager.build_flow = lambda strat=strategy: build_execution_flow(
+                        strategy_name=strat.name, debug_mode=self.debug_mode
+                    )
+
+                    # Store the flow manager (use the first one if multiple strategies)
+                    if self.flow_manager is None:
+                        self.flow_manager = flow_manager
+
+                    # Add to active flows
+                    self.active_flows[flow_id] = {"strategy_id": strategy_id, "strategy_name": strategy_name}
+
+                    # Add strategy to the tracked strategies
+                    try:
+                        self.strategies[strategy_id] = {"id": strategy_id, "name": strategy_name, "active": True}
+                    except Exception as e:
+                        self.logger.error(f"Error initializing strategy {strategy_name}: {e}")
+
+                if self.strategies:
+                    self.logger.info(f"Initialized execution component with {len(self.strategies)} strategies")
+                    return True
+                else:
+                    self.logger.warning("No strategies were successfully initialized for execution component")
+                    return False
 
         except Exception as e:
-            self.logger.error(f"Error initializing execution flows: {e}", exc_info=True)
+            self.logger.error(f"Error initializing execution component: {e}", exc_info=True)
             return False
 
     async def run(self) -> None:
         """Run the execution component by starting Bytewax flows"""
-        self.logger.info("Starting execution flows")
+        self.logger.info("Running execution component")
 
         try:
-            # Start the flow
-            await self.flow_manager.run_flow()
-            self.logger.info(f"Started execution flow for strategy: {self.strategy_name}")
+            # Start the flow for each strategy
+            for flow_id, flow_info in self.active_flows.items():
+                strategy_name = flow_info.get("strategy_name")
+                self.logger.info(f"Starting execution flow for strategy: {strategy_name}")
+                await self.flow_manager.run_flow()
+                self.logger.info(f"Started execution flow: {flow_id}")
 
             # Monitor flow until component is stopped
             while self.active:

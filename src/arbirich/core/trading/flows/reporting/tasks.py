@@ -5,6 +5,8 @@ import logging
 import time
 from typing import Dict, Optional
 
+import sqlalchemy as sa  # Add this import for the text() function
+
 from src.arbirich.services.redis.redis_service import check_redis_health
 
 from .message_processor import process_message
@@ -56,7 +58,7 @@ async def monitor_health() -> None:
                 # Test the connection directly
                 with db.engine.connect() as conn:
                     # Execute a simple query to verify connection
-                    result = conn.execute("SELECT 1").scalar()
+                    result = conn.execute(sa.text("SELECT 1")).scalar()  # Use sa.text() to create executable SQL
                     db_healthy = result == 1
             except Exception as db_e:
                 logger.warning(f"Database connection test failed: {db_e}")
@@ -163,7 +165,7 @@ async def process_redis_messages(pubsub, redis_client, active, stop_event, debug
                     import json
 
                     data = json.loads(data.decode("utf-8"))
-                except:
+                except (json.JSONDecodeError, UnicodeDecodeError):
                     # If not JSON, just keep as string
                     data = data.decode("utf-8", errors="replace")
 

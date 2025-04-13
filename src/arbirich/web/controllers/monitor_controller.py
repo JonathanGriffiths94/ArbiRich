@@ -1,5 +1,5 @@
 import logging
-import platform
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -58,21 +58,48 @@ async def get_system_status():
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
 
+        # Calculate uptime in a human-readable format
+        boot_time = psutil.boot_time()
+        uptime_seconds = time.time() - boot_time
+        uptime_days = int(uptime_seconds // (60 * 60 * 24))
+        uptime_hours = int((uptime_seconds % (60 * 60 * 24)) // (60 * 60))
+        uptime = f"{uptime_days} days, {uptime_hours} hours"
+
         return {
-            "cpu_percent": psutil.cpu_percent(),
-            "memory_percent": memory.percent,
-            "memory_used": f"{memory.used / (1024**3):.2f} GB",
-            "memory_total": f"{memory.total / (1024**3):.2f} GB",
-            "disk_percent": disk.percent,
-            "disk_used": f"{disk.used / (1024**3):.2f} GB",
-            "disk_total": f"{disk.total / (1024**3):.2f} GB",
-            "platform": platform.platform(),
-            "python_version": platform.python_version(),
-            "boot_time": datetime.fromtimestamp(psutil.boot_time()).strftime("%Y-%m-%d %H:%M:%S"),
+            "cpu_usage": psutil.cpu_percent(),
+            "memory_usage": memory.percent,
+            "disk_usage": disk.percent,
+            "uptime": uptime,
+            "services": {
+                "redis": True,  # Placeholder - implement actual check if needed
+                "database": True,  # Placeholder - implement actual check if needed
+                "web_server": True,  # Always True since we're responding
+                "processors": check_processor_status(),  # Helper function to check processor status
+            },
         }
     except Exception as e:
         logger.error(f"Error getting system status: {e}")
         return {"error": str(e)}
+
+
+def check_processor_status():
+    """Check if processors are running properly."""
+    try:
+        # This is a simplified check - you can expand it with actual logic
+        # to verify if your exchange processors are running
+        process_count = 0
+        for proc in psutil.process_iter(["name", "cmdline"]):
+            try:
+                if proc.info["name"] and "python" in proc.info["name"].lower():
+                    if proc.info["cmdline"] and any("processor" in cmd.lower() for cmd in proc.info["cmdline"]):
+                        process_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        return process_count > 0
+    except Exception as e:
+        logger.error(f"Error checking processor status: {e}")
+        return False
 
 
 async def get_processes():

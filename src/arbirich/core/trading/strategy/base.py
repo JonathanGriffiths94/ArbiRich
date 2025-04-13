@@ -158,3 +158,66 @@ class ArbitrageStrategy:
         pairs = self.exchange_params.trading_pairs
 
         return await get_order_books(exchanges, pairs)
+
+    def _initialize_execution_method(self):
+        """Initialize the execution method based on configuration"""
+        try:
+            # Get execution config
+            execution_config = self.config.get("execution", {})
+            execution_method = execution_config.get("method", "parallel")
+
+            # Import execution methods
+            from src.arbirich.core.trading.strategy.execution.parallel import ParallelExecution
+            from src.arbirich.core.trading.strategy.execution.staggered import StaggeredExecution
+
+            # Create the appropriate execution method
+            if execution_method == "staggered":
+                self.execution_method = StaggeredExecution(execution_config)
+            else:
+                self.execution_method = ParallelExecution(execution_config)
+
+            self.logger.info(f"Initialized {execution_method} execution method")
+
+        except Exception as e:
+            self.logger.error(f"Error initializing execution method: {e}")
+            # Set to None - will be caught during validation
+            self.execution_method = None
+
+    async def execute_opportunity(self, opportunity, position_size=None):
+        """
+        Execute a trade for an opportunity using the strategy's execution method.
+
+        Parameters:
+            opportunity: The opportunity to execute
+            position_size: Optional position size (will be calculated if not provided)
+
+        Returns:
+            Execution result
+        """
+        try:
+            if not self.execution_method:
+                self.logger.error("No execution method configured")
+                return None
+
+            # Calculate position size if not provided
+            if position_size is None:
+                position_size = self.risk_management.calculate_position_size(opportunity, self.config_params)
+
+            # Execute the trade
+            self.logger.info(f"Executing opportunity {opportunity.id} with position size {position_size}")
+            result = await self.execution_method.execute(opportunity, position_size)
+
+            # Handle partial executions or failures
+            if not result.success and result.partial:
+                await self.execution_method.handle_partial_execution(result)
+            elif not result.success:
+                await self.execution_method.handle_failure(result)
+
+            # Update performance metrics
+            self.performance_metrics.update(result)
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error executing opportunity: {e}", exc_info=True)
+            return None

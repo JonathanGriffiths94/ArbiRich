@@ -243,9 +243,6 @@ def build_reporting_flow(flow_type: str = "performance", config: Optional[Dict[s
     """
     logger.info(f"Building reporting flow of type: {flow_type}")
 
-    # Create a new flow configuration
-    flow_config = {}
-
     # Start with the main channels
     channels = [
         TRADE_OPPORTUNITIES_CHANNEL,
@@ -365,7 +362,8 @@ if __name__ == "__main__":
         # Set system shutdown flag
         try:
             mark_system_shutdown(True)
-        except:
+        except Exception as e:
+            logger.debug(f"Error marking system shutdown: {e}")
             pass
 
         # Stop the flow

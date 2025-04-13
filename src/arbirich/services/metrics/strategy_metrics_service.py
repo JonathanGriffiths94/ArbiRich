@@ -38,7 +38,7 @@ class StrategyMetricsService:
             List of created StrategyMetrics objects
         """
         # Get all active strategies
-        strategies = self.db.session.query(Strategy).filter(Strategy.is_active == True).all()
+        strategies = self.db.session.query(Strategy).filter(Strategy.is_active).all()
 
         period_end = datetime.utcnow()
         period_start = period_end - timedelta(days=period_days)
@@ -177,6 +177,8 @@ class StrategyMetricsService:
             risk_reward_ratio = (
                 (avg_profit_per_trade / avg_loss_per_trade) if avg_loss_per_trade > Decimal("0") else Decimal("0")
             )
+
+            # Calculate average volume per trade (save for use in metrics object)
             avg_volume_per_trade = total_volume / Decimal(str(total_trades)) if total_trades > 0 else Decimal("0")
 
             # Calculate max drawdown (simplified)

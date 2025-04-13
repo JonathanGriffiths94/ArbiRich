@@ -676,6 +676,7 @@ class TradingService:
     async def _create_strategy(self, strategy_id: str, strategy_name: str, config: Dict[str, Any]) -> Optional[Any]:
         """Create a strategy instance based on configuration"""
         try:
+            from arbirich.core.trading.strategy.types.vwap import VWAPArbitrage
             from src.arbirich.core.trading.strategy.types.basic import BasicArbitrage
             from src.arbirich.core.trading.strategy.types.mid_price import MidPriceArbitrage
 
@@ -692,6 +693,9 @@ class TradingService:
             elif strategy_type == "mid_price":
                 validated_config = MidPriceStrategyConfig(**config).model_dump()
                 return MidPriceArbitrage(strategy_id=strategy_id, name=strategy_name, config=validated_config)
+            elif strategy_type == "vwap":
+                validated_config = MidPriceStrategyConfig(**config).model_dump()  # Reuse this config model for now
+                return VWAPArbitrage(strategy_id=strategy_id, name=strategy_name, config=validated_config)
             else:
                 self.logger.warning(f"Unknown strategy type: {strategy_type}")
                 return None

@@ -193,6 +193,16 @@
                     <span class="text-gray-400">Max Exposure per Asset</span>
                     <span>{{ strategy.risk_profile.max_exposure_per_asset_percentage|default(20) }}%</span>
                 </div>
+                {% if strategy.strategy_type.name == "vwap" %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Liquidity Factor</span>
+                        <span>{{ strategy.additional_info.liquidity_factor|default(0.8) }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Depth Scaling</span>
+                        <span>{{ "Enabled" if strategy.additional_info.depth_scaling|default(True) else "Disabled" }}</span>
+                    </div>
+                {% endif %}
             </div>
         </div>
         <!-- Execution Settings -->

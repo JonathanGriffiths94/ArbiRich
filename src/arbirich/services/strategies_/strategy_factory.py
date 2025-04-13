@@ -3,11 +3,11 @@ import logging
 import pkgutil
 from typing import Dict
 
+from arbirich.core.trading.strategy.types.vwap import VWAPArbitrage
 from src.arbirich.config.config import STRATEGIES
 from src.arbirich.core.trading.strategy.base import ArbitrageStrategy
 from src.arbirich.core.trading.strategy.types.basic import BasicArbitrage
 from src.arbirich.core.trading.strategy.types.mid_price import MidPriceArbitrage
-from src.arbirich.core.trading.strategy.types.volume_adjusted import VolumeAdjustedArbitrage
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 STRATEGY_CLASSES = {
     "basic": BasicArbitrage,
     "mid_price": MidPriceArbitrage,
-    "volume_adjusted": VolumeAdjustedArbitrage,
+    "volume_adjusted": VWAPArbitrage,
 }
 
 # Cache of initialized strategy instances
@@ -84,9 +84,7 @@ def discover_strategies() -> None:
         if not is_pkg and name not in ("base_strategy", "strategy_factory"):
             try:
                 # Import the module
-                module = importlib.import_module(f"src.arbirich.services.strategies.{name}")
+                importlib.import_module(f"src.arbirich.services.strategies.{name}")
                 logger.debug(f"Imported strategy module: {name}")
-
-                # Strategy classes should register themselves or be registered here
             except Exception as e:
                 logger.error(f"Error importing strategy module {name}: {e}")

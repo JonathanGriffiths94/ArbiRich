@@ -117,7 +117,7 @@ def build_execution_flow(strategy_name=None, debug_mode=False):
 
     formatted_stream = op.map("format_execution", filtered_stream, format_execution)
 
-    # Add output
+    # Add output using positional arguments instead of named parameters
     op.output("exec_result", formatted_stream, StdOutSink())
 
     logger.info(f"Execution flow {flow_id} built successfully")
@@ -152,27 +152,6 @@ async def stop_execution_flow_async():
     """Stop the execution flow asynchronously"""
     logger.info("Stopping execution flow asynchronously")
     return await flow_manager.stop_flow_async()
-
-
-# Support functions for the execution flow
-def filter_for_strategy(opportunity, strategy_name):
-    """Filter opportunities by strategy name"""
-    try:
-        # Check strategy field in the opportunity
-        if not opportunity:
-            return False
-
-        opp_strategy = opportunity.get("strategy")
-
-        # If the opportunity has no strategy, allow it to pass through
-        if not opp_strategy:
-            return True
-
-        # Otherwise only let matching strategies through
-        return opp_strategy == strategy_name
-    except Exception as e:
-        logger.error(f"Error in filter_for_strategy: {e}")
-        return False
 
 
 # For CLI usage

@@ -13,7 +13,7 @@ from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_sink impo
 from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import MultiExchangeSource
 from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
 from src.arbirich.services.exchange_processors.registry import register_all_processors
-from src.arbirich.services.redis.redis_service import RedisService
+from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -25,7 +25,7 @@ _redis_client = None
 def get_redis_client():
     global _redis_client
     if _redis_client is None:
-        _redis_client = RedisService()
+        _redis_client = get_shared_redis_client()
     return _redis_client
 
 
@@ -60,7 +60,7 @@ flow_manager = BytewaxFlowManager("ingestion")
 _current_exchanges_and_pairs = None
 
 
-def build_ingestion_flow(exchange=None, trading_pair=None):
+def build_ingestion_flow(exchange=None, trading_pair=None, debug_mode=False):
     """
     Build the ingestion flow for a specific exchange and trading pair.
 

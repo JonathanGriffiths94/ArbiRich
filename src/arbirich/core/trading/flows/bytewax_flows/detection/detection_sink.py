@@ -18,9 +18,9 @@ _redis_service = None
 def get_redis_service():
     global _redis_service
     if _redis_service is None:
-        from src.arbirich.services.redis.redis_service import RedisService
+        from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
-        _redis_service = RedisService()
+        _redis_service = get_shared_redis_client()
     return _redis_service
 
 

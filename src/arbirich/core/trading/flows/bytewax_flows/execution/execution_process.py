@@ -1,10 +1,11 @@
+import json
 import logging
 import time
 import uuid
 from typing import Dict, Optional
 
+from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL
 from src.arbirich.models.models import TradeExecution
-from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.redis.redis_channel_manager import RedisChannelManager
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
@@ -119,28 +120,39 @@ def execute_trade(opportunity) -> Optional[Dict]:
 
         logger.info(f"Created execution record with ID: {execution.id}")
 
-        # Save execution to database
-        try:
-            with DatabaseService() as db:
-                saved_execution = db.create_trade_execution(execution)
-                logger.info(f"Successfully saved execution {execution.id} to database")
-        except Exception as db_error:
-            logger.error(f"Database error saving execution: {db_error}", exc_info=True)
-            return None
-
         # Publish execution to Redis
         try:
             redis = get_redis()
             channel_manager = RedisChannelManager(redis)
+
+            # Publish to both generic and strategy-specific channels
             subscribers = channel_manager.publish_execution(execution)
+
+            # Directly publish to the main trade executions channel as a fallback
+            if subscribers == 0:
+                logger.warning("No subscribers found via channel manager, publishing directly")
+                data = execution.model_dump() if hasattr(execution, "model_dump") else execution.dict()
+                json_data = json.dumps(data)
+
+                # Get the channel from constants or use a default
+                channel = TRADE_EXECUTIONS_CHANNEL
+                direct_subscribers = redis.client.publish(channel, json_data)
+
+                # Also publish to strategy-specific channel
+                strategy_channel = f"{channel}:{strategy}"
+                strategy_subscribers = redis.client.publish(strategy_channel, json_data)
+
+                logger.info(
+                    f"Direct publish: {direct_subscribers + strategy_subscribers} subscribers ({direct_subscribers} main, {strategy_subscribers} strategy)"
+                )
+                subscribers = direct_subscribers + strategy_subscribers
+
             logger.info(f"Published execution to {subscribers} subscribers")
         except Exception as redis_error:
             logger.error(f"Redis error publishing execution: {redis_error}", exc_info=True)
-            # Don't return None here - we already saved to DB
 
-        # Return the execution
         logger.info(f"Trade execution complete: {execution.id}")
-        return execution.model_dump()
+        return execution.model_dump() if hasattr(execution, "model_dump") else execution.dict()
 
     except Exception as e:
         logger.error(f"Error executing trade: {e}", exc_info=True)

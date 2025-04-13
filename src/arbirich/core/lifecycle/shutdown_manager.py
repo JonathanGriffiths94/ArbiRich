@@ -100,7 +100,6 @@ def kill_bytewax_processes_aggressive() -> int:
 
         # Then use psutil for a more programmatic approach
         logger.info("Looking for Bytewax processes using psutil...")
-        current_process = psutil.Process()
 
         # Get all processes
         for proc in psutil.process_iter(["pid", "name", "cmdline"]):

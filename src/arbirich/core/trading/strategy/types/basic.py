@@ -25,25 +25,14 @@ class BasicArbitrage(ArbitrageType):
             strategy_name: Human-readable name of the strategy
             config: Configuration dictionary
         """
-        # Handle both constructor styles for backward compatibility
-        if strategy_name is not None and config is not None:
-            # New style constructor with separate parameters
-            self.id = strategy_id
-            self.name = strategy_name
-            super().__init__(config)
-        else:
-            # Old style constructor where first param is name or config
-            if isinstance(strategy_id, dict):
-                config = strategy_id
-                self.name = config.get("name", "basic_arbitrage")
-                self.id = str(self.name)
-                super().__init__(config)
-            else:
-                self.name = strategy_id or "basic_arbitrage"
-                self.id = str(self.name)
-                super().__init__(config or {})
+        self.id = strategy_id
+        self.name = strategy_name
+        super().__init__(config)
 
         self.threshold = self.config.get("threshold", 0.001)  # Default 0.1%
+
+        # Initialize the execution method
+        self._initialize_execution_method()
 
     def detect_opportunities(self, state: OrderBookState) -> Dict[str, TradeOpportunity]:
         """

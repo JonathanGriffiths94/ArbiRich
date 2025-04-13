@@ -10,9 +10,9 @@ from .arbitrage_type import ArbitrageType
 logger = logging.getLogger(__name__)
 
 
-class VolumeAdjustedArbitrage(ArbitrageType):
+class VWAPArbitrage(ArbitrageType):
     """
-    Volume-adjusted arbitrage strategy that accounts for order book depth
+    Volume-Weighted Average Price (VWAP) arbitrage strategy
 
     This strategy calculates weighted average prices based on order book depth
     to find opportunities with sufficient liquidity for actual execution.
@@ -20,7 +20,7 @@ class VolumeAdjustedArbitrage(ArbitrageType):
 
     def __init__(self, strategy_id=None, strategy_name=None, config=None):
         """
-        Initialize the volume-adjusted arbitrage strategy.
+        Initialize the VWAP arbitrage strategy.
 
         Args:
             strategy_id: Unique identifier for this strategy instance
@@ -37,11 +37,11 @@ class VolumeAdjustedArbitrage(ArbitrageType):
             # Old style constructor where first param is name or config
             if isinstance(strategy_id, dict):
                 config = strategy_id
-                self.name = config.get("name", "volume_adjusted_arbitrage")
+                self.name = config.get("name", "vwap_arbitrage")
                 self.id = str(self.name)
                 super().__init__(config)
             else:
-                self.name = strategy_id or "volume_adjusted_arbitrage"
+                self.name = strategy_id or "vwap_arbitrage"
                 self.id = str(self.name)
                 super().__init__(config or {})
 
@@ -51,7 +51,7 @@ class VolumeAdjustedArbitrage(ArbitrageType):
 
     def detect_opportunities(self, state: OrderBookState) -> Dict[str, TradeOpportunity]:
         """
-        Detect volume-adjusted arbitrage opportunities across all symbols
+        Detect VWAP arbitrage opportunities across all symbols
 
         Args:
             state: Current order book state across exchanges
@@ -71,7 +71,7 @@ class VolumeAdjustedArbitrage(ArbitrageType):
 
     def detect_arbitrage(self, asset: str, state: OrderBookState) -> Optional[TradeOpportunity]:
         """
-        Detect volume-adjusted arbitrage opportunities accounting for liquidity depth.
+        Detect VWAP arbitrage opportunities accounting for liquidity depth.
 
         Parameters:
             asset: The asset symbol (e.g., 'BTC-USDT')
@@ -80,7 +80,7 @@ class VolumeAdjustedArbitrage(ArbitrageType):
         Returns:
             TradeOpportunity object if an opportunity is found, None otherwise
         """
-        logger.debug(f"Checking volume-adjusted arbitrage for {asset} with threshold {self.threshold:.6f}")
+        logger.debug(f"Checking VWAP arbitrage for {asset} with threshold {self.threshold:.6f}")
 
         if asset not in state.symbols:
             return None
@@ -177,7 +177,7 @@ class VolumeAdjustedArbitrage(ArbitrageType):
             best_opp = max(opportunities, key=lambda x: x["spread"])
 
             logger.info(
-                f"Found volume-adjusted arbitrage opportunity for {asset}: "
+                f"Found VWAP arbitrage opportunity for {asset}: "
                 f"Buy from {best_opp['buy_exchange']} at {best_opp['buy_price']}, "
                 f"Sell on {best_opp['sell_exchange']} at {best_opp['sell_price']}, "
                 f"Spread: {best_opp['spread']:.4%}, Volume: {best_opp['volume']}"

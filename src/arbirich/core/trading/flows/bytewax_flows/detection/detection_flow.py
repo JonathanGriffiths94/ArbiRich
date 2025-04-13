@@ -3,28 +3,32 @@ import signal
 import sys
 import time
 
-from bytewax import operators as op
-from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
+from bytewax.operators import (
+    filter_map,
+    inspect,
+    key_on,
+    stateful_map,
+)
+from bytewax.operators import (
+    input as op_input,
+)
 
 from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_process import (
     detect_arbitrage,
+    format_opportunity,
     key_by_asset,
     update_asset_state,
 )
-from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_sink import (
-    debounce_opportunity,
-    publish_trade_opportunity,
-)
-from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import use_redis_opportunity_source
+from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_sink import publish_trade_opportunity
+from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import RedisOrderBookSource
 from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
-from src.arbirich.services.redis.redis_service import RedisService
-from src.arbirich.utils.strategy_manager import StrategyManager
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-redis_client = RedisService()
+# Global state dictionary to persist state between flow runs
+_global_asset_states = {}
 
 # Create the flow manager for detection
 flow_manager = BytewaxFlowManager.get_or_create("detection")
@@ -34,116 +38,91 @@ _current_strategy_name = None
 _current_debug_mode = False
 
 
-def build_detection_flow(strategy_name=None, debug_mode=False):
+def build_detection_flow(strategy_name: str, debug_mode: bool = False, threshold: float = 0.001) -> Dataflow:
     """
-    Build the detection flow for the specified strategy.
+    Create a dataflow for detecting arbitrage opportunities.
 
     Args:
-        strategy_name (str): Name of the strategy to build the flow for
-        debug_mode (bool): Whether to enable debug mode with extra logging
+        strategy_name: Name of the strategy to use
+        debug_mode: Whether to enable debug logging
+        threshold: Minimum profit threshold
 
     Returns:
-        Dataflow: The configured Bytewax dataflow
+        Bytewax dataflow
     """
+    flow = Dataflow("arbitrage_detection")
 
-    logger.info(f"Building detection flow for strategy: {strategy_name}...")
-    flow = Dataflow(f"detection-{strategy_name}")  # Include strategy name in flow name
+    # Get exchange channels from configuration
+    # Default to a dictionary mapping exchange names to default "order_book" channel
+    from src.arbirich.config.config import EXCHANGES
 
-    # Get strategy-specific exchanges and channels
-    exchange_channels = StrategyManager.get_exchange_channels(strategy_name)
-    logger.info(f"Using exchanges for {strategy_name}: {list(exchange_channels.keys())}")
+    exchange_channels = {exchange: "order_book" for exchange in EXCHANGES.keys()}
 
-    # Get strategy-specific pairs
-    pairs = StrategyManager.get_pairs_for_strategy(strategy_name)
-    logger.info(f"Using trading pairs for {strategy_name}: {pairs}")
+    # Get trading pairs to monitor from strategy configuration
+    # Default to an empty list which means monitor all pairs
+    from src.arbirich.config.config import STRATEGIES
 
-    input_stream = use_redis_opportunity_source(
-        flow,
-        "redis_input",
-        exchange_channels,
-        pairs,
-        stop_event=flow_manager.stop_event,
+    pairs = STRATEGIES.get(strategy_name, {}).get("pairs", [])
+
+    # Create the detection source with required parameters
+    # Pass the flow manager's stop event to allow clean shutdown
+    source = RedisOrderBookSource(exchange_channels=exchange_channels, pairs=pairs, stop_event=flow_manager.stop_event)
+
+    # Input from Redis with properly configured source
+    inp = op_input("order_books", flow, source)
+
+    # Log input data
+    inspected = inspect("inspect_input", inp, lambda x: logger.debug(f"Received order book: {x}"))
+
+    # Group by asset
+    keyed = key_on("key_by_asset", inspected, key_by_asset)
+
+    # Update state for each asset with state persistence
+    def update_with_global_state(state, item):
+        if state is None:
+            state = {}
+        key, data = item
+        existing_state = state.get(key, None)
+        asset, new_state = update_asset_state(key, [data], existing_state)
+        state[key] = new_state
+        return (asset, new_state)
+
+    reduced = stateful_map(
+        "update_state",  # step_id
+        keyed,  # input stream
+        update_with_global_state,  # mapper function
     )
 
-    # Wrap key_by_asset with error handling
-    def safe_key_by_asset(record):
-        try:
-            result = key_by_asset(record)
-            # Extra sanity check to ensure we always return a tuple with two elements
-            if result is None or not isinstance(result, tuple) or len(result) != 2:
-                logger.error(f"key_by_asset returned invalid result: {result}")
-                # Return a placeholder that won't cause errors
-                return "error", {"exchange": "error", "symbol": "error", "timestamp": time.time()}
-            return result
-        except Exception as e:
-            logger.error(f"Error in safe_key_by_asset: {e}", exc_info=True)
-            # Return a placeholder that won't cause errors
-            return "error", {"exchange": "error", "symbol": "error", "timestamp": time.time()}
+    # Detect opportunities
+    def detect_opps(item):
+        asset, state = item
+        if asset not in state.symbols or len(state.symbols[asset]) < 2:
+            logger.info(f"Not enough exchanges for {asset}, skipping detection")
+            return None
 
-    # Group order books by trading pair
-    keyed_stream = op.map("key_by_asset", input_stream, safe_key_by_asset)
+        opportunity = detect_arbitrage(asset, state, threshold, strategy_name)
+        if opportunity:
+            if isinstance(opportunity, dict) and "strategy" not in opportunity:
+                opportunity["strategy"] = strategy_name
+            logger.info(f"Found opportunity for {asset}!")
+        return opportunity
 
-    # Filter out error placeholders
-    valid_stream = op.filter("filter_errors", keyed_stream, lambda x: x[0] != "error")
+    opportunities = filter_map("detect_opportunities", reduced, detect_opps)
 
-    asset_state_stream = op.stateful_map("asset_state", valid_stream, update_asset_state)
+    # Format opportunities
+    formatted = filter_map("format_opportunities", opportunities, format_opportunity)
 
-    # Filter not ready states
-    ready_state = op.filter("ready", asset_state_stream, lambda kv: kv[1] is not None)
+    # Publish opportunities to Redis
+    def publish_logic(state, item):
+        publish_trade_opportunity(item)
+        return state, None  # Return the unchanged state and no output
 
-    # Get threshold from strategy manager
-    threshold = StrategyManager.get_threshold(strategy_name)
-    logger.info(f"Using threshold {threshold} for strategy {strategy_name}")
-
-    # Create a detector function closure that includes the strategy name and threshold
-    def arbitrage_detector(kv):
-        # Call detect_arbitrage with the asset, state, threshold, and strategy name
-        return detect_arbitrage(kv[0], kv[1], threshold, strategy_name)
-
-    # Detect arbitrage on the state
-    arb_stream = op.map(
-        "detect_arbitrage",
-        ready_state,
-        arbitrage_detector,
+    stateful_map(
+        "publish_opportunities",  # step_id
+        formatted,  # input stream
+        publish_logic,  # logic function
     )
 
-    # Filter out None opportunities
-    arb_opportunities = op.filter("arb_filter", arb_stream, lambda x: x is not None)
-
-    # Add strategy name to the opportunity key for deduplication
-    def add_strategy_to_debounce(opportunity):
-        return debounce_opportunity(redis_client, opportunity, strategy_name=strategy_name)
-
-    debounced_opportunities = op.map(
-        "debounce_opportunity",
-        arb_opportunities,
-        add_strategy_to_debounce,
-    )
-
-    # Filter out None values from debouncer
-    final_opp = op.filter("final_filter", debounced_opportunities, lambda x: x is not None)
-
-    # Publish to Redis with strategy name in channel
-    def publish_with_strategy(opportunity):
-        # Log the opportunity here instead of sending to stdout
-        if debug_mode:
-            logger.info(f"OPPORTUNITY: {opportunity}")
-        return publish_trade_opportunity(opportunity, strategy_name=strategy_name)
-
-    redis_sync = op.map("push_trade_opportunity", final_opp, publish_with_strategy)
-
-    # Use a noop function to prevent anything from reaching output
-    def noop_formatter(item):
-        # We've already logged the item if debug_mode=True
-        # Just return a simple string to satisfy the sink's needs
-        return "processed"
-
-    filtered_output = op.map("noop_format", redis_sync, noop_formatter)
-
-    # Use standard StdOutSink without any customization to avoid the unknown sink type error
-    op.output("flow_output", filtered_output, StdOutSink())
-
-    logger.info(f"Detection flow for {strategy_name} built successfully")
     return flow
 
 
@@ -173,20 +152,16 @@ async def run_detection_flow(strategy_name="detection", debug_mode=False):
 
 def stop_detection_flow():
     """Signal the detection flow to stop synchronously"""
-    # Don't close redis_client here as it might be shared
     return flow_manager.stop_flow()
 
 
 async def stop_detection_flow_async():
     """Signal the detection flow to stop asynchronously"""
-    # Don't close redis_client here as it might be shared
     return await flow_manager.stop_flow_async()
 
 
 # For CLI usage
 if __name__ == "__main__":
-    import sys
-
     # Set up logging
     logging.basicConfig(
         level=logging.INFO,

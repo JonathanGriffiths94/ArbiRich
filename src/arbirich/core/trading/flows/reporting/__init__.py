@@ -3,7 +3,6 @@ Reporting flow components for the trading system.
 """
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

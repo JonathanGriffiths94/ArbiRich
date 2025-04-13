@@ -1,25 +1,22 @@
-import importlib
 import logging
-import pkgutil
-from typing import Dict
+from typing import Dict, Optional
 
-from src.arbirich.config.config import STRATEGIES
+from arbirich.core.trading.strategy.types.vwap import VWAPArbitrage
 from src.arbirich.core.trading.strategy.base import ArbitrageStrategy
 from src.arbirich.core.trading.strategy.types.basic import BasicArbitrage
 from src.arbirich.core.trading.strategy.types.mid_price import MidPriceArbitrage
-from src.arbirich.core.trading.strategy.types.volume_adjusted import VolumeAdjustedArbitrage
 
 logger = logging.getLogger(__name__)
 
-# Map strategy types to their implementation classes - Updated to use new classes
+# Map strategy types to their implementation classes
 STRATEGY_CLASSES = {
     "basic": BasicArbitrage,
     "mid_price": MidPriceArbitrage,
-    "volume_adjusted": VolumeAdjustedArbitrage,
+    "volume_adjusted": VWAPArbitrage,
 }
 
 # Cache of initialized strategy instances
-_strategy_instances: Dict[str, ArbitrageStrategy] = {}
+_strategy_instances = {}
 
 
 def get_strategy(strategy_name: str) -> ArbitrageStrategy:
@@ -34,9 +31,12 @@ def get_strategy(strategy_name: str) -> ArbitrageStrategy:
     """
     # Return cached instance if available
     if strategy_name in _strategy_instances:
+        logger.debug(f"Returning cached strategy instance for '{strategy_name}'")
         return _strategy_instances[strategy_name]
 
     # Get strategy config from settings
+    from src.arbirich.config.config import STRATEGIES
+
     if strategy_name not in STRATEGIES:
         raise ValueError(f"Strategy '{strategy_name}' not found in configuration")
 
@@ -52,16 +52,17 @@ def get_strategy(strategy_name: str) -> ArbitrageStrategy:
 
     strategy_class = STRATEGY_CLASSES[strategy_type]
 
-    # Create strategy instance with appropriate constructor based on the new implementation
-    if strategy_type in ["basic", "mid_price", "volume_adjusted"]:
-        # New implementations use strategy_id, name, and config parameters
+    # Create strategy instance - handle both new and old constructor styles
+    try:
+        # First try new constructor style with separate parameters
         strategy = strategy_class(
-            strategy_id=str(strategy_name),  # Use strategy name as ID
+            strategy_id=str(strategy_name),
             strategy_name=strategy_name,
             config=config,
         )
-    else:
-        # Fallback for any legacy implementations
+    except TypeError:
+        # Fall back to old constructor style if needed
+        logger.debug(f"Using legacy constructor for strategy type '{strategy_type}'")
         strategy = strategy_class(strategy_name, config)
 
     # Cache the instance
@@ -71,22 +72,42 @@ def get_strategy(strategy_name: str) -> ArbitrageStrategy:
     return strategy
 
 
-def discover_strategies() -> None:
+def create_strategy(
+    strategy_type: str, strategy_id: str, strategy_name: str, config: Dict
+) -> Optional[ArbitrageStrategy]:
     """
-    Discover and register all strategy implementations.
+    Create a new strategy instance of the specified type.
+
+    Parameters:
+        strategy_type: The type of strategy to create
+        strategy_id: Unique identifier for the strategy
+        strategy_name: Name of the strategy
+        config: Strategy configuration parameters
+
+    Returns:
+        A new strategy instance or None if the type is not recognized
     """
-    logger.info("Discovering strategy implementations...")
+    if strategy_type not in STRATEGY_CLASSES:
+        logger.error(f"Unknown strategy type: {strategy_type}")
+        return None
 
-    # Get the module path for the strategies package
-    import src.arbirich.services.strategies_ as strategies_pkg
+    strategy_class = STRATEGY_CLASSES[strategy_type]
 
-    for _, name, is_pkg in pkgutil.iter_modules(strategies_pkg.__path__):
-        if not is_pkg and name not in ("base_strategy", "strategy_factory"):
-            try:
-                # Import the module
-                module = importlib.import_module(f"src.arbirich.services.strategies.{name}")
-                logger.debug(f"Imported strategy module: {name}")
+    try:
+        # First try new constructor style
+        strategy = strategy_class(strategy_id=strategy_id, strategy_name=strategy_name, config=config)
+    except TypeError:
+        # Fall back to old constructor style if needed
+        logger.debug(f"Using legacy constructor for strategy type '{strategy_type}'")
+        # For older constructors, we'll assume the first parameter is name and second is config
+        strategy = strategy_class(strategy_name, config)
 
-                # Strategy classes should register themselves or be registered here
-            except Exception as e:
-                logger.error(f"Error importing strategy module {name}: {e}")
+    logger.info(f"Created new strategy: {strategy_name} (type: {strategy_type}, id: {strategy_id})")
+    return strategy
+
+
+def clear_cache():
+    """Clear the strategy instance cache."""
+    global _strategy_instances
+    _strategy_instances = {}
+    logger.info("Strategy instance cache cleared")

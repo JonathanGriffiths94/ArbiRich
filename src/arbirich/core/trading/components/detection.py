@@ -50,7 +50,6 @@ class DetectionComponent(Component):
                     flow_id = f"detection_{strategy_name}"
                     flow_manager = BytewaxFlowManager.get_or_create(flow_id)
 
-                    # Configure the flow builder - FIX: Use strategy_name parameter instead of strategy
                     flow_manager.build_flow = lambda strat=strategy: build_detection_flow(
                         strategy_name=strat.name, debug_mode=self.debug_mode
                     )

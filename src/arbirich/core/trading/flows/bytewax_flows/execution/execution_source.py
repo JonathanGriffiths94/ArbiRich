@@ -93,24 +93,22 @@ class RedisExecutionPartition(StatefulSourcePartition):
         # Determine which channels to subscribe to
         self.channels_to_check = []
 
+        # Import TRADE_OPPORTUNITIES_CHANNEL constant
+        from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
+
         if strategy_name:
-            # If strategy is specified, always check both the strategy-specific and main channels
+            # Only subscribe to the strategy-specific channel, no fallback
             strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
             self.channels_to_check.append(strategy_channel)
-            self.channels_to_check.append(TRADE_OPPORTUNITIES_CHANNEL)  # Also listen to main channel
-            logger.info(f"Will check strategy-specific channel: {strategy_channel} and main channel")
+            logger.info(f"Will check only strategy-specific channel: {strategy_channel}")
         else:
-            # Otherwise check all strategy channels from STRATEGIES config
+            # If no strategy specified, get all configured strategies
             from src.arbirich.config.config import STRATEGIES
 
-            for strategy in STRATEGIES.keys():
-                strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy}"
+            for strat_name in STRATEGIES.keys():
+                strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strat_name}"
                 self.channels_to_check.append(strategy_channel)
                 logger.info(f"Will check strategy channel: {strategy_channel}")
-
-            # Also check main channel as fallback
-            self.channels_to_check.append(TRADE_OPPORTUNITIES_CHANNEL)
-            logger.info(f"Will check main channel: {TRADE_OPPORTUNITIES_CHANNEL}")
 
         # Create explicit subscriptions for all channels
         self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
@@ -232,13 +230,21 @@ class RedisExecutionSource(FixedPartitionedSource):
             strategy_name: Optional filter for a specific strategy
             stop_event: Optional threading.Event for signaling source to stop
         """
+        # Don't convert None to default - keep it as is
         self.strategy_name = strategy_name
         self.stop_event = stop_event
         self.logger = logging.getLogger(__name__)
-        self.channel = TRADE_OPPORTUNITIES_CHANNEL
-        if strategy_name:
-            self.channel = f"{self.channel}:{strategy_name}"
-        self.logger.info(f"RedisExecutionSource initialized for channel: {self.channel}")
+
+        # Set up the channel to subscribe to
+        if self.strategy_name is None:
+            self.logger.error("Strategy name is None, cannot subscribe to strategy-specific channel")
+            # Provide an empty channel to avoid failures
+            self.channel = ""
+        else:
+            # For named strategies, use their specific channel
+            self.channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{self.strategy_name}"
+
+        self.logger.info(f"RedisExecutionSource initialized for channel: {self.channel or 'NONE'}")
 
         # Monitor the stop_event and propagate it to the system-wide shutdown flag
         if self.stop_event:

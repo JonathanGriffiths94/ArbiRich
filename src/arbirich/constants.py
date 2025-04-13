@@ -5,7 +5,7 @@ ORDER_BOOK_CHANNEL = "order_books"
 
 # Database table names
 EXCHANGES_TABLE = "exchanges"
-TRADING_PAIRS_TABLE = "trading_pairs"  # Using consistent naming with the schema
+TRADING_PAIRS_TABLE = "trading_pairs"
 STRATEGIES_TABLE = "strategies"
 TRADE_OPPORTUNITIES_TABLE = "trade_opportunities"
 TRADE_EXECUTIONS_TABLE = "trade_executions"

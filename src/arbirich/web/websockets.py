@@ -8,7 +8,8 @@ import redis
 from broadcaster import Broadcast
 from fastapi import WebSocket
 
-from src.arbirich.config.config import REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
+from src.arbirich.config.config import REDIS_CONFIG, REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
+from src.arbirich.constants import WEBSOCKET_CHANNELS
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.web.frontend import (
     get_dashboard_stats,
@@ -19,13 +20,8 @@ from src.arbirich.web.frontend import (
 
 logger = logging.getLogger(__name__)
 
-# Define channels to subscribe to for WebSocket updates
-WEBSOCKET_CHANNELS = [
-    "trade_opportunities",
-    "trade_executions",
-    "status_updates",
-    "broadcast",
-]
+# Define REDIS_URL using the configuration
+REDIS_URL = f"redis://{REDIS_CONFIG['host']}:{REDIS_CONFIG['port']}/{REDIS_CONFIG['db']}"
 
 
 class ConnectionManager:
@@ -94,28 +90,57 @@ async def handle_websocket_message(websocket: WebSocket, message: str):
     """Handle messages from WebSocket clients."""
     try:
         data = json.loads(message)
-        action = data.get("action")
+        message_type = data.get("type", "")
 
-        if action == "ping":
-            # Just acknowledge the ping
-            await websocket.send_text(json.dumps({"type": "pong"}))
+        if message_type == "get_dashboard_data":
+            # Send full dashboard data when requested
+            dashboard_data = await get_full_dashboard_data()
+            await websocket.send_text(json.dumps(dashboard_data))
 
-        elif action == "get_data":
-            # Send full dashboard data
-            full_data = await get_full_dashboard_data()
-            await websocket.send_text(json.dumps(full_data))
+        elif message_type == "subscribe":
+            # Handle subscription requests
+            channels = data.get("channels", [])
+
+            if channels:
+                for channel in channels:
+                    if channel in WEBSOCKET_CHANNELS:
+                        # Log subscription request
+                        logger.info(f"Client requested subscription to channel: {channel}")
+
+                        # Send confirmation
+                        await websocket.send_text(json.dumps({"type": "subscription_confirmed", "channel": channel}))
+
+        elif message_type == "ping":
+            # Simple ping/pong for connection testing
+            await websocket.send_text(json.dumps({"type": "pong", "timestamp": datetime.now().isoformat()}))
+
+        else:
+            logger.warning(f"Unknown message type: {message_type}")
+            await websocket.send_text(json.dumps({"type": "error", "message": "Unknown message type"}))
 
     except json.JSONDecodeError:
         logger.error(f"Invalid JSON received: {message}")
+        await websocket.send_text(json.dumps({"type": "error", "message": "Invalid JSON format"}))
     except Exception as e:
         logger.error(f"Error handling WebSocket message: {e}")
+        await websocket.send_text(json.dumps({"type": "error", "message": "Internal server error"}))
 
 
-async def websocket_broadcast_task(broadcast: Broadcast):
+async def websocket_broadcast_task(broadcast: Broadcast = None):
     """
     Task to listen for Redis messages and broadcast them to WebSocket clients.
+
+    Args:
+        broadcast: Optional Broadcast instance. If None, a new instance will be created.
     """
     logger.info("Starting WebSocket broadcast task")
+
+    # Create a new Broadcast instance if one wasn't provided
+    if broadcast is None:
+        broadcast = Broadcast(REDIS_URL)
+        await broadcast.connect()
+        logger.info("Created new Broadcast instance")
+
     redis_client = redis.Redis(
         host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWORD, decode_responses=False
     )
@@ -181,6 +206,9 @@ async def websocket_broadcast_task(broadcast: Broadcast):
         pubsub.unsubscribe()
         pubsub.close()
         redis_client.close()
+        # If we created our own broadcast instance, close it
+        if broadcast is not None and id(broadcast) != id(Broadcast):
+            await broadcast.disconnect()
         raise
 
     except Exception as e:

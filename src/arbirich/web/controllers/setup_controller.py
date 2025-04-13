@@ -24,7 +24,7 @@ async def setup(request: Request, db_gen: DatabaseService = Depends(get_db_servi
     """Render the initial setup page."""
     try:
         # Extract the database service from the generator
-        db = next(db_gen)
+        # db = next(db_gen)  # Unused variable
 
         # Check if setup has been completed
         setup_completed = True  # Replace with actual check using db

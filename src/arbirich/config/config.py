@@ -174,16 +174,16 @@ ALL_STRATEGIES = {
             "execution_delay": 0.2,
         },
     },
-    "volume_adjusted_arbitrage": {
-        "type": "volume_adjusted",
-        "name": "volume_adjusted_arbitrage",  # Added name field
+    "vwap_arbitrage": {
+        "type": "vwap",
+        "name": "vwap_arbitrage",  # Updated name field
         "starting_capital": 15000.0,
         "min_spread": 0.0002,  # Higher spread requirement due to depth analysis
         "threshold": 0.0002,
         "target_volume": 100.0,  # Target volume in USDT equivalent for weighted calculation
         "min_depth_percentage": 0.7,  # Minimum % of target volume that must be available
         "exchanges": ["bybit", "cryptocom"],
-        "pairs": [("AVAX", "USDT"), ("NEAR", "USDT"), ("FTM", "USDT"), ("ALGO", "USDT")],  # Updated pairs
+        "pairs": [("AVAX", "USDT"), ("NEAR", "USDT"), ("FTM", "USDT"), ("ALGO", "USDT")],
         "risk_management": {
             "max_position_size": 60.0,  # In USDT equivalent
             "max_daily_loss": 4.0,
@@ -208,7 +208,7 @@ ALL_STRATEGIES = {
 STRATEGIES = {
     "basic_arbitrage": ALL_STRATEGIES["basic_arbitrage"],
     "mid_price_arbitrage": ALL_STRATEGIES["mid_price_arbitrage"],
-    "volume_adjusted_arbitrage": ALL_STRATEGIES["volume_adjusted_arbitrage"],
+    "vwap_arbitrage": ALL_STRATEGIES["vwap_arbitrage"],
 }
 
 # Execution method configurations

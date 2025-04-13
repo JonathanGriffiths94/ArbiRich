@@ -1,10 +1,11 @@
+import json
 import logging
 import threading
 import time
 
 from arbirich.core.state.system_state import is_system_shutting_down
 from src.arbirich.config.config import EXCHANGES, PAIRS, STRATEGIES
-from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ class BackgroundSubscriber:
         self.pubsub = None
         self.thread = None
         self.running = False
-        self.channels = []
+        self.channels = set()
 
     def start(self):
         """Start the background subscriber thread"""
@@ -116,34 +117,41 @@ class BackgroundSubscriber:
         for strategy_name in STRATEGIES.keys():
             self._subscribe_channel(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}")
             self._subscribe_channel(f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}")
+            # Make sure this channel is initialized even without messages
+            logger.info(f"Subscribed to trade execution channel for {strategy_name}")
 
-        # # Subscribe to pair-specific channels
-        # for base, quote in PAIRS:
-        #     symbol = f"{base}-{quote}"
-        #     # Subscribe to pair-exchange combinations
-        #     for exchange in EXCHANGES:
-        #         self._subscribe_channel(f"order_book:{exchange}:{symbol}")
-
-        from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_sink import get_order_book_channel
+        # Subscribe to exchange-specific order book channels
 
         # Subscribe to exchange-pair combinations with consistent format
         for exchange in EXCHANGES:
+            # First subscribe to exchange-level channel
+            self._subscribe_channel(f"{ORDER_BOOK_CHANNEL}:{exchange}")
+            logger.info(f"Subscribed to order book channel for {exchange}")
+
+            # Then subscribe to specific pair channels
             for base, quote in PAIRS:
                 symbol = f"{base}-{quote}"
-
-                channel = get_order_book_channel(exchange, symbol)
+                channel = f"{ORDER_BOOK_CHANNEL}:{exchange}:{symbol}"
                 self._subscribe_channel(channel)
+                logger.info(f"Subscribed to order book channel for {exchange}:{symbol}")
 
         logger.info(f"Background subscriber listening on {len(self.channels)} channels")
 
     def _subscribe_channel(self, channel):
-        """Subscribe to a specific channel and log it"""
+        """Subscribe to a Redis channel with error handling"""
         try:
-            self.pubsub.subscribe(channel)
-            self.channels.append(channel)
-            logger.info(f"Subscribed to {channel}")
+            # Use existing method, but add more robust error handling
+            if channel not in self.channels:
+                self.pubsub.subscribe(channel)
+                self.channels.add(channel)
+                logger.info(f"Subscribed to channel: {channel}")
+
+            # Also publish a test message to ensure channel appears in Redis
+            if channel.startswith(TRADE_EXECUTIONS_CHANNEL):
+                # Send a test heartbeat message to initialize execution channels
+                self.redis.publish(channel, json.dumps({"type": "heartbeat", "timestamp": time.time()}))
         except Exception as e:
-            logger.error(f"Error subscribing to {channel}: {e}")
+            logger.error(f"Error subscribing to channel {channel}: {e}")
 
 
 # Singleton instance

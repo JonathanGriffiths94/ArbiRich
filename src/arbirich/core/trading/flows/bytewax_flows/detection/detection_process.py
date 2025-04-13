@@ -2,7 +2,6 @@ import logging
 import time
 from typing import Dict, Optional, Tuple
 
-# Update import path to point to the correct strategy factory location
 from src.arbirich.core.trading.strategy.strategy_factory import get_strategy
 from src.arbirich.models.models import (
     OrderBookState,
@@ -115,10 +114,19 @@ def update_asset_state(key: str, records: list, state: Dict = None) -> Tuple[str
     logger.info(f"Processing update_asset_state with key: {key}, records count: {len(records) if records else 0}")
 
     if state is None:
-        logger.info("Creating new OrderBookState")
+        logger.info("Creating new OrderBookState (empty state)")
         state = OrderBookState()
     else:
-        logger.info(f"Using existing state with {len(state.symbols)} symbols")
+        # Detailed logging of initial state
+        logger.info(f"INITIAL STATE: Contains {len(state.symbols)} symbols")
+        for symbol, exchanges in state.symbols.items():
+            logger.info(f"  • Symbol {symbol} has {len(exchanges)} exchanges: {list(exchanges.keys())}")
+            # Log details about each exchange's order book
+            for exch, book in exchanges.items():
+                bid_count = len(book.bids) if hasattr(book, "bids") else 0
+                ask_count = len(book.asks) if hasattr(book, "asks") else 0
+                timestamp = getattr(book, "timestamp", "unknown")
+                logger.debug(f"    → {exch}: {bid_count} bids, {ask_count} asks, ts: {timestamp}")
 
     # Return early if no records - don't error out
     if not records:
@@ -149,6 +157,15 @@ def update_asset_state(key: str, records: list, state: Dict = None) -> Tuple[str
                     logger.error(f"Data content: {new_data}")
                     continue
 
+            # Log existing data for this exchange if it exists
+            if asset in state.symbols and exchange in state.symbols[asset]:
+                existing_book = state.symbols[asset][exchange]
+                bid_count = len(existing_book.bids) if hasattr(existing_book, "bids") else 0
+                ask_count = len(existing_book.asks) if hasattr(existing_book, "asks") else 0
+                logger.info(f"BEFORE UPDATE: {exchange}:{asset} has {bid_count} bids, {ask_count} asks")
+            else:
+                logger.info(f"BEFORE UPDATE: No existing data for {exchange}:{asset}")
+
             # Extract symbol from order book and use it as the asset key if available
             extracted_symbol = getattr(order_book, "symbol", None)
 
@@ -170,12 +187,15 @@ def update_asset_state(key: str, records: list, state: Dict = None) -> Tuple[str
 
             # Initialize the nested state for this asset if it doesn't exist
             if asset not in state.symbols:
-                logger.info(f"Initializing state for asset: {asset}")
+                logger.info(f"Initializing NEW state for asset: {asset}")
                 state.symbols[asset] = {}
+
+            # Log what exchanges currently exist for this asset
+            logger.info(f"CURRENT EXCHANGES for {asset}: {list(state.symbols[asset].keys())}")
 
             # Initialize the sub-state for this exchange if it doesn't exist
             if exchange not in state.symbols[asset]:
-                logger.info(f"Initializing state for exchange: {exchange} in asset: {asset}")
+                logger.info(f"Initializing NEW state for exchange: {exchange} in asset: {asset}")
                 # Make sure we always provide a valid symbol string
                 state.symbols[asset][exchange] = OrderBookUpdate(
                     exchange=exchange,
@@ -188,6 +208,11 @@ def update_asset_state(key: str, records: list, state: Dict = None) -> Tuple[str
             # Update the exchange-specific order book for the asset
             try:
                 logger.info(f"Updating order book data for {exchange}:{asset}")
+                # Log the new data being added
+                bid_count = len(order_book.bids) if hasattr(order_book, "bids") else 0
+                ask_count = len(order_book.asks) if hasattr(order_book, "asks") else 0
+                logger.info(f"ADDING: {exchange}:{asset} with {bid_count} bids, {ask_count} asks")
+
                 state.symbols[asset][exchange].bids = order_book.bids
                 state.symbols[asset][exchange].asks = order_book.asks
                 state.symbols[asset][exchange].timestamp = order_book.timestamp
@@ -204,6 +229,17 @@ def update_asset_state(key: str, records: list, state: Dict = None) -> Tuple[str
                     timestamp=getattr(order_book, "timestamp", time.time()),
                 )
 
+            # Log state after this update
+            if asset in state.symbols:
+                logger.info(
+                    f"AFTER UPDATE: Asset {asset} now has {len(state.symbols[asset])} exchanges: {list(state.symbols[asset].keys())}"
+                )
+                # Log the first few bid/ask entries if any
+                for ex, book in state.symbols[asset].items():
+                    bid_count = len(book.bids) if hasattr(book, "bids") else 0
+                    ask_count = len(book.asks) if hasattr(book, "asks") else 0
+                    logger.debug(f"  → {ex}: {bid_count} bids, {ask_count} asks")
+
     except Exception as e:
         logger.error(f"Error in update_asset_state: {e}", exc_info=True)
         return asset, state  # Return asset instead of key
@@ -212,11 +248,11 @@ def update_asset_state(key: str, records: list, state: Dict = None) -> Tuple[str
     try:
         assets_count = len(state.symbols)
         exchanges_count = sum(len(exchanges) for exchanges in state.symbols.values())
-        logger.info(f"Final state has {assets_count} assets and {exchanges_count} total exchange entries")
+        logger.info(f"FINAL STATE: Has {assets_count} assets and {exchanges_count} total exchange entries")
 
         for asset_name, exchanges in state.symbols.items():
             exchange_count = len(exchanges)
-            logger.info(f"  Asset {asset_name} has {exchange_count} exchanges")
+            logger.info(f"  • Asset {asset_name}: {exchange_count} exchanges: {list(exchanges.keys())}")
 
             # Log if we have enough exchanges for arbitrage
             if exchange_count >= 2:
@@ -228,8 +264,19 @@ def update_asset_state(key: str, records: list, state: Dict = None) -> Tuple[str
                     f"  ❌ Asset {asset_name} needs more exchanges for arbitrage detection (have {exchange_count}, need at least 2)"
                 )
 
-            for exch_name in exchanges.keys():
-                logger.info(f"    Exchange: {exch_name}")
+            # Detailed logging of what's in each exchange's order book
+            for exch_name, book in exchanges.items():
+                bid_count = len(book.bids) if hasattr(book, "bids") else 0
+                ask_count = len(book.asks) if hasattr(book, "asks") else 0
+                logger.info(f"    → {exch_name}: {bid_count} bids, {ask_count} asks")
+                # Log top bid/ask if available (useful for debugging spread issues)
+                if bid_count > 0 and ask_count > 0:
+                    try:
+                        top_bid = max(book.bids.items(), key=lambda x: float(x[0]))[0] if book.bids else "none"
+                        top_ask = min(book.asks.items(), key=lambda x: float(x[0]))[0] if book.asks else "none"
+                        logger.debug(f"      Top bid: {top_bid}, Top ask: {top_ask}")
+                    except Exception as e:
+                        logger.error(f"Error getting top bid/ask: {e}")
 
     except Exception as e:
         logger.error(f"Error summarizing state: {e}", exc_info=True)

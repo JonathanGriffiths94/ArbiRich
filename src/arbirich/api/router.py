@@ -1037,7 +1037,18 @@ async def get_monitor_processes():
     from src.arbirich.web.controllers.monitor_controller import get_processes
 
     try:
-        return await get_processes()
+        processes = await get_processes()
+        # Ensure each process has all required fields
+        for process in processes:
+            if "status" not in process:
+                process["status"] = "Unknown"
+            if "pid" not in process:
+                process["pid"] = "N/A"
+            if "memory_usage" not in process:
+                process["memory_usage"] = "N/A"
+            if "cpu_usage" not in process:
+                process["cpu_usage"] = "N/A"
+        return processes
     except Exception as e:
         logger.error(f"Error retrieving process data: {e}")
         # Return a useful error response
@@ -1051,7 +1062,12 @@ async def get_monitor_exchanges(db_gen: DatabaseService = Depends(get_db)):
 
     # Extract the database service from the generator
     db = next(db_gen)
-    return await get_exchange_status(db)
+    try:
+        exchanges = await get_exchange_status(db)
+        return exchanges
+    except Exception as e:
+        logger.error(f"Error retrieving exchange status: {e}")
+        return [{"name": "Error loading exchange status", "status": "Error"}]
 
 
 @monitor_api_router.get("/activity")
@@ -1059,7 +1075,11 @@ async def get_monitor_activity():
     """Get trading activity monitoring data."""
     from src.arbirich.web.controllers.monitor_controller import get_trading_activity
 
-    return await get_trading_activity()
+    try:
+        return await get_trading_activity()
+    except Exception as e:
+        logger.error(f"Error retrieving trading activity data: {e}")
+        return {"error": str(e)}
 
 
 @monitor_api_router.get("/trading-activity")

@@ -271,7 +271,8 @@ async def recalculate_strategy_metrics(
         start_date = end_date - timedelta(days=period_days)
 
         try:
-            metrics = metrics_service.calculate_strategy_metrics(db.session, strategy.id, start_date, end_date)
+            # Calculate metrics but ignore the return value since we just want to trigger the calculation
+            _ = metrics_service.calculate_strategy_metrics(db.session, strategy.id, start_date, end_date)
             logger.info(f"Metrics recalculated for {strategy_name}, period: {period_days} days")
 
             # Redirect to metrics page

@@ -1,8 +1,6 @@
 import asyncio
 from typing import Any, Dict, List
 
-from src.arbirich.services.database.database_service import DatabaseService
-
 from .base import Component
 
 
@@ -17,54 +15,87 @@ class IngestionComponent(Component):
     def __init__(self, name: str, config: Dict[str, Any]):
         super().__init__(name, config)
         self.update_interval = config.get("update_interval", 1.0)  # seconds
+        self.debug_mode = config.get("debug_mode", False)
         self.exchange_configs = config.get("exchanges", {})
         self.flow_configs = config.get("flows", {})
         self.active_flows = {}
         self.flow_managers = {}
+        self.strategies = {}
+        self.exchange_pair_mapping = {}
         self.stop_event = asyncio.Event()  # Add stop event for cleaner shutdown
 
     async def initialize(self) -> bool:
-        """Initialize Bytewax flows for data ingestion"""
+        """Initialize Bytewax flows for data ingestion based on active strategies"""
         try:
             # Updated import paths to reflect new structure
             from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_flow import build_ingestion_flow
             from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
+            from src.arbirich.services.database.database_service import DatabaseService
 
-            # Get exchange configurations
-            exchange_pairs = self._get_exchange_pairs()
+            with DatabaseService() as db_service:
+                # Get active strategies
+                active_strategies = db_service.get_active_strategies()
 
-            # Configure flows based on exchange pairs
-            for exchange, pairs in exchange_pairs.items():
-                for pair in pairs:
-                    flow_id = f"ingestion_{exchange}_{pair}"
+                if not active_strategies:
+                    self.logger.warning("No active strategies found for ingestion component")
+                    # Fall back to configuration approach
+                    exchange_pairs = self._get_exchange_pairs_from_config()
+                else:
+                    # Initialize strategies and build exchange-pair mapping
+                    for strategy in active_strategies:
+                        strategy_id = str(strategy.id)
+                        strategy_name = strategy.name
 
-                    # Get or create flow manager for this flow
-                    flow_manager = BytewaxFlowManager.get_or_create(flow_id)
+                        self.logger.info(f"Found active strategy: {strategy_name}")
 
-                    # Configure the flow builder with exchange and pair information
-                    # IMPORTANT: Using default arguments to properly capture exchange and pair values
-                    def create_flow_builder(exchange=exchange, pair=pair):
-                        def builder():
-                            self.logger.info(f"Building flow for {exchange}:{pair}")
-                            return build_ingestion_flow(exchange=exchange, trading_pair=pair)
+                        # Add strategy to the tracked strategies
+                        try:
+                            self.strategies[strategy_id] = {"id": strategy_id, "name": strategy_name, "active": True}
+                        except Exception as e:
+                            self.logger.error(f"Error tracking strategy {strategy_name}: {e}")
 
-                        return builder
+                    # Build exchange-pair mapping from active strategies
+                    exchange_pairs = self._get_exchange_pairs()
 
-                    flow_manager.set_flow_builder(create_flow_builder())
+                # Configure flows based on exchange pairs
+                for exchange, pairs in exchange_pairs.items():
+                    self.logger.info(f"Setting up ingestion for exchange {exchange} with {len(pairs)} pairs")
+                    for pair in pairs:
+                        flow_id = f"ingestion_{exchange}_{pair}"
 
-                    # Store flow manager reference
-                    self.flow_managers[flow_id] = flow_manager
+                        # Get or create flow manager for this flow
+                        flow_manager = BytewaxFlowManager.get_or_create(flow_id)
 
-                    # Store flow configuration
-                    self.active_flows[flow_id] = {"exchange": exchange, "trading_pair": pair}
+                        # Configure the flow builder
+                        def create_flow_builder(exchange=exchange, pair=pair):
+                            def builder():
+                                self.logger.info(f"Building flow for {exchange}:{pair}")
+                                return build_ingestion_flow(
+                                    exchange=exchange, trading_pair=pair, debug_mode=self.debug_mode
+                                )
 
-                    self.logger.info(f"Configured ingestion flow for {exchange}:{pair}")
+                            return builder
 
-            self.logger.info(f"Initialized {len(self.active_flows)} data ingestion flows")
-            return len(self.active_flows) > 0  # Return True only if we have flows
+                        flow_manager.set_flow_builder(create_flow_builder())
+
+                        # Store flow manager reference
+                        self.flow_managers[flow_id] = flow_manager
+
+                        # Store flow configuration
+                        self.active_flows[flow_id] = {"exchange": exchange, "trading_pair": pair}
+
+                        self.logger.info(f"Configured ingestion flow for {exchange}:{pair}")
+
+                if self.strategies:
+                    self.logger.info(f"Initialized ingestion component with {len(self.strategies)} strategies")
+                else:
+                    self.logger.warning("No strategies were successfully initialized for ingestion component")
+
+                self.logger.info(f"Initialized {len(self.active_flows)} data ingestion flows")
+                return len(self.active_flows) > 0  # Return True only if we have flows
 
         except Exception as e:
-            self.logger.error(f"Error initializing flows: {e}", exc_info=True)
+            self.logger.error(f"Error initializing ingestion component: {e}", exc_info=True)
             return False
 
     async def run(self) -> None:
@@ -154,91 +185,48 @@ class IngestionComponent(Component):
         # Always attempt to continue despite errors
         return True
 
-    def _get_exchange_pairs(self) -> Dict[str, List[str]]:
-        """Get exchanges and pairs to monitor"""
-        # Fetch active strategies to determine what to monitor
+    def _get_exchange_pairs_from_config(self) -> Dict[str, List[str]]:
+        """Get exchanges and pairs from configuration"""
         exchange_pairs = {}
 
         try:
-            with DatabaseService() as db:
-                active_strategies = db.get_active_strategies()
+            from src.arbirich.config.config import EXCHANGES, PAIRS
 
-                self.logger.info(f"Found {len(active_strategies)} active strategies")
+            for exchange in EXCHANGES:
+                exchange_pairs[exchange] = []
+                for base, quote in PAIRS:
+                    exchange_pairs[exchange].append(f"{base}-{quote}")
 
-                if not active_strategies:
-                    self.logger.warning("No active strategies found, using default config")
-                    # Only in case of truly no active strategies, use defaults
-                    from src.arbirich.config.config import EXCHANGES, PAIRS
+            self.logger.info(f"Using configured exchanges and pairs: {exchange_pairs}")
+        except Exception as e:
+            self.logger.error(f"Error getting exchanges and pairs from config: {e}")
 
-                    for exchange in EXCHANGES:
-                        exchange_pairs[exchange] = []
-                        for base, quote in PAIRS:
-                            exchange_pairs[exchange].append(f"{base}-{quote}")
-                    return exchange_pairs
+        return exchange_pairs
 
-                # Process each active strategy
-                for strategy in active_strategies:
-                    self.logger.info(f"Processing strategy: {strategy.name}")
+    def _get_exchange_pairs(self) -> Dict[str, List[str]]:
+        """Get exchanges and pairs to monitor based on active strategies"""
+        # Initialize empty exchange-pair mapping
+        exchange_pairs = {}
 
-                    # First try to get configuration from config file
-                    from src.arbirich.config.config import get_strategy_config
+        try:
+            # Process each active strategy
+            for strategy_id, strategy_info in self.strategies.items():
+                strategy_name = strategy_info["name"]
+                self.logger.info(f"Processing strategy: {strategy_name}")
 
-                    strategy_config = get_strategy_config(strategy.name)
+                # First try to get configuration from config file
+                from src.arbirich.config.config import get_strategy_config
 
-                    if strategy_config:
-                        # Get exchanges and pairs from strategy config
-                        strategy_exchanges = strategy_config.get("exchanges", [])
-                        strategy_pairs = strategy_config.get("pairs", [])
+                strategy_config = get_strategy_config(strategy_name)
 
-                        self.logger.debug(
-                            f"Found in config file - exchanges: {strategy_exchanges}, pairs: {strategy_pairs}"
-                        )
-                    else:
-                        # If not in config, try to get from database model
-                        strategy_exchanges = []
-                        strategy_pairs = []
+                if strategy_config:
+                    # Get exchanges and pairs from strategy config
+                    strategy_exchanges = strategy_config.get("exchanges", [])
+                    strategy_pairs = strategy_config.get("pairs", [])
 
-                        # Try to get from additional_info
-                        if hasattr(strategy, "additional_info") and strategy.additional_info:
-                            # Handle both string and dict formats
-                            additional_info = strategy.additional_info
-                            if isinstance(additional_info, str):
-                                try:
-                                    import json
-
-                                    additional_info = json.loads(additional_info)
-                                except json.JSONDecodeError:
-                                    self.logger.warning(
-                                        f"Could not parse additional_info as JSON for strategy {strategy.name}"
-                                    )
-                                    additional_info = {}
-
-                            if isinstance(additional_info, dict):
-                                strategy_exchanges = additional_info.get("exchanges", [])
-                                strategy_pairs = additional_info.get("pairs", [])
-
-                                self.logger.debug(
-                                    f"Found in additional_info - exchanges: {strategy_exchanges}, pairs: {strategy_pairs}"
-                                )
-
-                    # If still no exchanges/pairs, try getting from exchange_pair_mappings
-                    if not strategy_exchanges or not strategy_pairs:
-                        if hasattr(strategy, "exchange_pair_mappings") and strategy.exchange_pair_mappings:
-                            self.logger.debug(f"Trying to get from exchange_pair_mappings for {strategy.name}")
-                            # Extract exchanges and pairs from mappings
-                            for mapping in strategy.exchange_pair_mappings:
-                                if hasattr(mapping, "exchange_name") and mapping.exchange_name:
-                                    if mapping.exchange_name not in strategy_exchanges:
-                                        strategy_exchanges.append(mapping.exchange_name)
-
-                                if hasattr(mapping, "pair_symbol") and mapping.pair_symbol:
-                                    if mapping.pair_symbol not in strategy_pairs:
-                                        strategy_pairs.append(mapping.pair_symbol)
-
-                    # Skip if no exchanges or pairs found
-                    if not strategy_exchanges or not strategy_pairs:
-                        self.logger.warning(f"No exchanges or pairs found for strategy {strategy.name}, skipping")
-                        continue
+                    self.logger.debug(
+                        f"Found in config file - exchanges: {strategy_exchanges}, pairs: {strategy_pairs}"
+                    )
 
                     # Add exchanges and pairs to collection
                     for exchange in strategy_exchanges:
@@ -256,68 +244,17 @@ class IngestionComponent(Component):
                             if pair not in exchange_pairs[exchange]:
                                 exchange_pairs[exchange].append(pair)
 
-                # Log what we found
-                self.logger.info(f"Final exchange-pair mapping for ingestion: {exchange_pairs}")
+            # Log what we found
+            self.logger.info(f"Final exchange-pair mapping for ingestion: {exchange_pairs}")
 
-                # If after all that, we still have no exchanges or pairs, use fallback
-                if not exchange_pairs:
-                    self.logger.warning("No valid exchange-pair combinations found from strategies, using fallback")
-                    from src.arbirich.config.config import STRATEGIES
+            # If we still have no exchanges or pairs, use fallback from config
+            if not exchange_pairs:
+                self.logger.warning("No valid exchange-pair combinations found from strategies, using fallback")
+                exchange_pairs = self._get_exchange_pairs_from_config()
 
-                    # Use only the active strategies from config
-                    for strategy_name, strategy_config in STRATEGIES.items():
-                        strategy_exchanges = strategy_config.get("exchanges", [])
-                        strategy_pairs = strategy_config.get("pairs", [])
-
-                        for exchange in strategy_exchanges:
-                            if exchange not in exchange_pairs:
-                                exchange_pairs[exchange] = []
-
-                            for pair in strategy_pairs:
-                                # Normalize pair format
-                                if isinstance(pair, tuple) and len(pair) == 2:
-                                    pair_str = f"{pair[0]}-{pair[1]}"
-                                elif isinstance(pair, list) and len(pair) == 2:
-                                    pair_str = f"{pair[0]}-{pair[1]}"
-                                elif isinstance(pair, str):
-                                    pair_str = pair
-                                else:
-                                    self.logger.warning(f"Skipping invalid pair format: {pair}")
-                                    continue
-
-                                if pair_str not in exchange_pairs[exchange]:
-                                    exchange_pairs[exchange].append(pair_str)
-
-                return exchange_pairs
+            return exchange_pairs
 
         except Exception as e:
             self.logger.error(f"Error getting exchange pairs: {e}", exc_info=True)
-            # Don't return empty dict - try to use STRATEGIES config as fallback
-            try:
-                from src.arbirich.config.config import STRATEGIES
-
-                for strategy_name, strategy_config in STRATEGIES.items():
-                    strategy_exchanges = strategy_config.get("exchanges", [])
-                    strategy_pairs = strategy_config.get("pairs", [])
-
-                    for exchange in strategy_exchanges:
-                        if exchange not in exchange_pairs:
-                            exchange_pairs[exchange] = []
-
-                        for pair in strategy_pairs:
-                            # Normalize pair format
-                            if isinstance(pair, tuple) and len(pair) == 2:
-                                pair_str = f"{pair[0]}-{pair[1]}"
-                            elif isinstance(pair, list) and len(pair) == 2:
-                                pair_str = f"{pair[0]}-{pair[1]}"
-                            elif isinstance(pair, str):
-                                pair_str = pair
-                            else:
-                                continue
-
-                            if pair_str not in exchange_pairs[exchange]:
-                                exchange_pairs[exchange].append(pair_str)
-            except Exception as inner_e:
-                self.logger.error(f"Error using fallback configuration: {inner_e}", exc_info=True)
-
-            return exchange_pairs
+            # Fallback to config approach
+            return self._get_exchange_pairs_from_config()

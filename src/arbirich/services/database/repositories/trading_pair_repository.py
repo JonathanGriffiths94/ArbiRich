@@ -84,7 +84,7 @@ class TradingPairRepository(BaseRepository[TradingPair]):
         """Get all active trading pairs"""
         try:
             with self.engine.begin() as conn:
-                result = conn.execute(self.table.select().where(self.table.c.is_active == True))
+                result = conn.execute(self.table.select().where(self.table.c.is_active))
                 return [TradingPair.model_validate(row._asdict()) for row in result]
         except Exception as e:
             self.logger.error(f"Error getting active pairs: {e}")
