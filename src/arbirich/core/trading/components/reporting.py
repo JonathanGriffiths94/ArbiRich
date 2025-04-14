@@ -6,6 +6,7 @@ from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES
 from src.arbirich.core.trading.components.base import Component
 from src.arbirich.core.trading.flows.flow_manager import FlowManager
 from src.arbirich.core.trading.flows.reporting.message_processor import process_redis_messages
+from src.arbirich.core.trading.flows.reporting.redis_client import safe_close_pubsub
 from src.arbirich.core.trading.flows.reporting.tasks import monitor_health, persist_data, report_performance
 from src.arbirich.models.models import Strategy
 from src.arbirich.services.database.repositories.strategy_repository import StrategyRepository
@@ -58,6 +59,7 @@ class ReportingComponent(Component):
                 {"id": f"health_{self.name}", "type": "health_monitoring"},
                 {"id": f"performance_{self.name}", "type": "performance_reporting"},
                 {"id": f"strategy_refresh_{self.name}", "type": "strategy_refresh"},
+                {"id": f"stream_processor_{self.name}", "type": "redis_stream_processor"},  # Add stream processor
             ]
 
             # Initialize the reporting flow using the imported module
@@ -76,15 +78,71 @@ class ReportingComponent(Component):
                 "active": True,
             }
 
-            # Initialize Redis connection for stream processing
-            self.redis_client, self.pubsub = await initialize_redis(self.flow_config.get("channels", []))
+            # Initialize Redis connection for stream processing with retry logic
+            max_retries = 3
+            redis_init_success = False
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    logger.info(f"Initializing Redis for reporting component (attempt {attempt}/{max_retries})")
+                    self.redis_client, self.pubsub = await initialize_redis(self.flow_config.get("channels", []))
+
+                    if self.redis_client and self.pubsub:
+                        logger.info("Successfully initialized Redis for reporting component")
+                        redis_init_success = True
+                        break
+                    else:
+                        logger.warning(f"Redis initialization returned None values (attempt {attempt}/{max_retries})")
+                        # Try alternative initialization if shared client failed
+                        if attempt == max_retries - 1:
+                            logger.info("Attempting alternative Redis initialization")
+                            try:
+                                # Import here to avoid circular imports
+                                import redis
+
+                                from src.arbirich.config.config import REDIS_CONFIG
+                                from src.arbirich.services.redis.redis_service import RedisService
+
+                                # Try direct initialization
+                                direct_redis = redis.Redis(
+                                    host=REDIS_CONFIG.get("host", "localhost"),
+                                    port=REDIS_CONFIG.get("port", 6379),
+                                    db=REDIS_CONFIG.get("db", 0),
+                                    decode_responses=True,
+                                )
+
+                                if direct_redis.ping():
+                                    # Create service wrapper
+                                    self.redis_client = RedisService()
+                                    self.redis_client.client = direct_redis
+
+                                    # Create pubsub
+                                    self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
+
+                                    # Subscribe to channels
+                                    channels = self.flow_config.get("channels", [])
+                                    for channel in channels:
+                                        self.pubsub.subscribe(channel)
+
+                                    logger.info("Successfully created direct Redis connection")
+                                    redis_init_success = True
+                                    break
+                            except Exception as direct_error:
+                                logger.error(f"Direct Redis initialization failed: {direct_error}")
+
+                except Exception as e:
+                    logger.error(f"Redis initialization error (attempt {attempt}): {e}")
+
+                # Wait before retrying
+                await asyncio.sleep(1)
+
+            # Check if initialization succeeded
+            if not redis_init_success:
+                logger.error("Failed to initialize Redis connection after multiple attempts")
+                return False
 
             # Store the current set of active channels
             self.active_channels = set(self.flow_config.get("channels", []))
-
-            if not self.redis_client or not self.pubsub:
-                logger.error("Failed to initialize Redis connection")
-                return False
 
             # Initialize timing attributes for health checks
             self._last_activity = 0
@@ -195,6 +253,9 @@ class ReportingComponent(Component):
         """Run a specific reporting task"""
         logger.info(f"Starting reporting task {task_id} of type {report_type}")
 
+        if report_type == "redis_stream_processor":
+            logger.info(f"🔄 Initializing Redis stream processor task: {task_id}")
+
         while self.active and not self.stop_event.is_set():
             try:
                 if report_type == "data_persistence":
@@ -208,12 +269,13 @@ class ReportingComponent(Component):
                     await self._refresh_active_strategies()
                 elif report_type == "redis_stream_processor":
                     # This replaces the Bytewax flow functionality
+                    logger.info("⚡ Starting Redis stream processor run")
                     await process_redis_messages(
                         self.pubsub,
                         self.redis_client,
                         self.active,
                         self.stop_event,
-                        self.flow_config.get("debug_mode", False),
+                        self.flow_config.get("debug_mode", True),  # Set debug mode to True by default
                     )
                     # This task has its own loop, so it shouldn't reach the sleep below
                     continue
@@ -330,44 +392,54 @@ class ReportingComponent(Component):
             logger.error(f"Error updating Redis subscriptions: {e}", exc_info=True)
 
     async def cleanup(self) -> None:
-        """Cancel all reporting tasks and clean up resources"""
-        logger.info("Cleaning up reporting component")
+        """Clean up resources used by the reporting component."""
+        try:
+            logger.info("Cleaning up reporting component")
 
-        # Stop the reporting flow
-        if hasattr(self, "flow_manager"):
+            # First, safely close Redis PubSub connections
             try:
-                await self.flow_manager.stop_flow_async()
-                logger.info("Stopped reporting flow")
-            except Exception as e:
-                logger.error(f"Error stopping reporting flow: {e}", exc_info=True)
-
-        # Cancel all tasks
-        for task_id, task in self.tasks.items():
-            if not task.done():
-                task.cancel()
-                logger.info(f"Cancelled reporting task: {task_id}")
-
-        # Wait for tasks to be cancelled
-        if self.tasks:
-            await asyncio.wait(list(self.tasks.values()))
-
-        # Close Redis connection
-        if hasattr(self, "pubsub") and self.pubsub:
-            try:
-                await self.pubsub.unsubscribe()
-                self.pubsub.close()
-                logger.info("Closed Redis PubSub connection")
+                await safe_close_pubsub()
             except Exception as e:
                 logger.error(f"Error closing Redis PubSub: {e}")
 
-        # Reset shared Redis client
-        reset_redis_connection()
+            # Stop the reporting flow
+            if hasattr(self, "flow_manager"):
+                try:
+                    await self.flow_manager.stop_flow_async()
+                    logger.info("Stopped reporting flow")
+                except Exception as e:
+                    logger.error(f"Error stopping reporting flow: {e}", exc_info=True)
 
-        # Clear state
-        self.tasks = {}
-        self.strategies = {}
-        self.active_channels = set()
-        self.strategy_repository = None
+            # Cancel all tasks
+            for task_id, task in self.tasks.items():
+                if not task.done():
+                    task.cancel()
+                    logger.info(f"Cancelled reporting task: {task_id}")
+
+            # Wait for tasks to be cancelled
+            if self.tasks:
+                await asyncio.wait(list(self.tasks.values()))
+
+            # Close Redis connection
+            if hasattr(self, "pubsub") and self.pubsub:
+                try:
+                    await self.pubsub.unsubscribe()
+                    self.pubsub.close()
+                    logger.info("Closed Redis PubSub connection")
+                except Exception as e:
+                    logger.error(f"Error closing Redis PubSub: {e}")
+
+            # Reset shared Redis client
+            reset_redis_connection()
+
+            # Clear state
+            self.tasks = {}
+            self.strategies = {}
+            self.active_channels = set()
+            self.strategy_repository = None
+
+        except Exception as e:
+            logger.error(f"Error cleaning up reporting component: {e}")
 
     def handle_error(self, error: Exception) -> bool:
         """Handle component errors, return True if error was handled"""

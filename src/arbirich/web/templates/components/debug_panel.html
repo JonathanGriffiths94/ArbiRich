@@ -54,6 +54,24 @@
                 <div class="text-text-dim">Waiting for logs...</div>
             </div>
         </div>
+        <!-- Add Execution Debugging Controls -->
+        <div class="p-3 bg-dark-card rounded-lg">
+            <h3 class="text-sm font-semibold text-dollar-green mb-2">Execution Debugging</h3>
+            <div class="flex items-center justify-between">
+                <span class="text-sm text-text-dim">Detailed Execution Logs:</span>
+                <label class="switch">
+                    <input type="checkbox" id="execution-debug-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="flex items-center justify-between mt-2">
+                <span class="text-sm text-text-dim">Trace Data:</span>
+                <label class="switch">
+                    <input type="checkbox" id="execution-trace-toggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+        </div>
     </div>
 </div>
 <!-- Debug Panel JavaScript -->
@@ -283,5 +301,76 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Uncomment this when backend WebSocket for logs is implemented
     // setupLogWebSocket();
+    
+    // Execution Debug Controls
+    const executionDebugToggle = document.getElementById('execution-debug-toggle');
+    const executionTraceToggle = document.getElementById('execution-trace-toggle');
+    
+    if (executionDebugToggle) {
+        // Check if execution debug is enabled in local storage
+        const executionDebugEnabled = localStorage.getItem('arbirich_execution_debug') === 'true';
+        executionDebugToggle.checked = executionDebugEnabled;
+        
+        // Update execution debug when toggle changes
+        executionDebugToggle.addEventListener('change', function() {
+            const isEnabled = this.checked;
+            localStorage.setItem('arbirich_execution_debug', isEnabled);
+            
+            // Update execution trace state based on debug state
+            if (!isEnabled && executionTraceToggle) {
+                executionTraceToggle.checked = false;
+                localStorage.setItem('arbirich_execution_trace', false);
+            }
+            
+            updateExecutionDebug();
+        });
+    }
+    
+    if (executionTraceToggle) {
+        // Check if execution trace is enabled in local storage
+        const executionTraceEnabled = localStorage.getItem('arbirich_execution_trace') === 'true';
+        executionTraceToggle.checked = executionTraceEnabled;
+        
+        // Update execution trace when toggle changes
+        executionTraceToggle.addEventListener('change', function() {
+            const isEnabled = this.checked;
+            localStorage.setItem('arbirich_execution_trace', isEnabled);
+            
+            // Ensure debug is on if trace is on
+            if (isEnabled && executionDebugToggle && !executionDebugToggle.checked) {
+                executionDebugToggle.checked = true;
+                localStorage.setItem('arbirich_execution_debug', true);
+            }
+            
+            updateExecutionDebug();
+        });
+    }
+    
+    // Update execution debug settings on server
+    function updateExecutionDebug() {
+        const debugEnabled = executionDebugToggle ? executionDebugToggle.checked : false;
+        const traceEnabled = executionTraceToggle ? executionTraceToggle.checked : false;
+        
+        fetch('/api/system/execution_debug', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                enabled: debugEnabled,
+                trace_data: traceEnabled
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            showNotification(`Execution debugging ${debugEnabled ? 'enabled' : 'disabled'}`, 'success');
+            addLogMessage(`Execution debugging ${debugEnabled ? 'enabled' : 'disabled'}`);
+            if (traceEnabled) {
+                addLogMessage('Execution data tracing enabled', 'debug');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating execution debug:', error);
+            showNotification('Failed to update execution debug', 'error');
+        });
+    }
 });
 </script>

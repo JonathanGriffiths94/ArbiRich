@@ -1,8 +1,10 @@
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
+import sqlalchemy as sa
+
 from src.arbirich.models.models import TradeExecution
-from src.arbirich.models.schema import trade_executions
+from src.arbirich.models.schema import strategies, trade_executions
 from src.arbirich.services.database.base_repository import BaseRepository
 
 
@@ -12,14 +14,61 @@ class TradeExecutionRepository(BaseRepository[TradeExecution]):
     def __init__(self, *args, **kwargs):
         super().__init__(model_class=TradeExecution, *args, **kwargs)
         self.table = trade_executions
+        self.strategies_table = strategies
+
+    def get_strategy_id_by_name(self, strategy_name: str) -> Optional[int]:
+        """
+        Look up a strategy ID by its name.
+
+        Args:
+            strategy_name: The name of the strategy
+
+        Returns:
+            The integer ID of the strategy if found, None otherwise
+        """
+        try:
+            with self.engine.begin() as conn:
+                # Query the strategies table to find the ID
+                query = sa.select(self.strategies_table.c.id).where(self.strategies_table.c.name == strategy_name)
+                result = conn.execute(query).first()
+
+                if result is None:
+                    self.logger.warning(f"Strategy with name '{strategy_name}' not found")
+                    return None
+
+                strategy_id = result[0]
+                self.logger.info(f"Found strategy ID {strategy_id} for name '{strategy_name}'")
+                return strategy_id
+        except Exception as e:
+            self.logger.error(f"Error getting strategy ID for name '{strategy_name}': {e}")
+            return None
 
     def create(self, execution: TradeExecution) -> TradeExecution:
         """Create a new trade execution"""
         try:
+            # Get strategy ID if strategy is a string name
+            strategy_id = None
+
+            if execution.strategy:
+                # If the strategy is a string, look up its ID
+                if isinstance(execution.strategy, str):
+                    strategy_id = self.get_strategy_id_by_name(execution.strategy)
+                    if strategy_id is None:
+                        self.logger.error(f"Cannot find strategy ID for '{execution.strategy}'")
+                        # Default to 1 if strategy not found (safer than failing)
+                        strategy_id = 1
+                # If it's already an integer, use it directly
+                elif isinstance(execution.strategy, int):
+                    strategy_id = execution.strategy
+                else:
+                    self.logger.error(f"Unknown strategy type: {type(execution.strategy)}")
+                    # Default to 1 if type unknown
+                    strategy_id = 1
+
             # Convert to match database column names
             db_data = {
                 "id": execution.id,
-                "strategy_id": execution.strategy,  # Map strategy -> strategy_id
+                "strategy_id": strategy_id,  # Use the resolved integer ID
                 "trading_pair_id": execution.pair,  # Map pair -> trading_pair_id
                 "buy_exchange_id": execution.buy_exchange,  # Map buy_exchange -> buy_exchange_id
                 "sell_exchange_id": execution.sell_exchange,  # Map sell_exchange -> sell_exchange_id

@@ -1116,16 +1116,86 @@ async def initialize_redis(channels=None):
             logger.error("Failed to get Redis client")
             return None, None
 
-        # Create PubSub object
-        pubsub = redis_client.client.pubsub(ignore_subscribe_messages=True)
+        # Verify the client has client attribute
+        if not hasattr(redis_client, "client") or redis_client.client is None:
+            logger.error("Redis client invalid: missing client attribute")
+            return None, None
+
+        # Test the connection
+        try:
+            if not redis_client.client.ping():
+                logger.error("Redis ping test failed")
+                return None, None
+            logger.info("Redis connection verified with ping")
+        except Exception as ping_error:
+            logger.error(f"Redis ping test failed with error: {ping_error}")
+            return None, None
+
+        # Create PubSub object with error handling
+        try:
+            pubsub = redis_client.client.pubsub(ignore_subscribe_messages=True)
+            logger.info("Created Redis pubsub client")
+        except Exception as pubsub_error:
+            logger.error(f"Failed to create pubsub client: {pubsub_error}")
+            return redis_client, None
 
         # Subscribe to channels if provided
         if channels:
+            subscription_success = True
             for channel in channels:
-                pubsub.subscribe(channel)
-            logger.info(f"Subscribed to {len(channels)} channels")
+                try:
+                    pubsub.subscribe(channel)
+                    logger.debug(f"Subscribed to channel: {channel}")
+                except Exception as channel_error:
+                    logger.error(f"Error subscribing to channel {channel}: {channel_error}")
+                    subscription_success = False
+                    # Continue with other channels
+
+            if subscription_success:
+                logger.info(f"Subscribed to {len(channels)} channels")
+            else:
+                logger.warning("Some channel subscriptions failed")
 
         return redis_client, pubsub
     except Exception as e:
         logger.error(f"Error initializing Redis: {e}")
         return None, None
+
+
+def create_direct_redis_client():
+    """
+    Create a Redis client directly (backup method when shared client fails).
+
+    Returns:
+        RedisService: A Redis service instance or None if failed
+    """
+    try:
+        # Get Redis config
+        host = REDIS_CONFIG.get("host", "localhost")
+        port = REDIS_CONFIG.get("port", 6379)
+        db = REDIS_CONFIG.get("db", 0)
+
+        logger.info(f"Creating direct Redis connection to {host}:{port}")
+
+        # Create Redis client instance
+        import redis
+
+        redis_client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
+
+        # Test the connection
+        if redis_client.ping():
+            # Wrap in a RedisService instance
+            service = RedisService()
+            service.client = redis_client
+            service.host = host
+            service.port = port
+            service.db = db
+
+            logger.info("Successfully created direct Redis connection")
+            return service
+        else:
+            logger.error("Direct Redis connection failed ping test")
+            return None
+    except Exception as e:
+        logger.error(f"Error creating direct Redis connection: {e}")
+        return None

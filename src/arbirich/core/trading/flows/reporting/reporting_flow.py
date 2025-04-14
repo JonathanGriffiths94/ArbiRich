@@ -3,15 +3,15 @@
 import asyncio
 import logging
 import signal
-import sys
 import time
 from typing import Any, Dict, Optional
 
-from src.arbirich.config.config import STRATEGIES
+from src.arbirich.config.config import REDIS_CONFIG, STRATEGIES
 from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.core.state.system_state import mark_system_shutdown
 from src.arbirich.core.trading.flows.flow_manager import FlowManager
-from src.arbirich.services.redis.redis_service import get_shared_redis_client, reset_shared_redis_client
+from src.arbirich.core.trading.flows.reporting.redis_client import reset_shared_redis_client, safe_close_pubsub
+from src.arbirich.services.redis.redis_service import RedisService, get_shared_redis_client
 
 from .tasks import monitor_health, persist_data, process_redis_messages, report_performance
 
@@ -58,18 +58,46 @@ class ReportingFlow:
             # Build channel configuration
             self.channels = self._build_channel_list()
 
-            # Initialize Redis client
-            self.redis_client = get_shared_redis_client()
+            # Initialize Redis client with retry logic
+            self.redis_client = await self._initialize_redis_client()
             if not self.redis_client:
-                self.logger.error("Failed to get Redis client")
+                self.logger.error("Failed to initialize Redis client after multiple attempts")
                 return False
 
-            # Initialize Redis PubSub
-            self.pubsub = self.redis_client.pubsub(ignore_subscribe_messages=True)
+            # Initialize Redis PubSub with error handling
+            try:
+                self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
+                self.logger.info("Successfully created Redis PubSub client")
+            except Exception as pubsub_error:
+                self.logger.error(f"Failed to create Redis PubSub: {pubsub_error}")
+                return False
 
-            # Subscribe to channels
-            await self.pubsub.subscribe(*self.channels)
-            self.logger.info(f"Subscribed to {len(self.channels)} Redis channels")
+            # Subscribe to channels with error handling
+            try:
+                # Subscribe to each channel individually with error handling
+                for channel in self.channels:
+                    try:
+                        self.pubsub.subscribe(channel)
+                        self.logger.debug(f"Subscribed to channel: {channel}")
+                    except Exception as channel_error:
+                        self.logger.error(f"Error subscribing to channel {channel}: {channel_error}")
+                        # Continue with other channels even if one fails
+
+                self.logger.info(f"Subscribed to {len(self.channels)} Redis channels")
+            except Exception as subscribe_error:
+                self.logger.error(f"Error during channel subscription: {subscribe_error}")
+                # Try to continue even with subscription errors
+
+            # Verify subscriptions worked
+            try:
+                active_channels = self.pubsub.channels
+                if not active_channels:
+                    self.logger.warning("No active channels after subscription attempts")
+                else:
+                    channel_count = len(active_channels)
+                    self.logger.info(f"Successfully subscribed to {channel_count} channels")
+            except Exception as verify_error:
+                self.logger.error(f"Error verifying subscriptions: {verify_error}")
 
             # Initialize timing attributes for health checks
             self._last_activity = time.time()
@@ -89,6 +117,65 @@ class ReportingFlow:
         except Exception as e:
             self.logger.error(f"Error initializing reporting flow: {e}", exc_info=True)
             return False
+
+    async def _initialize_redis_client(self, max_retries=3):
+        """Initialize Redis client with retry logic"""
+        # First try the shared client
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.logger.info(f"Attempting to get shared Redis client (attempt {attempt}/{max_retries})")
+                redis_client = get_shared_redis_client()
+
+                if redis_client and redis_client.client:
+                    # Verify the client works by trying a ping
+                    try:
+                        if redis_client.client.ping():
+                            self.logger.info("Successfully connected to Redis using shared client")
+                            return redis_client
+                        else:
+                            self.logger.warning("Redis ping returned False, client may not be functional")
+                    except Exception as ping_error:
+                        self.logger.warning(f"Error pinging Redis: {ping_error}")
+                else:
+                    self.logger.warning("Shared Redis client is None or has no client attribute")
+
+                # If we get here, the shared client didn't work, wait before retry
+                await asyncio.sleep(1)
+
+            except Exception as e:
+                self.logger.error(f"Error getting shared Redis client (attempt {attempt}): {e}")
+                await asyncio.sleep(1)
+
+        # If shared client failed, try creating our own instance
+        self.logger.info("Shared Redis client unavailable, creating direct Redis connection")
+        try:
+            # Create a direct Redis connection
+            import redis
+
+            # Get Redis config
+            host = REDIS_CONFIG.get("host", "localhost")
+            port = REDIS_CONFIG.get("port", 6379)
+            db = REDIS_CONFIG.get("db", 0)
+
+            # Create a direct Redis client
+            direct_client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
+
+            # Test the connection
+            if direct_client.ping():
+                self.logger.info(f"Successfully created direct Redis connection to {host}:{port}")
+
+                # Wrap in our RedisService class
+                redis_service = RedisService()
+                redis_service.client = direct_client
+
+                return redis_service
+            else:
+                self.logger.error("Direct Redis connection failed ping test")
+                return None
+
+        except Exception as direct_error:
+            self.logger.error(f"Failed to create direct Redis connection: {direct_error}")
+            return None
 
     def _build_channel_list(self) -> list:
         """
@@ -226,24 +313,11 @@ class ReportingFlow:
                 self.logger.error(f"Error waiting for tasks to complete: {e}")
 
         # Clean up Redis resources
-        if self.pubsub:
-            try:
-                await self.pubsub.unsubscribe()
-                self.pubsub.close()
-                self.logger.info("Closed Redis PubSub")
-            except Exception as e:
-                self.logger.error(f"Error closing Redis PubSub: {e}")
-                # If we couldn't close properly, add more aggressive cleanup
-                try:
-                    import redis
-
-                    redis.Redis().connection_pool.disconnect()
-                    self.logger.info("Force disconnected Redis connections")
-                except Exception:
-                    pass
-
-        # Reset Redis client
-        reset_shared_redis_client()
+        try:
+            await safe_close_pubsub()
+            reset_shared_redis_client()
+        except Exception as e:
+            self.logger.error(f"Error during Redis cleanup: {e}")
 
         # Use more aggressive task cleanup if needed
         still_active_tasks = [t for t in self.tasks.values() if not t.done()]
@@ -260,23 +334,51 @@ class ReportingFlow:
         return True
 
 
-def build_reporting_flow(flow_type: str = "performance", config: Optional[Dict[str, Any]] = None) -> dict:
-    """
-    Build a reporting flow configuration based on the specified type.
+def build_reporting_flow(flow_type="performance"):
+    """Build the reporting flow with the specified flow type"""
+    import redis
 
-    Args:
-        flow_type: Type of reporting flow
-        config: Optional configuration dictionary
+    from src.arbirich.config.config import STRATEGIES
+    from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+    from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
-    Returns:
-        A flow configuration dictionary
-    """
     logger.info(f"Building reporting flow of type: {flow_type}")
 
-    # Start with the main channels
+    # Initialize Redis client with fallback to direct connection
+    redis_client = get_shared_redis_client()
+    if not redis_client:
+        logger.warning("Failed to get shared Redis client, creating direct connection")
+        try:
+            # Get Redis config
+            host = REDIS_CONFIG.get("host", "localhost")
+            port = REDIS_CONFIG.get("port", 6379)
+            db = REDIS_CONFIG.get("db", 0)
+
+            # Create direct Redis client
+            direct_client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
+
+            # Test connection
+            if direct_client.ping():
+                logger.info(f"Successfully created direct Redis connection to {host}:{port}")
+
+                # Create and use RedisService
+                redis_client = RedisService()
+                redis_client.client = direct_client
+            else:
+                logger.error("Direct Redis connection failed ping test")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to create direct Redis connection: {e}")
+            return None
+
+    if not redis_client or not hasattr(redis_client, "client"):
+        logger.error("Failed to get valid Redis client")
+        return None
+
+    # Set up channels to subscribe to
     channels = [
-        TRADE_OPPORTUNITIES_CHANNEL,
-        TRADE_EXECUTIONS_CHANNEL,
+        TRADE_OPPORTUNITIES_CHANNEL,  # Main opportunities channel
+        TRADE_EXECUTIONS_CHANNEL,  # Main executions channel
     ]
 
     # Add strategy-specific channels
@@ -284,11 +386,35 @@ def build_reporting_flow(flow_type: str = "performance", config: Optional[Dict[s
         channels.append(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}")
         channels.append(f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}")
 
-    # Build the flow configuration
-    flow = ReportingFlow(flow_type, config or {})
+    # Log channel subscriptions
+    logger.info(f"Reporting flow subscribing to {len(channels)} channels:")
+    for channel in channels:
+        logger.info(f"  - {channel}")
 
-    logger.info(f"Created reporting flow with {len(channels)} channels")
-    return flow
+    # Create PubSub and subscribe to all channels with error handling
+    try:
+        pubsub = redis_client.client.pubsub(ignore_subscribe_messages=True)
+        for channel in channels:
+            try:
+                pubsub.subscribe(channel)
+                logger.info(f"Subscribed to channel: {channel}")
+            except Exception as e:
+                logger.error(f"Error subscribing to channel {channel}: {e}")
+                # Continue with other channels
+
+        logger.info("Reporting flow subscriptions completed")
+    except Exception as e:
+        logger.error(f"Error creating pubsub: {e}")
+        return None
+
+    # Return the flow configuration
+    return {
+        "type": flow_type,
+        "redis_client": redis_client,
+        "pubsub": pubsub,
+        "channels": channels,
+        "debug_mode": True,  # Enable debug mode to see more details
+    }
 
 
 # Singleton flow instance
@@ -439,6 +565,29 @@ if __name__ == "__main__":
     # Configure logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
+    # Main async function that keeps the context alive
+    async def main():
+        # Start the flow
+        flow = await get_flow()
+        if not flow:
+            logger.error("Failed to get reporting flow, exiting")
+            return
+
+        # Start the flow
+        if not await flow.start():
+            logger.error("Failed to start reporting flow, exiting")
+            return
+
+        logger.info("Reporting flow started successfully, running indefinitely...")
+
+        try:
+            # Keep the async context alive
+            while True:
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            logger.info("Main task cancelled, shutting down gracefully...")
+            await flow.stop()
+
     # Setup signal handlers
     def handle_exit_signal(sig, frame):
         logger.info(f"Received signal {sig}, initiating shutdown...")
@@ -448,29 +597,24 @@ if __name__ == "__main__":
             mark_system_shutdown(True)
         except Exception as e:
             logger.debug(f"Error marking system shutdown: {e}")
-            pass
 
-        # Stop the flow
-        stop_flow_sync()
-
-        # Exit after a short delay
-        time.sleep(1)
-        sys.exit(0)
+        # Cancel the main task if it's running
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task():
+                task.cancel()
 
     # Register signal handlers
     signal.signal(signal.SIGINT, handle_exit_signal)
     signal.signal(signal.SIGTERM, handle_exit_signal)
 
-    # Run the flow
+    # Run the main async function
     try:
-        # Create and start the flow
-        asyncio.run(start_flow())
-
-        # Keep the main thread alive
-        while True:
-            time.sleep(1)
-
+        asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received, exiting...")
-        asyncio.run(stop_flow())
-        sys.exit(0)
+        logger.info("Keyboard interrupt received in main thread, exiting...")
+    except asyncio.CancelledError:
+        logger.info("Main task cancelled in asyncio.run")
+    finally:
+        # Ensure we call stop_flow synchronously on exit
+        stop_flow_sync()
+        logger.info("Reporting flow stopped, exiting")

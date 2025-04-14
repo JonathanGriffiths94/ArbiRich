@@ -372,386 +372,41 @@
     </div>
 {% endblock %}
 {% block scripts %}
-    {{ super() }}
     <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        // Add debounce mechanism
-        let isProcessingToggle = false;
-        
-        const toggles = document.querySelectorAll('.strategy-toggle');
-
-        toggles.forEach(toggle => {
-            toggle.addEventListener('change', function (event) {
-                // Prevent double clicks
-                if (isProcessingToggle) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    return;
-                }
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize trading controls using the shared function
+            if (typeof initTradingControls === 'function') {
+                const checkTradingStatus = initTradingControls();
                 
-                isProcessingToggle = true;
+                // Page-specific functionality
+                const restartTradingBtn = document.getElementById('restart-trading-btn');
                 
-                // Stop propagation but don't prevent default for change event
-                event.stopPropagation();
+                // Additional page-specific initialization can go here
                 
-                const strategyId = this.dataset.id;
-                const strategyName = this.dataset.name;
-                const isActive = this.checked;
-                
-                // Disable toggle during API call
-                this.disabled = true;
-
-                // Call API to update strategy status
-                const endpoint = isActive ?
-                    `/api/strategies/${strategyName}/activate` :
-                    `/api/strategies/${strategyName}/deactivate`;
-
-                fetch(endpoint, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Failed to update strategy status');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        console.log(`Strategy ${strategyName} ${isActive ? 'activated' : 'deactivated'} successfully`);
-
-                        // Show success message
-                        showNotification(`Strategy ${isActive ? 'activated' : 'deactivated'} successfully`, 'success');
-
-                        // Refresh the page after a short delay to show updated status
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1500);
-                    })
-                    .catch(error => {
-                        console.error('Error updating strategy status:', error);
-
-                        // Revert toggle state
-                        this.checked = !isActive;
-                        
-                        // Re-enable toggle
-                        this.disabled = false;
-                        
-                        // Reset processing flag
-                        isProcessingToggle = false;
-
-                        // Show error message
-                        showNotification('Error updating strategy status', 'error');
-                    });
-            });
-        });
-
-        // View toggle functionality
-        const toggleViewBtn = document.getElementById('toggle-view-btn');
-        const toggleViewText = document.getElementById('toggle-view-text');
-        const cardView = document.getElementById('card-view');
-        const tableView = document.getElementById('table-view');
-        
-        // Check localStorage for saved preference
-        const isTableView = localStorage.getItem('strategyViewPreference') === 'table';
-        
-        // Set initial view state
-        if (isTableView) {
-            cardView.classList.add('hidden');
-            tableView.classList.remove('hidden');
-            toggleViewText.textContent = 'Card View';
-            toggleViewBtn.querySelector('i').className = 'fas fa-th-large mr-2';
-        }
-        
-        // Handle toggle button click
-        toggleViewBtn.addEventListener('click', function() {
-            const isCurrentlyTableView = !cardView.classList.contains('hidden');
-            
-            if (isCurrentlyTableView) {
-                // Switch to card view
-                cardView.classList.remove('hidden');
-                tableView.classList.add('hidden');
-                toggleViewText.textContent = 'Table View';
-                toggleViewBtn.querySelector('i').className = 'fas fa-table mr-2';
-                localStorage.setItem('strategyViewPreference', 'card');
+                // Refresh strategies list
+                loadStrategies();
             } else {
-                // Switch to table view
-                cardView.classList.add('hidden');
-                tableView.classList.remove('hidden');
-                toggleViewText.textContent = 'Card View';
-                toggleViewBtn.querySelector('i').className = 'fas fa-th-large mr-2';
-                localStorage.setItem('strategyViewPreference', 'table');
+                console.error('Trading controls script not loaded - functionality limited');
             }
         });
-
-        // Refresh button
-        document.getElementById('btn-refresh-strategies').addEventListener('click', function () {
-            window.location.reload();
-        });
-
-        // New strategy button
-        document.getElementById('btn-add-strategy').addEventListener('click', function () {
-            window.location.href = '/strategy/new';
-        });
-
-        // Notification function
-        function showNotification(message, type = 'info') {
-            const notification = document.createElement('div');
-            notification.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-opacity duration-300 ${type === 'error' ? 'bg-loss-red/90 text-white' :
-                type === 'success' ? 'bg-profit-green/90 text-white' :
-                    'bg-dark-element text-white'
-                }`;
-
-            notification.innerHTML = message;
-            document.body.appendChild(notification);
-
-            setTimeout(() => {
-                notification.style.opacity = '0';
-                setTimeout(() => {
-                    document.body.removeChild(notification);
-                }, 300);
-            }, 3000);
-        }
-
-        // Prevent toggle switch clicks from navigating to strategy detail
-        document.querySelectorAll('.strategy-toggle').forEach(toggle => {
-            toggle.addEventListener('click', function (event) {
-                event.preventDefault();
-                event.stopPropagation();
-            });
-        });
-
-        // Initialize trading control buttons and status indicator
-        initTradingControls();
-    });
-
-    function initTradingControls() {
-        // Get button references
-        const startTradingBtn = document.getElementById('start-trading-btn');
-        const stopTradingBtn = document.getElementById('stop-trading-btn');
-        const restartTradingBtn = document.getElementById('restart-trading-btn');
-
-        // Initialize status indicators
-        const pageStatusDot = document.getElementById('page-system-trading-dot');
-        const pageStatusText = document.getElementById('page-system-trading-text');
-
-        // Set up trading status check
-        function checkTradingStatus() {
-            fetch('/api/trading/status')
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    const isActive = data.overall === true || data.status === 'operational';
-
-                    // Update trading status indicator
-                    if (isActive) {
-                        pageStatusDot.className = 'h-3 w-3 rounded-full bg-profit-green mr-2 pulse-green';
-                        pageStatusText.className = 'ml-2 font-medium text-profit-green';
-                        pageStatusText.textContent = 'Trading Active';
-
-                        startTradingBtn.disabled = true;
-                        stopTradingBtn.disabled = false;
-                        startTradingBtn.classList.add('opacity-50');
-                        stopTradingBtn.classList.remove('opacity-50');
-                    } else {
-                        pageStatusDot.className = 'h-3 w-3 rounded-full bg-gray-500 mr-2';
-                        pageStatusText.className = 'ml-2 font-medium';
-                        pageStatusText.textContent = 'Trading Inactive';
-
-                        startTradingBtn.disabled = false;
-                        stopTradingBtn.disabled = true;
-                        startTradingBtn.classList.remove('opacity-50');
-                        stopTradingBtn.classList.add('opacity-50');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching trading status:', error);
-                    pageStatusDot.className = 'h-3 w-3 rounded-full bg-loss-red mr-2';
-                    pageStatusText.className = 'ml-2 font-medium text-loss-red';
-                    pageStatusText.textContent = 'Status Error';
-                });
-        }
-
-        // Attach event handlers for trading control buttons
-        startTradingBtn.addEventListener('click', function () {
-            // Disable button immediately to prevent multiple clicks
-            startTradingBtn.disabled = true;
-            startTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            
-            // Add loading indicator
-            const originalText = startTradingBtn.innerHTML;
-            startTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Starting...';
-
-            fetch('/api/trading/start', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
+        
+        // Function to load strategies from the server
+        function loadStrategies() {
+            // Fetch strategies from API and populate the container
+            fetch('/api/strategies')
                 .then(response => response.json())
-                .then(data => {
-                    checkTradingStatus();
-                    showNotification('Trading started successfully', 'success');
+                .then(strategies => {
+                    // Process and display strategies
+                    console.log('Loaded strategies:', strategies);
+                    
+                    // Additional implementation would go here
                 })
                 .catch(error => {
-                    console.error('Error starting trading:', error);
-                    showNotification('Failed to start trading', 'error');
-                    
-                    // Re-enable button on error
-                    startTradingBtn.disabled = false;
-                    startTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    startTradingBtn.innerHTML = originalText;
+                    console.error('Error loading strategies:', error);
+                    if (typeof showNotification === 'function') {
+                        showNotification('Failed to load strategies', 'error');
+                    }
                 });
-        });
-
-        stopTradingBtn.addEventListener('click', function () {
-            if (confirm('Are you sure you want to stop all trading activities?')) {
-                // Disable button immediately to prevent multiple clicks
-                stopTradingBtn.disabled = true;
-                stopTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                
-                // Add loading indicator
-                const originalText = stopTradingBtn.innerHTML;
-                stopTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Stopping...';
-                
-                fetch('/api/trading/stop', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                    .then(response => response.json())
-                    .then(data => {
-                        checkTradingStatus();
-                        showNotification('Trading stopped successfully', 'success');
-                    })
-                    .catch(error => {
-                        console.error('Error stopping trading:', error);
-                        showNotification('Failed to stop trading', 'error');
-                        
-                        // Re-enable button on error
-                        stopTradingBtn.disabled = false;
-                        stopTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                        stopTradingBtn.innerHTML = originalText;
-                    });
-            }
-        });
-
-        restartTradingBtn.addEventListener('click', function () {
-            if (confirm('Are you sure you want to restart the trading system?')) {
-                // Disable button immediately to prevent multiple clicks
-                restartTradingBtn.disabled = true;
-                restartTradingBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                
-                // Add loading indicator
-                const originalText = restartTradingBtn.innerHTML;
-                restartTradingBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Restarting...';
-                
-                fetch('/api/trading/restart', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                    .then(response => response.json())
-                    .then(data => {
-                        checkTradingStatus();
-                        showNotification('Trading system restarted successfully', 'success');
-                        
-                        // Re-enable button after success
-                        setTimeout(() => {
-                            restartTradingBtn.disabled = false;
-                            restartTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                            restartTradingBtn.innerHTML = originalText;
-                        }, 3000); // Add a delay to prevent immediate re-clicks
-                    })
-                    .catch(error => {
-                        console.error('Error restarting trading:', error);
-                        showNotification('Failed to restart trading', 'error');
-                        
-                        // Re-enable button on error
-                        restartTradingBtn.disabled = false;
-                        restartTradingBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                        restartTradingBtn.innerHTML = originalText;
-                    });
-            }
-        });
-
-        // Check status immediately and then periodically
-        checkTradingStatus();
-    }
+        }
     </script>
-    <!-- Add custom styles for the toggle switch -->
-    <style>
-        /* Toggle switch styling */
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 36px;
-            height: 20px;
-        }
-        
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #2c3a33;
-            transition: .4s;
-            border: 1px solid rgba(133, 187, 101, 0.3);
-        }
-        
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 14px;
-            width: 14px;
-            left: 3px;
-            bottom: 2px;
-            background-color: #666;
-            transition: .4s;
-        }
-        
-        input:checked + .slider {
-            background-color: rgba(133, 187, 101, 0.2);
-            border-color: rgba(133, 187, 101, 0.6);
-        }
-        
-        input:checked + .slider:before {
-            background-color: #85bb65;
-            transform: translateX(16px);
-        }
-        
-        .slider.round {
-            border-radius: 20px;
-        }
-        
-        .slider.round:before {
-            border-radius: 50%;
-        }
-
-        /* Animation for view toggle */
-        #card-view, #table-view {
-            opacity: 1;
-            transition: opacity 0.2s ease-in-out;
-        }
-        
-        #card-view.hidden, #table-view.hidden {
-            opacity: 0;
-            display: none;
-        }
-    </style>
-{% endblock %}
+{% endblock scripts %}

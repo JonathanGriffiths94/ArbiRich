@@ -154,12 +154,16 @@ async def websocket_broadcast_task(broadcast: Broadcast = None):
         await broadcast.connect()
         logger.info("Created new Broadcast instance")
 
-    redis_client = redis.Redis(
-        host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWORD, decode_responses=False
-    )
-    pubsub = redis_client.pubsub()
+    redis_client = None
+    pubsub = None
 
     try:
+        # Initialize Redis connection
+        redis_client = redis.Redis(
+            host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWORD, decode_responses=False
+        )
+        pubsub = redis_client.pubsub()
+
         # Subscribe to channels
         pubsub.subscribe(*WEBSOCKET_CHANNELS)
         logger.info(f"Subscribed to channels: {WEBSOCKET_CHANNELS}")
@@ -220,8 +224,10 @@ async def websocket_broadcast_task(broadcast: Broadcast = None):
 
                 # Recreate the pubsub object
                 try:
-                    pubsub.close()
-                except Exception:
+                    if pubsub:
+                        pubsub.close()
+                except Exception as e:
+                    logger.warning(f"Error closing pubsub: {e}")  # Add explicit error handling
                     pass  # Ignore errors on close
 
                 pubsub = redis_client.pubsub()
@@ -246,15 +252,27 @@ async def websocket_broadcast_task(broadcast: Broadcast = None):
         # Ensure resources are closed when exiting the loop
         logger.info("Cleaning up WebSocket broadcast resources")
         try:
-            pubsub.unsubscribe()
-            pubsub.close()
-            redis_client.close()
-            logger.info("Redis connections closed")
+            # Only try to unsubscribe if pubsub exists and isn't None
+            if pubsub is not None:
+                try:
+                    pubsub.unsubscribe()
+                    pubsub.close()
+                    logger.info("PubSub unsubscribed and closed")
+                except Exception as e:
+                    logger.warning(f"Error closing PubSub: {e}")
+
+            # Only try to close redis_client if it exists and isn't None
+            if redis_client is not None:
+                try:
+                    redis_client.close()
+                    logger.info("Redis connection closed")
+                except Exception as e:
+                    logger.warning(f"Error closing Redis connection: {e}")
         except Exception as e:
             logger.error(f"Error closing Redis connections: {e}")
 
         # If we created our own broadcast instance, close it
-        if broadcast is not None and broadcast is not Broadcast:
+        if broadcast is not None:
             try:
                 await broadcast.disconnect()
                 logger.info("Broadcast instance disconnected")
@@ -308,65 +326,78 @@ async def broadcast_to_connections(channel: str, data: str):
         logger.error(f"Error in broadcast_to_connections: {e}", exc_info=True)
 
 
-async def process_opportunity(data, broadcast: Broadcast):
-    """Process and broadcast a trade opportunity to websocket clients."""
+async def process_opportunity(data, broadcast):
+    """Process an opportunity and broadcast it to all connected clients."""
     try:
         logger.debug("Processing opportunity data")
 
-        # Handle different input types
-        if hasattr(data, "channel") and hasattr(data, "data"):
-            # It's a message object (with channel and data attributes)
-            opportunity_data = data.data
+        # Extract opportunity data
+        opportunity_data = json.loads(data) if isinstance(data, str) else data
+
+        # Handle different data formats
+        if isinstance(opportunity_data, dict):
+            # Extract fields or use default "unknown" values if missing
+            opportunity_id = opportunity_data.get("id", "unknown")
+            symbol = opportunity_data.get("symbol", "unknown")
+            exchanges = (
+                f"{opportunity_data.get('buy_exchange', 'unknown')}/{opportunity_data.get('sell_exchange', 'unknown')}"
+            )
+            spread = opportunity_data.get("spread_percentage", 0.0)
+            spread_formatted = f"{spread:.4f}%" if isinstance(spread, (int, float)) else "0.0000%"
+
+            logger.debug(f"Processing opportunity: {opportunity_id} - {symbol} - {exchanges} - {spread_formatted}")
+
+            # Create payload
+            payload = {
+                "event": "new_opportunity",
+                "data": {
+                    "id": opportunity_id,
+                    "symbol": symbol,
+                    "exchanges": exchanges,
+                    "spread": spread_formatted,
+                    "buy_exchange": opportunity_data.get("buy_exchange", "unknown"),
+                    "sell_exchange": opportunity_data.get("sell_exchange", "unknown"),
+                    "buy_price": opportunity_data.get("buy_price", 0),
+                    "sell_price": opportunity_data.get("sell_price", 0),
+                    "timestamp": opportunity_data.get("timestamp", int(time.time() * 1000)),
+                    "volume": opportunity_data.get("volume", 0),
+                },
+            }
+
+            # Broadcast the opportunity
+            channel = "opportunities"
+            await broadcast.publish(channel=channel, message=json.dumps(payload))
+            logger.debug(f"Broadcasted opportunity: {opportunity_id} for {symbol}")
         else:
-            # It's a string or another format
-            opportunity_data = data
+            logger.warning(f"Received non-dict opportunity data: {opportunity_data}")
 
-        # If opportunity_data is a string, try to parse it
-        if isinstance(opportunity_data, str):
-            try:
-                opportunity = json.loads(opportunity_data)
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse opportunity data as JSON: {opportunity_data[:100]}...")
-                opportunity = {"raw_data": opportunity_data}
-        else:
-            opportunity = opportunity_data
-
-        # Extract key fields for better logging and display
-        opportunity_id = opportunity.get("id", "unknown")
-        pair = opportunity.get("pair", "unknown")
-        buy_exchange = opportunity.get("buy_exchange", "unknown")
-        sell_exchange = opportunity.get("sell_exchange", "unknown")
-        spread = opportunity.get("spread", 0)
-
-        # Log meaningful information about the opportunity
-        logger.debug(
-            f"Processing opportunity: {opportunity_id} - {pair} - {buy_exchange}/{sell_exchange} - {spread:.4%}"
-        )
-
-        # Prepare the message with event type and add a timestamp if not present
-        if "timestamp" not in opportunity and "opportunity_timestamp" in opportunity:
-            opportunity["timestamp"] = opportunity["opportunity_timestamp"]
-        elif "timestamp" not in opportunity:
-            opportunity["timestamp"] = time.time()
-
-        ws_message = {"event": "opportunity", "data": opportunity}
-
-        # Broadcast to all connected clients - FIXED: added required 'message' parameter name
-        await broadcast.publish(channel="trade_opportunities", message=json.dumps(ws_message))
-
-        logger.debug(f"Broadcasted opportunity: {opportunity.get('id', 'unknown')} for {pair}")
     except Exception as e:
-        logger.error(f"Error processing opportunity: {e}", exc_info=True)
+        logger.error(f"Error processing opportunity: {str(e)}")
+        logger.debug(f"Problem data: {data}")
+        import traceback
+
+        logger.debug(traceback.format_exc())
 
 
-async def process_execution(data: str, broadcast: Broadcast):
-    """Process and broadcast trade executions"""
+async def process_execution(data, broadcast):
+    """Process an execution and broadcast it to all connected clients."""
     try:
-        payload = {"type": "execution", "data": data, "timestamp": datetime.now().isoformat()}
-        # Remove the group parameter to fix the error
-        await broadcast.publish(json.dumps(payload))
+        # Extract execution data
+        execution_data = json.loads(data) if isinstance(data, str) else data
+
+        # Create payload
+        payload = {"event": "new_execution", "data": execution_data}
+
+        # Broadcast the execution
+        channel = "executions"
+        await broadcast.publish(channel=channel, message=json.dumps(payload))
+        logger.debug(f"Broadcasted execution: {execution_data.get('id', 'unknown')}")
+
     except Exception as e:
-        logger.error(f"Error processing execution: {e}", exc_info=True)
+        logger.error(f"Error processing execution: {str(e)}")
+        import traceback
+
+        logger.error(traceback.format_exc())
 
 
 async def process_status_update(data: str, broadcast: Broadcast):
@@ -392,3 +423,39 @@ async def process_channel_message(channel: str, data: str, broadcast: Broadcast)
         await broadcast.publish(json.dumps(payload))
     except Exception as e:
         logger.error(f"Error processing channel message: {e}", exc_info=True)
+
+
+async def redis_listener(app):
+    """Listen to Redis channels for opportunities and executions."""
+    redis = app.state.redis_manager
+
+    # Subscribe to the trade opportunities channel
+    pubsub = redis.client.pubsub()
+    await pubsub.subscribe("trade_opportunities")
+    await pubsub.subscribe("trade_executions")
+
+    # Listen for messages
+    while True:
+        try:
+            message = await pubsub.get_message(ignore_subscribe_messages=True)
+            if message:
+                channel = message["channel"].decode("utf-8")
+                data = message["data"]
+
+                if isinstance(data, bytes):
+                    data = data.decode("utf-8")
+
+                logger.debug(f"Received message from channel: {channel}")
+
+                if channel == "trade_opportunities":
+                    await process_opportunity(data, app.state.broadcast)
+                elif channel == "trade_executions":
+                    await process_execution(data, app.state.broadcast)
+
+        except Exception as e:
+            logger.error(f"Error in Redis listener: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+
+        await asyncio.sleep(0.01)  # Small delay to prevent CPU overuse

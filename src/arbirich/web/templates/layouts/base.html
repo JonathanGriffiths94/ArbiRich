@@ -532,6 +532,13 @@
 
                 // Setup control buttons
                 setupTradingControls();
+
+                // Add trading controls initialization if the script is loaded
+                if (typeof initTradingControls === 'function') {
+                    initTradingControls();
+                } else {
+                    console.warn('Trading controls script not loaded');
+                }
             });
 
             // Add back the trading control buttons functionality
@@ -692,6 +699,8 @@
                 }, 3000);
             }
         </script>
+        <!-- Include trading controls script -->
+        <script src="/static/js/trading_controls.js"></script>
     </head>
     <body class="min-h-screen flex flex-col">
         <!-- Mobile menu overlay -->

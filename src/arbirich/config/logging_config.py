@@ -59,6 +59,10 @@ def configure_logging(debug_mode=False, log_file=None):
     logging.getLogger("src.arbirich.core.trading.flows").setLevel(log_level)
     logging.getLogger("src.arbirich.core.trading.strategy").setLevel(log_level)
 
+    # Configure execution flow logging
+    execution_logger = logging.getLogger("src.arbirich.core.trading.execution")
+    execution_logger.setLevel(log_level)
+
     # Always keep Bytewax logging at INFO or above unless we're in debug mode
     bytewax_level = log_level if debug_mode else logging.INFO
     logging.getLogger("bytewax").setLevel(bytewax_level)

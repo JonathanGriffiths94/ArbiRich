@@ -14,6 +14,12 @@ class LogLevelConfig(BaseModel):
     level: str = "DEBUG"
 
 
+# Add new model for execution logging
+class ExecutionLogConfig(BaseModel):
+    enabled: bool = True
+    trace_data: bool = False
+
+
 @router.post("/debug")
 async def set_debug_mode(config: DebugConfig):
     """
@@ -162,3 +168,21 @@ async def restart_detection():
     except Exception as e:
         logging.error(f"Error restarting detection flow: {e}")
         raise HTTPException(status_code=500, detail=f"Error restarting detection flow: {str(e)}")
+
+
+@router.post("/execution_debug")
+async def set_execution_debug(config: ExecutionLogConfig):
+    """
+    Configure execution flow debug settings.
+    """
+    try:
+        # Import execution logger
+        from src.arbirich.utils.execution_logger import configure_execution_logging
+
+        # Configure execution logging
+        configure_execution_logging(detailed=config.enabled, trace_data=config.trace_data, performance=True)
+
+        return {"success": True, "execution_debug": config.enabled}
+    except Exception as e:
+        logging.error(f"Error setting execution debug: {e}")
+        raise HTTPException(status_code=500, detail=f"Error setting execution debug: {str(e)}")
