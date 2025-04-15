@@ -2,7 +2,7 @@
 import logging
 import time
 import uuid
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 from src.arbirich.models.enums import StrategyType
 from src.arbirich.models.models import OrderBookState, TradeOpportunity
@@ -198,25 +198,23 @@ class BasicArbitrage(ArbitrageType):
             logger.debug(f"❌ No profitable arbitrage opportunity found for {asset}")
             return None
 
-    def validate_opportunity(self, opportunity: TradeOpportunity) -> bool:
+    def validate_opportunity(self, opportunity: Union[Dict, TradeOpportunity]) -> bool:
         """Validate if the opportunity meets criteria"""
         if not opportunity:
             return False
 
-        # Check if spread is above threshold
+        # Perform validation checks
         if opportunity.spread <= self.threshold:
             return False
 
-        # Check if volume is reasonable
         if opportunity.volume <= 0:
             return False
 
-        # Check if opportunity is fresh (within last 5 seconds)
         if time.time() - opportunity.opportunity_timestamp > 5:
             return False
 
         return True
 
-    def calculate_spread(self, opportunity: TradeOpportunity) -> float:
+    def calculate_spread(self, opportunity: Union[Dict, TradeOpportunity]) -> float:
         """Calculate the spread (already calculated in the opportunity object)"""
         return opportunity.spread

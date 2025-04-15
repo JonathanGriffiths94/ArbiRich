@@ -94,6 +94,7 @@ class FlowManager:
         self.runner_thread = None
         self.stop_event = threading.Event()
         self.logger = logging.getLogger(f"arbirich.flows.{flow_id}")
+        self._flow_instances = {}  # Store specific flow instances by name
 
     def build_flow(self) -> Any:
         """Build the dataflow."""
@@ -106,6 +107,19 @@ class FlowManager:
     def set_flow_builder(self, builder_fn: Callable[[], Any]) -> None:
         """Set the flow builder function."""
         self.build_flow_fn = builder_fn
+
+    def set_flow_instance(self, name: str, flow_instance: Any) -> None:
+        """Store a specific flow instance by name."""
+        self._flow_instances[name] = flow_instance
+
+    def get_flow_instance(self, name: str) -> Any:
+        """Get a specific flow instance by name."""
+        return self._flow_instances.get(name)
+
+    @property
+    def reporting_flow(self):
+        """Get the reporting flow instance."""
+        return self.get_flow_instance("reporting")
 
     async def run_flow(self) -> bool:
         """Run the dataflow in a separate thread."""

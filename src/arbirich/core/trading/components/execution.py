@@ -127,54 +127,131 @@ class ExecutionComponent(Component):
             self.logger.error(f"Error retrieving strategy by name {strategy_name}: {e}", exc_info=True)
             return None
 
-    async def run(self) -> None:
-        """Run the execution component by starting Bytewax flows"""
-        self.logger.info(f"Running execution component for {len(self.active_flows)} flows")
+    async def _ensure_reporting_flow(self) -> bool:
+        """
+        Ensure that the reporting flow is running.
+        This is important for execution operations as they depend on reporting for metrics.
 
+        Returns:
+            bool: True if the reporting flow is running or was started successfully
+        """
         try:
-            # Ensure reporting flow is active - this helps coordinate execution actions
-            try:
-                from src.arbirich.core.trading.flows.reporting.reporting_flow import get_flow
-                from src.arbirich.core.trading.flows.reporting.reporting_flow import start_flow as start_reporting
+            # Import required modules
+            from src.arbirich.core.trading.flows.reporting.reporting_flow import get_flow
+            from src.arbirich.core.trading.flows.reporting.reporting_flow import start_flow as start_reporting_flow
 
-                reporting_flow = await get_flow()
-                if not reporting_flow or not reporting_flow.active:
-                    self.logger.info("Starting reporting flow for execution coordination")
-                    await start_reporting()
-            except Exception as e:
-                self.logger.warning(f"Could not ensure reporting flow: {e}")
+            # Try to get the current flow instance
+            reporting_flow = await get_flow()
 
-            # Start the flow for each strategy
-            for flow_id, flow_info in self.active_flows.items():
-                strategy_name = flow_info.get("strategy_name")
-                self.logger.info(f"Starting execution flow for strategy: {strategy_name}")
-                await self.flow_manager.run_flow()
-                self.logger.info(f"Started execution flow: {flow_id}")
+            # Check if the flow exists and is active
+            if reporting_flow and hasattr(reporting_flow, "active") and reporting_flow.active:
+                self.logger.info("Reporting flow is already running")
+                return True
 
-            # Monitor flow until component is stopped
-            while self.active:
-                # Check if flow is still running
-                if not self.flow_manager.is_running():
-                    self.logger.error("Execution flow stopped unexpectedly, attempting to restart")
-                    await self.flow_manager.run_flow()
+            # If not active, start the flow
+            self.logger.info("Starting reporting flow for execution operations")
+            success = await start_reporting_flow()
 
-                # Periodically check for strategy updates
-                if self.strategy_repository:
-                    self._refresh_active_strategies()
-
-                await asyncio.sleep(self.update_interval)
-
-        except asyncio.CancelledError:
-            self.logger.info("Execution component cancelled")
-            raise
+            if success:
+                self.logger.info("Reporting flow started successfully")
+                return True
+            else:
+                self.logger.warning("Failed to start reporting flow")
+                return False
 
         except Exception as e:
+            self.logger.error(f"Error ensuring reporting flow: {e}", exc_info=True)
+            # Return True to allow execution to continue even if reporting can't be started
+            return True
+
+    async def run(self) -> None:
+        """Run the execution component."""
+        try:
+            self.logger.info(f"Running execution component for {len(self.strategies)} flows")
+
+            # Check if we have any strategies configured
+            if not self.strategies:
+                self.logger.warning("No active strategies found for execution - entering idle monitoring mode")
+                # Enter wait loop instead of failing
+                while self.active:
+                    await asyncio.sleep(5.0)  # Check every 5 seconds for shutdown signal
+                    # Periodically check for new strategies
+                    await self._check_for_new_strategies()
+                return
+
+            # First ensure reporting flow is running
+            await self._ensure_reporting_flow()
+
+            # Run all flows from strategies
+            self.logger.info(f"Running execution component for {len(self.active_flows)} flows")
+
+            try:
+                # Ensure reporting flow is active - this helps coordinate execution actions
+                try:
+                    from src.arbirich.core.trading.flows.reporting.reporting_flow import get_flow
+                    from src.arbirich.core.trading.flows.reporting.reporting_flow import start_flow as start_reporting
+
+                    reporting_flow = await get_flow()
+                    if not reporting_flow or not reporting_flow.active:
+                        self.logger.info("Starting reporting flow for execution coordination")
+                        await start_reporting()
+                except Exception as e:
+                    self.logger.warning(f"Could not ensure reporting flow: {e}")
+
+                # Start the flow for each strategy
+                for flow_id, flow_info in self.active_flows.items():
+                    strategy_name = flow_info.get("strategy_name")
+                    self.logger.info(f"Starting execution flow for strategy: {strategy_name}")
+                    await self.flow_manager.run_flow()
+                    self.logger.info(f"Started execution flow: {flow_id}")
+
+                # Monitor flow until component is stopped
+                while self.active:
+                    try:
+                        # Check if flow manager exists before trying to access is_running()
+                        if self.flow_manager is not None and not self.flow_manager.is_running():
+                            self.logger.error("Execution flow stopped unexpectedly, attempting to restart")
+                            await self.flow_manager.run_flow()
+
+                        # Periodically check for strategy updates
+                        if self.strategy_repository:
+                            self._refresh_active_strategies()
+
+                        await asyncio.sleep(self.update_interval)
+                    except Exception as e:
+                        self.logger.error(f"Error monitoring execution flows: {e}", exc_info=True)
+
+            except asyncio.CancelledError:
+                self.logger.info("Execution component cancelled")
+                raise
+
+            except Exception as e:
+                if not self.handle_error(e):
+                    self.active = False
+
+        except Exception as e:
+            self.logger.error(f"Error in execution component: {e}", exc_info=True)
             if not self.handle_error(e):
                 self.active = False
-
         finally:
-            # Ensure cleanup happens
             await self.cleanup()
+
+    async def _check_for_new_strategies(self) -> bool:
+        """Check if any new strategies have been activated."""
+        try:
+            if not self.strategy_repository:
+                return False
+
+            active_strategies = self._get_active_strategies()
+            if active_strategies:
+                self.logger.info(f"Found {len(active_strategies)} newly activated strategies, reinitializing...")
+                # Initialize with the newly found strategies
+                await self.initialize()
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error checking for new strategies: {e}")
+            return False
 
     def _refresh_active_strategies(self) -> None:
         """Refresh the list of active strategies"""

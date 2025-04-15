@@ -11,6 +11,8 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
+from src.arbirich.models.enums import OrderSide, OrderType
+
 logger = logging.getLogger(__name__)
 
 # Create base class for SQLAlchemy models
@@ -263,7 +265,7 @@ class Strategy(BaseModel):
         }
 
 
-class Order(BaseModel):
+class OrderLevel(BaseModel):
     price: float
     quantity: float
 
@@ -272,33 +274,31 @@ class OrderBookUpdate(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     exchange: str
     symbol: str
-    bids: Dict[float, float] = Field(default_factory=dict)  # Changed from List[Order] to Dict[float, float]
-    asks: Dict[float, float] = Field(default_factory=dict)  # Changed from List[Order] to Dict[float, float]
+    bids: Dict[float, float] = Field(default_factory=dict)
+    asks: Dict[float, float] = Field(default_factory=dict)
     timestamp: float
-    sequence: Optional[int] = None  # Added sequence number for tracking updates
+    sequence: Optional[int] = None
 
     @computed_field
     def hash(self) -> str:
-        # Updated to work with Dict format
         bids_json = json.dumps(self.bids, sort_keys=True)
         asks_json = json.dumps(self.asks, sort_keys=True)
         combined = bids_json + asks_json
         return hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
-    # Add helper methods from the new model
-    def get_best_bid(self) -> Optional[Order]:
+    def get_best_bid(self) -> Optional[OrderLevel]:
         """Get the highest bid price and quantity"""
         if not self.bids:
             return None
         best_price = max(self.bids.keys())
-        return Order(price=best_price, quantity=self.bids[best_price])
+        return OrderLevel(price=best_price, quantity=self.bids[best_price])
 
-    def get_best_ask(self) -> Optional[Order]:
+    def get_best_ask(self) -> Optional[OrderLevel]:
         """Get the lowest ask price and quantity"""
         if not self.asks:
             return None
         best_price = min(self.asks.keys())
-        return Order(price=best_price, quantity=self.asks[best_price])
+        return OrderLevel(price=best_price, quantity=self.asks[best_price])
 
     def get_mid_price(self) -> Optional[float]:
         """Get the mid price between best bid and best ask"""
@@ -347,10 +347,10 @@ class OrderBookState(BaseModel):
 # Core domain models
 class TradeOpportunity(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    strategy: str  # Changed from strategy_id to match schema
-    pair: str  # Changed from pair_id to match schema
-    buy_exchange: str  # Changed from buy_exchange_id to match schema
-    sell_exchange: str  # Changed from sell_exchange_id to match schema
+    strategy: str
+    pair: str
+    buy_exchange: str
+    sell_exchange: str
     buy_price: float
     sell_price: float
     spread: float = Field(..., description="Difference between best ask and best bid")
@@ -392,10 +392,10 @@ class TradeOpportunity(BaseModel):
 
 class TradeExecution(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    strategy: str  # Changed from strategy_id to match schema
-    pair: str  # Changed from pair_id to match schema
-    buy_exchange: str  # Changed from buy_exchange_id to match schema
-    sell_exchange: str  # Changed from sell_exchange_id to match schema
+    strategy: str
+    pair: str
+    buy_exchange: str
+    sell_exchange: str
     executed_buy_price: float
     executed_sell_price: float
     spread: float
@@ -403,6 +403,12 @@ class TradeExecution(BaseModel):
     execution_timestamp: float
     execution_id: Optional[str] = None
     opportunity_id: Optional[str] = None
+    success: bool = False
+    partial: bool = False
+    profit: float = 0.0
+    execution_time: float = 0.0
+    error: Optional[str] = None
+    details: Optional[Dict] = None
 
     class Config:
         from_attributes = True
@@ -413,7 +419,8 @@ class TradeExecution(BaseModel):
             f"buy_exchange={self.buy_exchange}, sell_exchange={self.sell_exchange}, "
             f"executed_buy_price={self.executed_buy_price}, "
             f"executed_sell_price={self.executed_sell_price}, spread={self.spread}, "
-            f"volume={self.volume}, execution_timestamp={self.execution_timestamp})"
+            f"volume={self.volume}, execution_timestamp={self.execution_timestamp}, "
+            f"success={self.success}, profit={self.profit}, error={self.error})"
         )
 
     def to_db_dict(self) -> dict:
@@ -440,6 +447,12 @@ class TradeExecution(BaseModel):
                 "volume": self.volume,
                 "execution_timestamp": datetime.fromtimestamp(self.execution_timestamp),
                 "execution_id": self.execution_id,
+                "success": self.success,
+                "partial": self.partial,
+                "profit": self.profit,
+                "execution_time": self.execution_time,
+                "error": self.error,
+                "details": json.dumps(self.details) if self.details else None,
             }
         )
 
@@ -741,3 +754,16 @@ class StrategyExchangePairMappingDB(Base):
     strategy = relationship("StrategyDB")
     exchange = relationship("ExchangeDB")
     trading_pair = relationship("TradingPairDB")
+
+
+class TradeRequest(BaseModel):
+    """Model for trade execution requests"""
+
+    exchange: str
+    symbol: str
+    side: OrderSide
+    price: Optional[float] = None  # None for market orders
+    amount: float
+    order_type: OrderType = OrderType.LIMIT
+    strategy: str = "manual"
+    execution_id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))

@@ -31,15 +31,15 @@ def check_opportunity_exists(opportunity_id: str, db=None, retries=3) -> bool:
         opportunity = repo.get_by_id(opportunity_id)
         exists = opportunity is not None
 
-        logger.debug(f"Opportunity {opportunity_id} exists: {exists}")
+        logger.debug(f"🔍 Opportunity {opportunity_id} exists: {exists}")
         return exists
     except Exception as e:
-        logger.error(f"Error checking opportunity existence: {e}", exc_info=True)
+        logger.error(f"❌ Error checking opportunity existence: {e}", exc_info=True)
         return False
     finally:
         if close_db and db:
             db.close()
-            logger.debug("Database connection closed")
+            logger.debug("🔌 Database connection closed")
 
 
 def get_opportunity(db: DatabaseService, opportunity_id: str) -> Optional[Any]:
@@ -65,10 +65,10 @@ def get_opportunity(db: DatabaseService, opportunity_id: str) -> Optional[Any]:
 
     except ValueError as ve:
         # Invalid UUID format
-        logger.error(f"Invalid UUID format for opportunity_id: {opportunity_id} - {ve}")
+        logger.error(f"❌ Invalid UUID format for opportunity_id: {opportunity_id} - {ve}")
         return None
     except Exception as e:
-        logger.error(f"Error getting opportunity: {e}", exc_info=True)
+        logger.error(f"❌ Error getting opportunity: {e}", exc_info=True)
         return None
 
 
@@ -92,7 +92,7 @@ def get_recent_opportunities(db: DatabaseService, count: int = 10, strategy_name
         return repo.get_recent(count=count, strategy_name=strategy_name)
 
     except Exception as e:
-        logger.error(f"Error getting recent opportunities: {e}", exc_info=True)
+        logger.error(f"❌ Error getting recent opportunities: {e}", exc_info=True)
         return []
 
 
@@ -126,7 +126,7 @@ def verify_data_persistence(db: DatabaseService) -> dict:
         )
 
         logger.info(
-            f"Data persistence status: {len(recent_opportunities)} total opportunities, "
+            f"📊 Data persistence status: {len(recent_opportunities)} total opportunities, "
             f"{opportunities_last_hour} in the last hour, "
             f"{len(recent_executions)} total executions, "
             f"{executions_last_hour} in the last hour"
@@ -140,5 +140,5 @@ def verify_data_persistence(db: DatabaseService) -> dict:
             "persistence_active": True,
         }
     except Exception as e:
-        logger.error(f"Error verifying data persistence: {e}", exc_info=True)
+        logger.error(f"❌ Error verifying data persistence: {e}", exc_info=True)
         return {"error": str(e), "persistence_active": False}

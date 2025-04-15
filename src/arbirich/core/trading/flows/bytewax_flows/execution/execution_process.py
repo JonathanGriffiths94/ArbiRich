@@ -1,159 +1,75 @@
-import json
 import logging
 import time
 import uuid
-from typing import Dict, Optional
 
-from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL
-from src.arbirich.models.models import TradeExecution
-from src.arbirich.services.redis.redis_channel_manager import RedisChannelManager
-from src.arbirich.services.redis.redis_service import get_shared_redis_client
+from src.arbirich.core.trading.strategy.strategy_factory import get_strategy
+from src.arbirich.models.models import TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
-
-# Use a shared Redis service instance
-_redis_service = None
+logger.setLevel(logging.INFO)
 
 
-def get_redis():
-    """Get shared Redis service"""
-    global _redis_service
-    if _redis_service is None:
-        _redis_service = get_shared_redis_client()
-    return _redis_service
-
-
-def log_opportunity(opportunity):
+def log_opportunity(opportunity: TradeOpportunity) -> TradeOpportunity:
     """Log opportunity for debugging"""
-    try:
-        logger.info(f"OPPORTUNITY: {opportunity.get('id', 'unknown')} - {opportunity.get('pair', 'unknown')}")
-    except Exception as e:
-        logger.error(f"Error logging opportunity: {e}")
+    logger.info(f"🔎 OPPORTUNITY: {opportunity.id} - {opportunity.pair}")
     return opportunity
 
 
-def filter_for_strategy(opportunity, strategy_name):
+def filter_for_strategy(opportunity: TradeOpportunity, strategy_name: str) -> bool:
     """Filter opportunities by strategy name"""
-    try:
-        # Check strategy field in the opportunity
-        if isinstance(opportunity, dict):
-            opp_strategy = opportunity.get("strategy")
-        else:
-            opp_strategy = getattr(opportunity, "strategy", None)
+    # Get the strategy from the opportunity
+    opp_strategy = opportunity.strategy if hasattr(opportunity, "strategy") else None
 
-        # If the opportunity has no strategy, allow it to pass through
-        if not opp_strategy:
-            return True
+    # If the opportunity has no strategy, allow it to pass through
+    if not opp_strategy:
+        return True
 
-        # Otherwise only let matching strategies through
-        return opp_strategy == strategy_name
-    except Exception as e:
-        logger.error(f"Error in filter_for_strategy: {e}")
-        return False
+    # Otherwise only let matching strategies through
+    return opp_strategy == strategy_name
 
 
-def execute_trade(opportunity) -> Optional[Dict]:
+def execute_trade(opportunity: TradeOpportunity, strategy_name: str) -> TradeExecution:
     """
     Execute a trade based on an opportunity.
 
-    This is a placeholder implementation that simulates trade execution.
-    In a real implementation, this would interact with exchange APIs.
-
     Args:
         opportunity: The opportunity to execute
+        strategy_name: The strategy to use for execution
 
     Returns:
-        Trade execution result or None if execution failed
+        TradeExecution: The executed trade result
     """
-    try:
-        if not opportunity:
-            logger.warning("Received empty opportunity")
-            return None
+    start_time = time.time()
+    logger.info(f"🚀 Starting trade execution for opportunity: {opportunity.id}")
 
-        logger.info(f"Starting trade execution for opportunity: {opportunity.get('id', 'unknown')}")
-        logger.info(
-            f"Trade details: {opportunity.get('pair', 'unknown')} - Buy: {opportunity.get('buy_exchange', 'unknown')} @ {opportunity.get('buy_price')}, Sell: {opportunity.get('sell_exchange', 'unknown')} @ {opportunity.get('sell_price')}"
-        )
+    # Use the provided strategy_name or get it from opportunity
+    effective_strategy_name = strategy_name or opportunity.strategy
 
-        # Get opportunity details
-        opp_id = opportunity.get("id")
-        if not opp_id:
-            logger.warning("Opportunity missing ID, generating a new one")
-            opp_id = str(uuid.uuid4())
+    # Get the strategy implementation
+    strategy = get_strategy(effective_strategy_name)
+    logger.info(f"⚙️ Executing trade using strategy: {effective_strategy_name}")
 
-        strategy = opportunity.get("strategy", "unknown")
-        pair = opportunity.get("pair", "unknown")
-        buy_exchange = opportunity.get("buy_exchange", "unknown")
-        sell_exchange = opportunity.get("sell_exchange", "unknown")
-        buy_price = float(opportunity.get("buy_price", 0))
-        sell_price = float(opportunity.get("sell_price", 0))
-        spread = float(opportunity.get("spread", 0))
-        volume = float(opportunity.get("volume", 0))
+    # Execute the trade using the strategy
+    execution_id = str(uuid.uuid4())
+    execution_ts = time.time()
 
-        logger.info(f"Calculated spread: {spread:.4f}%, Volume: {volume}")
+    execution = strategy.execute_trade(
+        opportunity=opportunity,
+        execution_id=execution_id,
+        execution_ts=execution_ts,
+    )
 
-        # In a real implementation, this would place orders on exchanges
-        # For now, just simulate a successful execution with minimal slippage
-        executed_buy_price = buy_price * 1.001  # Simulate 0.1% slippage
-        executed_sell_price = sell_price * 0.999  # Simulate 0.1% slippage
+    # Calculate profit
+    buy_cost = execution.executed_buy_price * execution.volume
+    sell_revenue = execution.executed_sell_price * execution.volume
+    execution.profit = sell_revenue - buy_cost
 
-        logger.info(f"Simulated execution - Buy price: {executed_buy_price}, Sell price: {executed_sell_price}")
+    # Set execution time
+    execution_time = time.time() - start_time
+    execution.execution_time = execution_time
 
-        # Calculate expected profit
-        estimated_profit = (executed_sell_price - executed_buy_price) * volume
-        logger.info(f"Estimated profit: ${estimated_profit:.4f}")
-
-        # Create execution record
-        execution = TradeExecution(
-            id=str(uuid.uuid4()),
-            strategy=strategy,
-            pair=pair,
-            buy_exchange=buy_exchange,
-            sell_exchange=sell_exchange,
-            executed_buy_price=executed_buy_price,
-            executed_sell_price=executed_sell_price,
-            spread=spread,
-            volume=volume,
-            execution_timestamp=time.time(),
-            opportunity_id=opp_id,
-        )
-
-        logger.info(f"Created execution record with ID: {execution.id}")
-
-        # Publish execution to Redis
-        try:
-            redis = get_redis()
-            channel_manager = RedisChannelManager(redis)
-
-            # Publish to both generic and strategy-specific channels
-            subscribers = channel_manager.publish_execution(execution)
-
-            # Directly publish to the main trade executions channel as a fallback
-            if subscribers == 0:
-                logger.warning("No subscribers found via channel manager, publishing directly")
-                data = execution.model_dump() if hasattr(execution, "model_dump") else execution.dict()
-                json_data = json.dumps(data)
-
-                # Get the channel from constants or use a default
-                channel = TRADE_EXECUTIONS_CHANNEL
-                direct_subscribers = redis.client.publish(channel, json_data)
-
-                # Also publish to strategy-specific channel
-                strategy_channel = f"{channel}:{strategy}"
-                strategy_subscribers = redis.client.publish(strategy_channel, json_data)
-
-                logger.info(
-                    f"Direct publish: {direct_subscribers + strategy_subscribers} subscribers ({direct_subscribers} main, {strategy_subscribers} strategy)"
-                )
-                subscribers = direct_subscribers + strategy_subscribers
-
-            logger.info(f"Published execution to {subscribers} subscribers")
-        except Exception as redis_error:
-            logger.error(f"Redis error publishing execution: {redis_error}", exc_info=True)
-
-        logger.info(f"Trade execution complete: {execution.id}")
-        return execution.model_dump() if hasattr(execution, "model_dump") else execution.dict()
-
-    except Exception as e:
-        logger.error(f"Error executing trade: {e}", exc_info=True)
-        return None
+    profit_emoji = "💰" if execution.profit > 0 else "📉"
+    logger.info(
+        f"✅ Trade execution complete: {execution.id} with profit: {profit_emoji} {execution.profit}, ⏱️ time taken: {execution_time:.4f}s"
+    )
+    return execution

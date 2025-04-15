@@ -10,8 +10,6 @@ import sqlalchemy as sa  # Add this import for the text() function
 from src.arbirich.core.trading.flows.reporting.redis_client import get_shared_redis_client
 from src.arbirich.services.redis.redis_service import check_redis_health
 
-from .message_processor import process_message
-
 logger = logging.getLogger(__name__)
 
 
@@ -23,11 +21,11 @@ async def persist_data():
         # Verify database connection
         with DatabaseService() as db:
             if db.engine is None:
-                logger.error("Database connection not available for persistence task")
+                logger.error("❌ Database connection not available for persistence task")
                 return
 
             # Log successful database connection
-            logger.info("Database connection successful for persistence task")
+            logger.info("🔌 Database connection successful for persistence task")
 
             # Check for any pending trade opportunities or executions that need processing
             # This could be implemented by checking Redis for messages that haven't been processed
@@ -45,15 +43,15 @@ async def persist_data():
                 # Subscribe to channels to check Redis functionality
                 for channel in channels:
                     pubsub.subscribe(channel)
-                    logger.debug(f"Subscribed to {channel} for health check")
+                    logger.debug(f"🔄 Subscribed to {channel} for health check")
 
                 # Cleanup after checking
                 pubsub.unsubscribe()
                 pubsub.close()
 
-        logger.info("Data persistence task completed successfully")
+        logger.info("✅ Data persistence task completed successfully")
     except Exception as e:
-        logger.error(f"Error in data persistence task: {e}", exc_info=True)
+        logger.error(f"❌ Error in data persistence task: {e}", exc_info=True)
 
 
 async def monitor_health() -> None:
@@ -71,7 +69,7 @@ async def monitor_health() -> None:
                     result = conn.execute(sa.text("SELECT 1")).scalar()  # Use sa.text() to create executable SQL
                     db_healthy = result == 1
             except Exception as db_e:
-                logger.warning(f"Database connection test failed: {db_e}")
+                logger.warning(f"⚠️ Database connection test failed: {db_e}")
 
         # Check Redis connection
         redis = get_shared_redis_client()
@@ -80,16 +78,16 @@ async def monitor_health() -> None:
             try:
                 redis_healthy = redis.client.ping()
             except Exception as redis_e:
-                logger.warning(f"Redis health check failed: {redis_e}")
+                logger.warning(f"⚠️ Redis health check failed: {redis_e}")
 
         # Log any issues
         if not db_healthy or not redis_healthy:
-            logger.warning(f"Health check: DB={db_healthy}, Redis={redis_healthy}")
+            logger.warning(f"🚦 Health check: DB={db_healthy}, Redis={redis_healthy}")
         else:
-            logger.debug("All systems healthy")
+            logger.debug("✅ All systems healthy")
 
     except Exception as e:
-        logger.error(f"Health monitoring error: {e}")
+        logger.error(f"❌ Health monitoring error: {e}")
         raise
 
 
@@ -107,18 +105,18 @@ async def report_performance() -> None:
             # Log basic performance metrics
             for strategy in strategies:
                 if hasattr(strategy, "net_profit"):
-                    logger.info(f"Strategy {strategy.name}: Net profit = {strategy.net_profit}")
+                    logger.info(f"📊 Strategy {strategy.name}: Net profit = {strategy.net_profit}")
 
                 # Get executions for this strategy
                 try:
                     executions = db.get_executions_by_strategy(strategy.name)
-                    logger.info(f"Strategy {strategy.name}: {len(executions)} executions")
+                    logger.info(f"📊 Strategy {strategy.name}: {len(executions)} executions")
                 except Exception as exec_e:
-                    logger.warning(f"Error getting executions for {strategy.name}: {exec_e}")
+                    logger.warning(f"⚠️ Error getting executions for {strategy.name}: {exec_e}")
 
-        logger.debug("Performance reporting completed")
+        logger.debug("✅ Performance reporting completed")
     except Exception as e:
-        logger.error(f"Performance reporting error: {e}")
+        logger.error(f"❌ Performance reporting error: {e}")
         raise
 
 
@@ -128,14 +126,14 @@ async def process_redis_messages(pubsub, redis_client, active, stop_event, debug
     This replaces the Bytewax flow functionality with pure asyncio.
     """
     if not pubsub:
-        logger.error("Redis PubSub not initialized")
+        logger.error("❌ Redis PubSub not initialized")
         return
 
     # Initialize tracking variables
     last_activity = time.time()
     next_log_time = time.time() + 300  # First log after 5 minutes
 
-    logger.info("Starting Redis message processing loop")
+    logger.info("🚀 Starting Redis message processing loop")
 
     try:
         while active and not stop_event.is_set():
@@ -143,7 +141,7 @@ async def process_redis_messages(pubsub, redis_client, active, stop_event, debug
 
             # Periodic health check
             if current_time - last_activity > 60:  # 1 minute timeout
-                logger.info("Performing Redis health check")
+                logger.info("🔍 Performing Redis health check")
                 last_activity = current_time
 
                 channels = []  # Get channels from pubsub if possible
@@ -155,7 +153,7 @@ async def process_redis_messages(pubsub, redis_client, active, stop_event, debug
                         await asyncio.sleep(5.0)
                         continue
                 else:
-                    logger.warning("Redis client is None, skipping health check")
+                    logger.warning("⚠️ Redis client is None, skipping health check")
                     redis_client = get_shared_redis_client()
                     # If still None, wait a bit before continuing
                     if not redis_client:
@@ -164,7 +162,7 @@ async def process_redis_messages(pubsub, redis_client, active, stop_event, debug
 
             # Periodic logging to show we're alive
             if current_time > next_log_time:
-                logger.debug("Reporting component is active and waiting for messages")
+                logger.debug("✅ Reporting component is active and waiting for messages")
                 next_log_time = current_time + 300  # Log every 5 minutes
 
             # Get the next message with a timeout
@@ -198,7 +196,10 @@ async def process_redis_messages(pubsub, redis_client, active, stop_event, debug
             if isinstance(data, (int, str)) and data in (1, 2, "1", "2"):
                 continue
 
-            # Process the message
+            # Process the message using the process_message function
+            # Import inside the function to avoid circular imports
+            from .message_processor import process_message
+
             result = await process_message(channel, data)
 
             # Update activity timestamp
@@ -206,16 +207,16 @@ async def process_redis_messages(pubsub, redis_client, active, stop_event, debug
 
             # Debug output similar to Bytewax inspect
             if debug_mode and result:
-                logger.debug(f"Processed message from {channel}: {result}")
+                logger.debug(f"🔄 Processed message from {channel}: {result}")
 
     except asyncio.TimeoutError:
         # This is expected during normal operation
         pass
     except asyncio.CancelledError:
-        logger.info("Redis message processing cancelled")
+        logger.info("❌ Redis message processing cancelled")
         raise
     except Exception as e:
-        logger.error(f"Error processing Redis messages: {e}", exc_info=True)
+        logger.error(f"❌ Error processing Redis messages: {e}", exc_info=True)
         raise
 
 
@@ -234,5 +235,5 @@ async def get_next_message(pubsub) -> Optional[Dict]:
         return None
 
     except Exception as e:
-        logger.error(f"Error getting Redis message: {e}")
+        logger.error(f"❌ Error getting Redis message: {e}")
         return None

@@ -1,16 +1,16 @@
 import json
 import logging
+import time  # Add this import at the top of the file
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from src.arbirich.models import enums
-from src.arbirich.models.models import Exchange, TradeExecution, TradeOpportunity
 from src.arbirich.services.database.database_service import DatabaseService
 from src.arbirich.services.metrics.strategy_metrics_service import StrategyMetricsService
 from src.arbirich.web.controllers.mock_data_provider import mock_provider
@@ -275,9 +275,14 @@ async def monitor(request: Request, template_context: dict = Depends(get_templat
 async def exchanges_list(request: Request, template_context: dict = Depends(get_template_context)):
     """Display a list of all exchanges."""
     with DatabaseService() as db_service:
-        exchanges = get_all_exchanges(db_service)  # Renamed function call
+        try:
+            exchanges_list = get_all_exchanges(db_service)
+        except Exception as e:
+            logging.error(f"Error loading exchanges: {e}")
+            exchanges_list = []
+
     return templates.TemplateResponse(
-        "pages/exchanges.html", {"request": request, "exchanges": exchanges, **template_context}
+        "pages/exchanges.html", {"request": request, "exchanges": exchanges_list, **template_context}
     )
 
 
@@ -309,103 +314,129 @@ async def catch_all(request: Request, path: str, template_context: dict = Depend
 # Helper functions for database queries - keeping all original functions
 
 
-def get_recent_opportunities(db_service: DatabaseService, limit: int = 25) -> List[dict]:
+def get_recent_opportunities(db_service: DatabaseService, limit: int = 25) -> List[Dict]:
     """Get recent trade opportunities from the database."""
-    with db_service.engine.begin() as conn:
-        import sqlalchemy as sa
+    try:
+        # Use the repository to get opportunities
+        from src.arbirich.services.database.repositories.trade_opportunity_repository import TradeOpportunityRepository
 
-        from src.arbirich.models.schema import trade_opportunities
+        repo = TradeOpportunityRepository(engine=db_service.engine)
+        opportunities = repo.get_recent(count=limit)
 
-        # Query the opportunities with proper ordering
-        result = conn.execute(
-            sa.select(trade_opportunities).order_by(trade_opportunities.c.opportunity_timestamp.desc()).limit(limit)
-        )
-
-        opportunities = []
-        for row in result:
-            # Create a Pydantic model instance
-            opportunity = TradeOpportunity(
-                id=str(row.id),
-                strategy=row.strategy,
-                pair=row.pair,
-                buy_exchange=row.buy_exchange,
-                sell_exchange=row.sell_exchange,
-                buy_price=float(row.buy_price),
-                sell_price=float(row.sell_price),
-                spread=float(row.spread),
-                volume=float(row.volume),
-                opportunity_timestamp=row.opportunity_timestamp.timestamp() if row.opportunity_timestamp else None,
-            )
-
-            # Convert to dict and add calculated fields for template usage
+        # Convert Pydantic models to dictionaries with additional fields for templates
+        result = []
+        for opportunity in opportunities:
+            # Start with the model's dictionary
             opp_dict = opportunity.model_dump()
 
+            # Ensure required fields are present
+            # Strategy name - ensure string format
+            if "strategy" not in opp_dict or opp_dict["strategy"] is None:
+                opp_dict["strategy"] = "unknown"
+            elif not isinstance(opp_dict["strategy"], str):
+                opp_dict["strategy"] = str(opp_dict["strategy"])
+
+            # Spread - ensure it's a float
+            if "spread" not in opp_dict or opp_dict["spread"] is None:
+                # Calculate from buy/sell prices if available
+                if "buy_price" in opp_dict and "sell_price" in opp_dict:
+                    opp_dict["spread"] = float(opp_dict["sell_price"]) - float(opp_dict["buy_price"])
+                else:
+                    opp_dict["spread"] = 0.0
+
+            # Volume - ensure it's a float
+            if "volume" not in opp_dict or opp_dict["volume"] is None:
+                opp_dict["volume"] = 0.0
+            else:
+                opp_dict["volume"] = float(opp_dict["volume"])
+
+            # Timestamp - ensure it's available and formatted for templates
+            if "opportunity_timestamp" not in opp_dict or opp_dict["opportunity_timestamp"] is None:
+                opp_dict["opportunity_timestamp"] = time.time()
+                opp_dict["created_at"] = datetime.now()
+            else:
+                # Convert to float if it's not already
+                opp_dict["opportunity_timestamp"] = float(opp_dict["opportunity_timestamp"])
+                opp_dict["created_at"] = datetime.fromtimestamp(opp_dict["opportunity_timestamp"])
+
             # Add additional fields needed for templates
-            opp_dict["symbol"] = opp_dict["pair"]  # For compatibility template
-            if opportunity.opportunity_timestamp:
-                opp_dict["created_at"] = datetime.fromtimestamp(opportunity.opportunity_timestamp)
-            if opp_dict["buy_price"] > 0:
+            opp_dict["symbol"] = opp_dict.get("pair", "unknown")  # For compatibility
+
+            if opp_dict.get("buy_price", 0) > 0:
                 spread_percent = ((opp_dict["sell_price"] - opp_dict["buy_price"]) / opp_dict["buy_price"]) * 100
                 opp_dict["spread_percent"] = round(spread_percent, 2)
             else:
-                opp_dict["spread_percent"] = 0
+                opp_dict["spread_percent"] = 0.0
 
             # Calculate potential profit (as $ value)
-            opp_dict["profit"] = round(float(opportunity.spread * opportunity.volume), 2)
+            opp_dict["profit"] = round(float(opp_dict["spread"] * opp_dict["volume"]), 2)
 
-            opportunities.append(opp_dict)
+            result.append(opp_dict)
 
-        return opportunities
+        return result
+    except Exception as e:
+        logger.error(f"Error in get_recent_opportunities: {e}", exc_info=True)
+        return []
 
 
-def get_recent_executions(db_service: DatabaseService, limit: int = 10) -> List[dict]:
+def get_recent_executions(db_service: DatabaseService, limit: int = 10) -> List[Dict]:
     """Get recent trade executions from the database."""
-    with db_service.engine.begin() as conn:
-        import sqlalchemy as sa
+    try:
+        # Use the repository to get executions
+        from src.arbirich.services.database.repositories.trade_execution_repository import TradeExecutionRepository
 
-        from src.arbirich.models.schema import trade_executions
+        repo = TradeExecutionRepository(engine=db_service.engine)
+        executions = repo.get_recent(count=limit)
 
-        # Query the executions with proper ordering
-        result = conn.execute(
-            sa.select(trade_executions).order_by(trade_executions.c.execution_timestamp.desc()).limit(limit)
-        )
-
-        executions = []
-        for row in result:
-            # Create a Pydantic model instance
-            execution = TradeExecution(
-                id=str(row.id),
-                strategy=row.strategy,
-                pair=row.pair,
-                buy_exchange=row.buy_exchange,
-                sell_exchange=row.sell_exchange,
-                executed_buy_price=float(row.executed_buy_price),
-                executed_sell_price=float(row.executed_sell_price),
-                spread=float(row.spread),
-                volume=float(row.volume),
-                execution_timestamp=row.execution_timestamp.timestamp() if row.execution_timestamp else None,
-                execution_id=row.execution_id,
-                opportunity_id=str(row.opportunity_id) if row.opportunity_id else None,
-            )
-
-            # Convert to dict and add calculated fields for template usage
+        # Convert Pydantic models to dictionaries with additional fields for templates
+        result = []
+        for execution in executions:
+            # Start with the model's dictionary
             exec_dict = execution.model_dump()
 
+            # Ensure required fields are present
+            # Strategy name - ensure string format
+            if "strategy" not in exec_dict or exec_dict["strategy"] is None:
+                exec_dict["strategy"] = "unknown"
+            elif not isinstance(exec_dict["strategy"], str):
+                exec_dict["strategy"] = str(exec_dict["strategy"])
+
+            # Spread - ensure it's a float
+            if "spread" not in exec_dict or exec_dict["spread"] is None:
+                # Calculate from buy/sell prices if available
+                if "executed_buy_price" in exec_dict and "executed_sell_price" in exec_dict:
+                    exec_dict["spread"] = float(exec_dict["executed_sell_price"]) - float(
+                        exec_dict["executed_buy_price"]
+                    )
+                else:
+                    exec_dict["spread"] = 0.0
+
+            # Volume - ensure it's a float
+            if "volume" not in exec_dict or exec_dict["volume"] is None:
+                exec_dict["volume"] = 0.0
+            else:
+                exec_dict["volume"] = float(exec_dict["volume"])
+
+            # Timestamp - ensure it's available and formatted for templates
+            if "execution_timestamp" not in exec_dict or exec_dict["execution_timestamp"] is None:
+                exec_dict["execution_timestamp"] = time.time()
+                exec_dict["created_at"] = datetime.now()
+            else:
+                # Convert to float if it's not already
+                exec_dict["execution_timestamp"] = float(exec_dict["execution_timestamp"])
+                exec_dict["created_at"] = datetime.fromtimestamp(exec_dict["execution_timestamp"])
+
             # Add additional fields needed for templates
-            exec_dict["symbol"] = exec_dict["pair"]  # Add for compatibility
+            exec_dict["symbol"] = exec_dict.get("pair", "unknown")  # For compatibility
 
             # Calculate actual profit including volume (price difference * volume)
-            price_diff = execution.executed_sell_price - execution.executed_buy_price
-            actual_profit = price_diff * execution.volume
+            price_diff = float(exec_dict.get("executed_sell_price", 0)) - float(exec_dict.get("executed_buy_price", 0))
+            actual_profit = price_diff * exec_dict["volume"]
             exec_dict["actual_profit"] = actual_profit
             exec_dict["profit"] = round(actual_profit, 2)  # For template compatibility
 
             # Add expected profit (same as actual for now)
             exec_dict["expected_profit"] = actual_profit
-
-            # Format the timestamp for the template
-            if execution.execution_timestamp:
-                exec_dict["created_at"] = datetime.fromtimestamp(execution.execution_timestamp)
 
             # Add a default status based on data
             if actual_profit > 0:
@@ -415,9 +446,12 @@ def get_recent_executions(db_service: DatabaseService, limit: int = 10) -> List[
             else:
                 exec_dict["status"] = "pending"
 
-            executions.append(exec_dict)
+            result.append(exec_dict)
 
-        return executions
+        return result
+    except Exception as e:
+        logger.error(f"Error in get_recent_executions: {e}", exc_info=True)
+        return []
 
 
 def get_dashboard_stats(db_service: DatabaseService) -> dict:
@@ -510,105 +544,67 @@ def get_strategy_leaderboard(db_service):
         return []
 
 
-def get_strategy_opportunities(db_service: DatabaseService, strategy_name: str, limit: int = 10) -> List[dict]:
+def get_strategy_opportunities(db_service: DatabaseService, strategy_name: str, limit: int = 10) -> List[Dict]:
     """Get opportunities for a specific strategy."""
-    with db_service.engine.begin() as conn:
-        import sqlalchemy as sa
+    try:
+        # Use the repository to get opportunities for a strategy
+        from src.arbirich.services.database.repositories.trade_opportunity_repository import TradeOpportunityRepository
 
-        from src.arbirich.models.schema import trade_opportunities
+        repo = TradeOpportunityRepository(engine=db_service.engine)
+        opportunities = repo.get_by_strategy_name(strategy_name)
 
-        # Query opportunities for this strategy with proper ordering
-        result = conn.execute(
-            sa.select(trade_opportunities)
-            .where(trade_opportunities.c.strategy == strategy_name)
-            .order_by(trade_opportunities.c.opportunity_timestamp.desc())
-            .limit(limit)
-        )
-
-        opportunities = []
-        for row in result:
-            # Create a Pydantic model instance
-            opportunity = TradeOpportunity(
-                id=str(row.id),
-                strategy=row.strategy,
-                pair=row.pair,
-                buy_exchange=row.buy_exchange,
-                sell_exchange=row.sell_exchange,
-                buy_price=float(row.buy_price),
-                sell_price=float(row.sell_price),
-                spread=float(row.spread),
-                volume=float(row.volume),
-                opportunity_timestamp=row.opportunity_timestamp.timestamp() if row.opportunity_timestamp else None,
-            )
-
-            # Convert to dict and add calculated fields for template usage
+        # Convert to dictionaries with additional fields needed by templates
+        result = []
+        for opportunity in opportunities[:limit]:  # Limit the results
             opp_dict = opportunity.model_dump()
 
-            # Add additional fields needed for template
-            opp_dict["symbol"] = opp_dict["pair"]  # For compatibility
+            # Add additional template fields
+            opp_dict["symbol"] = opportunity.pair
+
             if opportunity.opportunity_timestamp:
                 opp_dict["created_at"] = datetime.fromtimestamp(opportunity.opportunity_timestamp)
+
             # Calculate profit percent
-            if opp_dict["buy_price"] > 0:
-                profit_percent = ((opp_dict["sell_price"] - opp_dict["buy_price"]) / opp_dict["buy_price"]) * 100
+            if opportunity.buy_price > 0:
+                profit_percent = ((opportunity.sell_price - opportunity.buy_price) / opportunity.buy_price) * 100
                 opp_dict["profit_percent"] = profit_percent
             else:
                 opp_dict["profit_percent"] = 0
 
-            opportunities.append(opp_dict)
+            result.append(opp_dict)
 
-        return opportunities
+        return result
+    except Exception as e:
+        logger.error(f"Error getting opportunities for strategy '{strategy_name}': {e}", exc_info=True)
+        return []
 
 
-def get_strategy_executions(db_service: DatabaseService, strategy_name: str, limit: int = 10) -> List[dict]:
+def get_strategy_executions(db_service: DatabaseService, strategy_name: str, limit: int = 10) -> List[Dict]:
     """Get executions for a specific strategy."""
-    with db_service.engine.begin() as conn:
-        import sqlalchemy as sa
+    try:
+        # Use the repository to get executions for a strategy
+        from src.arbirich.services.database.repositories.trade_execution_repository import TradeExecutionRepository
 
-        from src.arbirich.models.schema import trade_executions
+        repo = TradeExecutionRepository(engine=db_service.engine)
+        executions = repo.get_by_strategy(strategy_name)
 
-        # Query executions for this strategy with proper ordering
-        result = conn.execute(
-            sa.select(trade_executions)
-            .where(trade_executions.c.strategy == strategy_name)
-            .order_by(trade_executions.c.execution_timestamp.desc())
-            .limit(limit)
-        )
-
-        executions = []
-        for row in result:
-            # Create a Pydantic model instance
-            execution = TradeExecution(
-                id=str(row.id),
-                strategy=row.strategy,
-                pair=row.pair,
-                buy_exchange=row.buy_exchange,
-                sell_exchange=row.sell_exchange,
-                executed_buy_price=float(row.executed_buy_price),
-                executed_sell_price=float(row.executed_sell_price),
-                spread=float(row.spread),
-                volume=float(row.volume),
-                execution_timestamp=row.execution_timestamp.timestamp() if row.execution_timestamp else None,
-                execution_id=row.execution_id,
-                opportunity_id=str(row.opportunity_id) if row.opportunity_id else None,
-            )
-
-            # Convert to dict and add calculated fields for template usage
+        # Convert to dictionaries with additional fields needed by templates
+        result = []
+        for execution in executions[:limit]:  # Limit the results
             exec_dict = execution.model_dump()
 
-            # Add additional fields needed for template
-            exec_dict["symbol"] = exec_dict["pair"]  # Add for compatibility
+            # Add additional template fields
+            exec_dict["symbol"] = execution.pair
 
             # Calculate actual profit
-            actual_profit = execution.executed_sell_price - execution.executed_buy_price
+            actual_profit = (execution.executed_sell_price - execution.executed_buy_price) * execution.volume
             exec_dict["actual_profit"] = actual_profit
-            exec_dict["profit"] = round(actual_profit, 2)  # For template compatibility
+            exec_dict["profit"] = round(actual_profit, 2)
 
-            # Format the timestamp for the template
             if execution.execution_timestamp:
                 exec_dict["created_at"] = datetime.fromtimestamp(execution.execution_timestamp)
 
-            # Add a default status based on data
+            # Add execution status
             if actual_profit > 0:
                 exec_dict["status"] = "completed"
             elif actual_profit < 0:
@@ -616,70 +612,37 @@ def get_strategy_executions(db_service: DatabaseService, strategy_name: str, lim
             else:
                 exec_dict["status"] = "pending"
 
-            executions.append(exec_dict)
+            result.append(exec_dict)
 
-        return executions
+        return result
+    except Exception as e:
+        logger.error(f"Error getting executions for strategy '{strategy_name}': {e}", exc_info=True)
+        return []
 
 
 def get_all_exchanges(db):
     """Get all exchanges from the database."""
     try:
-        exchanges = []
-        with db.engine.begin() as conn:
-            import sqlalchemy as sa
+        # Use the repository to get exchanges
+        from src.arbirich.services.database.repositories.exchange_repository import ExchangeRepository
 
-            from src.arbirich.models.schema import exchanges as exchanges_table
+        repo = ExchangeRepository(engine=db.engine)
+        exchanges = repo.get_all()
 
-            result = conn.execute(sa.select(exchanges_table))
-            for row in result:
-                # Fix: Use _mapping instead of mappings
-                mapping = row._mapping
+        # Convert to dictionaries with fixed mappings field
+        result = []
+        for exchange in exchanges:
+            exchange_dict = exchange.model_dump()
 
-                # Handle additional_info properly - check if it's already a dict before parsing
-                additional_info = mapping.additional_info
-                if additional_info and not isinstance(additional_info, dict):
-                    try:
-                        additional_info = json.loads(additional_info)
-                    except (json.JSONDecodeError, TypeError):
-                        additional_info = {}
+            # Ensure mappings field exists for templates
+            if "mapping" in exchange_dict and exchange_dict["mapping"]:
+                exchange_dict["mappings"] = exchange_dict["mapping"]
+            else:
+                exchange_dict["mappings"] = {}
 
-                # Handle withdrawal_fee properly
-                withdrawal_fee = mapping.withdrawal_fee
-                if withdrawal_fee and not isinstance(withdrawal_fee, dict):
-                    try:
-                        withdrawal_fee = json.loads(withdrawal_fee)
-                    except (json.JSONDecodeError, TypeError):
-                        withdrawal_fee = {}
+            result.append(exchange_dict)
 
-                # Handle mapping properly
-                mapping_data = mapping.mappings
-                if mapping_data and not isinstance(mapping_data, dict):
-                    try:
-                        mapping_data = json.loads(mapping_data)
-                    except (json.JSONDecodeError, TypeError):
-                        mapping_data = {}
-
-                # Create a Pydantic model instance
-                exchange = Exchange(
-                    id=mapping.id,
-                    name=mapping.name,
-                    api_rate_limit=mapping.api_rate_limit,
-                    trade_fees=float(mapping.trade_fees) if mapping.trade_fees is not None else None,
-                    rest_url=mapping.rest_url,
-                    ws_url=mapping.ws_url,
-                    delimiter=mapping.delimiter,
-                    withdrawal_fee=withdrawal_fee,
-                    api_response_time=mapping.api_response_time,
-                    mapping=mapping_data,
-                    additional_info=additional_info,
-                    is_active=mapping.is_active,
-                    created_at=mapping.created_at,
-                )
-
-                # Convert to dict for template usage
-                exchanges.append(exchange.model_dump())
-
-        return exchanges
+        return result
     except Exception as e:
         logger.error(f"Error loading exchanges: {e}")
         return []

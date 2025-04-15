@@ -1,16 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, NamedTuple
+from typing import Dict
 
-
-class TradeResult(NamedTuple):
-    """Container for trade execution results"""
-
-    success: bool
-    partial: bool
-    profit: float
-    execution_time: float  # in milliseconds
-    error: str = None
-    details: Dict = None
+from src.arbirich.models.models import TradeExecution, TradeOpportunity
 
 
 class ExecutionMethod(ABC):
@@ -20,7 +11,7 @@ class ExecutionMethod(ABC):
         self.config = config
 
     @abstractmethod
-    async def execute(self, opportunity: Any, position_size: float) -> TradeResult:
+    async def execute(self, opportunity: TradeOpportunity, position_size: float) -> TradeExecution:
         """
         Execute a trade based on an arbitrage opportunity
 
@@ -29,12 +20,12 @@ class ExecutionMethod(ABC):
             position_size: The size of the position to take
 
         Returns:
-            TradeResult with execution details
+            TradeExecution with execution details
         """
         pass
 
     @abstractmethod
-    async def handle_partial_execution(self, result: TradeResult) -> None:
+    async def handle_partial_execution(self, result: TradeExecution) -> None:
         """
         Handle cases where only part of a trade was executed
 
@@ -44,7 +35,7 @@ class ExecutionMethod(ABC):
         pass
 
     @abstractmethod
-    async def handle_failure(self, result: TradeResult) -> None:
+    async def handle_failure(self, result: TradeExecution) -> None:
         """
         Handle cases where a trade failed to execute
 

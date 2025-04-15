@@ -129,12 +129,22 @@ class DetectionComponent(Component):
             return None
 
     async def run(self) -> None:
-        """Run the detection component by starting Bytewax flows"""
-        self.logger.info(
-            f"🚀 Running detection component with DEBUG_MODE={self.debug_mode} for {len(self.active_flows)} flows"
-        )
-
+        """Run the detection component."""
         try:
+            self.logger.info(
+                f"🚀 Running detection component with DEBUG_MODE={self.debug_mode} for {len(self.strategies)} flows"
+            )
+
+            # Check if we have any strategies to run
+            if not self.strategies:
+                self.logger.warning("No active strategies found for detection - entering idle monitoring mode")
+                # Enter wait loop instead of failing
+                while self.active:
+                    await asyncio.sleep(5.0)  # Check every 5 seconds for shutdown signal
+                    # Periodically check for new strategies
+                    await self._check_for_new_strategies()
+                return
+
             # Start the flows
             for flow_id, flow_info in self.active_flows.items():
                 strategy_name = flow_info.get("strategy_name")
@@ -143,10 +153,10 @@ class DetectionComponent(Component):
                 )
                 await self.flow_manager.run_flow()
 
-            # Monitor flow until component is stopped
+            # Monitor flows
             while self.active:
-                # Check if flow is still running
-                if not self.flow_manager.is_running():
+                # Check if flow manager exists before accessing is_running()
+                if self.flow_manager is not None and not self.flow_manager.is_running():
                     self.logger.error("Detection flow stopped unexpectedly, attempting to restart")
                     await self.flow_manager.run_flow()
 
@@ -161,11 +171,28 @@ class DetectionComponent(Component):
             raise
 
         except Exception as e:
+            self.logger.error(f"Error in detection component: {e}", exc_info=True)
             if not self.handle_error(e):
                 self.active = False
-
         finally:
             await self.cleanup()
+
+    async def _check_for_new_strategies(self) -> bool:
+        """Check if any new strategies have been activated."""
+        try:
+            if not self.strategy_repository:
+                return False
+
+            active_strategies = self._get_active_strategies()
+            if active_strategies:
+                self.logger.info(f"Found {len(active_strategies)} newly activated strategies, reinitializing...")
+                # Initialize with the newly found strategies
+                await self.initialize()
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error checking for new strategies: {e}")
+            return False
 
     def _refresh_active_strategies(self) -> None:
         """Refresh the list of active strategies"""

@@ -23,9 +23,9 @@ def reset_shared_redis_client() -> bool:
         if _shared_redis_client is not None:
             try:
                 _shared_redis_client.close()
-                logger.info("Closed reporting shared Redis client")
+                logger.info("🔌 Closed reporting shared Redis client")
             except Exception as e:
-                logger.warning(f"Error closing reporting shared Redis client: {e}")
+                logger.warning(f"⚠️ Error closing reporting shared Redis client: {e}")
 
             _shared_redis_client = None
 
@@ -35,9 +35,9 @@ def reset_shared_redis_client() -> bool:
 
             reset_redis_connection()
         except (ImportError, AttributeError) as e:
-            logger.debug(f"No message processor Redis connection to reset: {e}")
+            logger.debug(f"ℹ️ No message processor Redis connection to reset: {e}")
 
         return True
     except Exception as e:
-        logger.error(f"Error in reset_shared_redis_client for reporting: {e}")
+        logger.error(f"❌ Error in reset_shared_redis_client for reporting: {e}")
         return False

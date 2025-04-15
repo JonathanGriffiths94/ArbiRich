@@ -1,26 +1,9 @@
 import statistics
 import time
 from datetime import date
-from typing import Dict, NamedTuple, Optional
+from typing import Dict, Optional
 
-
-class TradeResult(NamedTuple):
-    """Result of a trade execution"""
-
-    id: str  # Unique trade ID
-    success: bool  # Whether the trade was successful
-    partial: bool  # Whether the trade was partially executed
-    profit: float  # Profit amount in quote currency
-    execution_time: float  # Time taken to execute in milliseconds
-    buy_exchange: str  # Exchange where buy was executed
-    sell_exchange: str  # Exchange where sell was executed
-    pair: str  # Trading pair
-    volume: float  # Volume traded
-    buy_price: float  # Buy price
-    sell_price: float  # Sell price
-    timestamp: float  # Unix timestamp of execution
-    error: Optional[str] = None  # Error message if any
-    details: Optional[Dict] = None  # Additional details
+from src.arbirich.models.models import TradeExecution
 
 
 class PerformanceMetrics:
@@ -51,7 +34,7 @@ class PerformanceMetrics:
         self.recent_trades = []  # Last 100 trades
         self.max_recent_trades = 100
 
-    def update(self, result: TradeResult) -> None:
+    def update(self, result: TradeExecution) -> None:
         """
         Update metrics with a new trade result
 

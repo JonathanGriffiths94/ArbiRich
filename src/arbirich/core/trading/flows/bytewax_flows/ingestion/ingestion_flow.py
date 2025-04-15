@@ -7,12 +7,17 @@ from bytewax import operators as op
 from bytewax.connectors.stdio import StdOutSink
 from bytewax.dataflow import Dataflow
 
+from src.arbirich.core.state.system_state import mark_system_shutdown
+from src.arbirich.core.trading.flows.bytewax_flows.common.redis_utils import close_redis_client, get_redis_client
+from src.arbirich.core.trading.flows.bytewax_flows.common.shutdown_utils import setup_force_exit_timer
 from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_process import process_order_book
 from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_sink import publish_order_book
-from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import MultiExchangeSource
+from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import (
+    MultiExchangeSource,
+    mark_ingestion_force_kill,
+)
 from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
 from src.arbirich.services.exchange_processors.registry import register_all_processors
-from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -21,10 +26,10 @@ logger.setLevel(logging.INFO)
 _redis_client = None
 
 
-def get_redis_client():
+def get_flow_redis_client():
     global _redis_client
     if _redis_client is None:
-        _redis_client = get_shared_redis_client()
+        _redis_client = get_redis_client("ingestion_flow")
     return _redis_client
 
 
@@ -228,23 +233,27 @@ async def run_ingestion_flow(exchanges_and_pairs: Dict[str, List[str]] = None):
 
 def stop_ingestion_flow():
     """Signal the ingestion flow to stop synchronously"""
-    # Ensure redis client gets closed
-    try:
-        _redis_client.close()
-    except Exception as e:
-        logger.error(f"Error closing Redis client: {e}")
+    # Set force kill flag
+    mark_ingestion_force_kill()
 
+    # Close the Redis client
+    close_redis_client("ingestion_flow")
+
+    # Return the flow manager's stop result
     return flow_manager.stop_flow()
 
 
 async def stop_ingestion_flow_async():
     """Signal the ingestion flow to stop asynchronously"""
     logger.info("Stopping ingestion flow asynchronously...")
-    try:
-        _redis_client.close()
-    except Exception as e:
-        logger.error(f"Error closing Redis client: {e}")
 
+    # Set force kill flag
+    mark_ingestion_force_kill()
+
+    # Close Redis client
+    close_redis_client("ingestion_flow")
+
+    # Stop the flow
     await flow_manager.stop_flow_async()
     logger.info("Ingestion flow stopped")
 
@@ -280,9 +289,8 @@ if __name__ == "__main__":
             current_thread_id = threading.get_ident()
 
             # Set system shutdown flag to notify all components
-            from src.arbirich.core.state.system_state import mark_system_shutdown
-
             mark_system_shutdown(True)
+            mark_ingestion_force_kill()
 
             # Just set the stop event first
             flow_manager.stop_event.set()
@@ -291,12 +299,7 @@ if __name__ == "__main__":
             time.sleep(0.5)
 
             # Close Redis client early to avoid connection issues
-            try:
-                if _redis_client:
-                    _redis_client.close()
-                    logger.info("Redis client closed during shutdown")
-            except Exception as e:
-                logger.error(f"Error closing Redis client: {e}")
+            close_redis_client("ingestion_flow")
 
             # Only try to join the thread if we're not the same thread
             if hasattr(flow_manager, "runner_thread") and flow_manager.runner_thread:
@@ -310,10 +313,9 @@ if __name__ == "__main__":
             logger.info("Exiting application...")
             # Use a small delay to allow logging to complete
             time.sleep(0.1)
-            import os
 
-            os._exit(0)
-
+            # Set up a failsafe to force exit if needed
+            setup_force_exit_timer(3.0)
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
             # Force exit as a last resort

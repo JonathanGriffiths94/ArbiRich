@@ -15,14 +15,20 @@ from bytewax.operators import (
     input as op_input,
 )
 
+from arbirich.core.state.system_state import mark_system_shutdown
+from src.arbirich.core.trading.flows.bytewax_flows.common.redis_utils import reset_all_redis_connections
+from src.arbirich.core.trading.flows.bytewax_flows.common.shutdown_utils import mark_force_kill, setup_force_exit_timer
 from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_process import (
     detect_arbitrage,
-    extract_asset_key,  # Import the new function
+    extract_asset_key,
     format_opportunity,
     update_asset_state,
 )
 from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_sink import publish_trade_opportunity
-from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import RedisOrderBookSource
+from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import (
+    RedisOrderBookSource,
+    mark_detection_force_kill,
+)
 from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
 from src.arbirich.models.models import OrderBookState
 
@@ -357,36 +363,23 @@ async def run_detection_flow(strategy_name="detection", debug_mode=False):
 def stop_detection_flow():
     """Signal the detection flow to stop synchronously with enhanced force-kill"""
     # First mark the detection force-kill flag to ensure quick exit of all partitions
-    from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import mark_detection_force_kill
-
     mark_detection_force_kill()
 
-    # Set system shutdown flag to notify all components
-    from src.arbirich.core.state.system_state import mark_system_shutdown
+    # Also mark in the common registry
+    mark_force_kill("detection")
 
+    # Set system shutdown flag to notify all components
     mark_system_shutdown(True)
 
-    # If we have Redis client, ensure proper cleanup
-    from src.arbirich.services.redis.redis_service import reset_redis_pool
-
-    reset_redis_pool()
+    # Reset Redis connections
+    reset_all_redis_connections()
     logger.info("Reset all Redis pools for detection flow")
 
     # Now use the flow manager to stop the flow
     logger.info("Stopping detection flow via flow manager")
 
     # Add a failsafe timer to force exit if normal shutdown gets stuck
-    import os
-    import threading
-
-    def _force_exit_failsafe():
-        logger.critical("FAILSAFE TRIGGERED - Force exiting program after 5 seconds")
-        os._exit(1)
-
-    # Create a timer to force exit after 5 seconds
-    force_exit_timer = threading.Timer(5.0, _force_exit_failsafe)
-    force_exit_timer.daemon = True
-    force_exit_timer.start()
+    setup_force_exit_timer(5.0)
 
     # Don't catch exceptions - let them propagate up
     result = flow_manager.stop_flow()
@@ -395,6 +388,11 @@ def stop_detection_flow():
 
 async def stop_detection_flow_async():
     """Signal the detection flow to stop asynchronously"""
+    # First mark for force kill
+    mark_detection_force_kill()
+    mark_force_kill("detection")
+
+    # Then stop via flow manager
     return await flow_manager.stop_flow_async()
 
 
@@ -435,16 +433,11 @@ if __name__ == "__main__":
             current_thread_id = threading.get_ident()
 
             # Set system shutdown flag to notify all components
-            from src.arbirich.core.state.system_state import mark_system_shutdown
-
             mark_system_shutdown(True)
 
-            # Apply more aggressive shutdown from detection_source
-            from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source import (
-                mark_detection_force_kill,
-            )
-
+            # Apply more aggressive shutdown
             mark_detection_force_kill()
+            mark_force_kill("detection")
 
             # Just set the stop event first
             flow_manager.stop_event.set()
@@ -460,14 +453,8 @@ if __name__ == "__main__":
                 else:
                     logger.info("Running in flow thread, skipping thread join")
 
-            # In case the thread didn't exit, force exit
-            logger.info("Exiting application...")
-            # Use a small delay to allow logging to complete
-            time.sleep(0.1)
-            import os
-
-            os._exit(0)
-
+            # In case the thread didn't exit, set up failsafe
+            setup_force_exit_timer(3.0)
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
             # Force exit as a last resort

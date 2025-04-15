@@ -81,7 +81,9 @@ def is_shutting_down():
 
 def get_order_book_channel(exchange, symbol):
     """Get standardized channel name for order book data"""
-    return f"order_book:{exchange}:{symbol}"
+    from src.arbirich.models.enums import ChannelName
+
+    return f"{ChannelName.ORDER_BOOK.value}:{exchange}:{symbol}"
 
 
 def publish_order_book(exchange: str, symbol: str, order_book):

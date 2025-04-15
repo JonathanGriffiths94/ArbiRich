@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import time
-from typing import Any, Dict
+from typing import Dict
 
-from .method import ExecutionMethod, TradeResult
+from src.arbirich.models.models import TradeExecution, TradeOpportunity
+
+from .method import ExecutionMethod
 
 
 class StaggeredExecution(ExecutionMethod):
@@ -24,7 +26,7 @@ class StaggeredExecution(ExecutionMethod):
         self.retry_attempts = config.get("retry_attempts", 1)
         self.retry_delay = config.get("retry_delay", 200)  # ms delay between retries
 
-    async def execute(self, opportunity: Any, position_size: float) -> TradeResult:
+    async def execute(self, opportunity: TradeOpportunity, position_size: float) -> TradeExecution:
         """Execute trade legs in sequence with delays between them"""
         self.logger.info(f"Executing staggered trade for {opportunity} with size {position_size}")
         start_time = time.time()
@@ -44,18 +46,29 @@ class StaggeredExecution(ExecutionMethod):
             self.logger.info(f"Executing first leg: {leg_type} on {exchange} at {price}")
 
             first_result = await self._execute_with_retry(
-                leg_func, exchange=exchange, trading_pair=opportunity.trading_pair, price=price, volume=position_size
+                leg_func, exchange=exchange, trading_pair=opportunity.pair, price=price, volume=position_size
             )
 
             if isinstance(first_result, Exception) or not first_result.get("success", False):
                 error_msg = str(first_result) if isinstance(first_result, Exception) else "Execution failed"
                 self.logger.error(f"First leg ({leg_type}) failed: {error_msg}")
-                return TradeResult(
+                return TradeExecution(
+                    id=f"first-leg-failed-{int(time.time())}",
+                    strategy=opportunity.strategy,
+                    pair=opportunity.pair,
+                    buy_exchange=opportunity.buy_exchange,
+                    sell_exchange=opportunity.sell_exchange,
+                    executed_buy_price=0.0 if leg_type == "buy" else price,
+                    executed_sell_price=0.0 if leg_type == "sell" else price,
+                    spread=0.0,
+                    volume=position_size,
+                    execution_timestamp=time.time(),
                     success=False,
                     partial=False,
                     profit=0,
                     execution_time=(time.time() - start_time) * 1000,
                     error=f"First leg ({leg_type}) failed: {error_msg}",
+                    opportunity_id=opportunity.id,
                     details={f"{leg_type}_result": first_result if not isinstance(first_result, Exception) else None},
                 )
 
@@ -68,12 +81,23 @@ class StaggeredExecution(ExecutionMethod):
             if (current_time - start_time) * 1000 > self.timeout:
                 self.logger.error("Timeout reached after first leg execution")
                 # Handle partial execution
-                return TradeResult(
+                return TradeExecution(
+                    id=f"timeout-{int(time.time())}",
+                    strategy=opportunity.strategy,
+                    pair=opportunity.pair,
+                    buy_exchange=opportunity.buy_exchange,
+                    sell_exchange=opportunity.sell_exchange,
+                    executed_buy_price=price if leg_type == "buy" else 0.0,
+                    executed_sell_price=price if leg_type == "sell" else 0.0,
+                    spread=0.0,
+                    volume=position_size,
+                    execution_timestamp=time.time(),
                     success=False,
                     partial=True,
                     profit=0,
                     execution_time=(current_time - start_time) * 1000,
                     error="Timeout after first leg execution",
+                    opportunity_id=opportunity.id,
                     details={f"{leg_type}_result": first_result},
                 )
 
@@ -82,7 +106,7 @@ class StaggeredExecution(ExecutionMethod):
             self.logger.info(f"Executing second leg: {leg_type} on {exchange} at {price}")
 
             second_result = await self._execute_with_retry(
-                leg_func, exchange=exchange, trading_pair=opportunity.trading_pair, price=price, volume=position_size
+                leg_func, exchange=exchange, trading_pair=opportunity.pair, price=price, volume=position_size
             )
 
             if isinstance(second_result, Exception) or not second_result.get("success", False):
@@ -92,12 +116,23 @@ class StaggeredExecution(ExecutionMethod):
                 # Set first leg details based on leg order
                 first_leg_type = "buy" if leg_type == "sell" else "sell"
 
-                return TradeResult(
+                return TradeExecution(
+                    id=f"second-leg-failed-{int(time.time())}",
+                    strategy=opportunity.strategy,
+                    pair=opportunity.pair,
+                    buy_exchange=opportunity.buy_exchange,
+                    sell_exchange=opportunity.sell_exchange,
+                    executed_buy_price=first_result.get("executed_price", price) if first_leg_type == "buy" else 0.0,
+                    executed_sell_price=first_result.get("executed_price", price) if first_leg_type == "sell" else 0.0,
+                    spread=0.0,
+                    volume=position_size,
+                    execution_timestamp=time.time(),
                     success=False,
                     partial=True,
                     profit=0,
                     execution_time=(time.time() - start_time) * 1000,
                     error=f"Second leg ({leg_type}) failed: {error_msg}",
+                    opportunity_id=opportunity.id,
                     details={
                         f"{first_leg_type}_result": first_result,
                         f"{leg_type}_result": second_result if not isinstance(second_result, Exception) else None,
@@ -119,27 +154,70 @@ class StaggeredExecution(ExecutionMethod):
             buy_cost = buy_result.get("executed_price", opportunity.buy_price) * position_size
             sell_revenue = sell_result.get("executed_price", opportunity.sell_price) * position_size
             profit = sell_revenue - buy_cost
+            executed_buy_price = buy_result.get("executed_price", opportunity.buy_price)
+            executed_sell_price = sell_result.get("executed_price", opportunity.sell_price)
 
             self.logger.info(f"Staggered execution complete. Profit: {profit}, Time: {execution_time}ms")
 
-            return TradeResult(
+            return TradeExecution(
+                id=f"success-{int(time.time())}",
+                strategy=opportunity.strategy,
+                pair=opportunity.pair,
+                buy_exchange=opportunity.buy_exchange,
+                sell_exchange=opportunity.sell_exchange,
+                executed_buy_price=executed_buy_price,
+                executed_sell_price=executed_sell_price,
+                spread=(executed_sell_price - executed_buy_price) / executed_buy_price,
+                volume=position_size,
+                execution_timestamp=time.time(),
                 success=True,
                 partial=False,
                 profit=profit,
                 execution_time=execution_time,
+                opportunity_id=opportunity.id,
                 details={"buy_result": buy_result, "sell_result": sell_result},
             )
 
         except asyncio.TimeoutError:
             self.logger.error("Trade execution timed out")
-            return TradeResult(
-                success=False, partial=False, profit=0, execution_time=self.timeout, error="Execution timed out"
+            return TradeExecution(
+                id=f"timeout-{int(time.time())}",
+                strategy=opportunity.strategy,
+                pair=opportunity.pair,
+                buy_exchange=opportunity.buy_exchange,
+                sell_exchange=opportunity.sell_exchange,
+                executed_buy_price=0.0,
+                executed_sell_price=0.0,
+                spread=0.0,
+                volume=position_size,
+                execution_timestamp=time.time(),
+                success=False,
+                partial=False,
+                profit=0,
+                execution_time=(time.time() - start_time) * 1000,
+                error="Trade execution timed out",
+                opportunity_id=opportunity.id,
+                details=None,
             )
 
         except Exception as e:
             self.logger.error(f"Error executing trade: {e}")
-            return TradeResult(
-                success=False, partial=False, profit=0, execution_time=(time.time() - start_time) * 1000, error=str(e)
+            return TradeExecution(
+                id=str(opportunity.id) if hasattr(opportunity, "id") else str(time.time()),
+                strategy=opportunity.strategy if hasattr(opportunity, "strategy") else "unknown",
+                pair=opportunity.trading_pair if hasattr(opportunity, "trading_pair") else "unknown",
+                buy_exchange=opportunity.buy_exchange,
+                sell_exchange=opportunity.sell_exchange,
+                executed_buy_price=0.0,
+                executed_sell_price=0.0,
+                spread=0.0,
+                volume=position_size,
+                execution_timestamp=time.time(),
+                success=False,
+                partial=False,
+                profit=0,
+                execution_time=(time.time() - start_time) * 1000,
+                error=str(e),
             )
 
     async def _execute_with_retry(self, leg_func, **kwargs) -> Dict:
@@ -168,7 +246,7 @@ class StaggeredExecution(ExecutionMethod):
 
         return {"success": False, "error": last_error, "attempts": attempt}
 
-    async def handle_partial_execution(self, result: TradeResult) -> None:
+    async def handle_partial_execution(self, result: TradeExecution) -> None:
         """Handle partial execution by attempting to rebalance positions"""
         self.logger.warning("Handling partial execution in staggered trade")
 
@@ -185,7 +263,7 @@ class StaggeredExecution(ExecutionMethod):
             # Sell succeeded but buy failed - we need to buy to cover
             await self._cleanup_partial_sell(sell_result)
 
-    async def handle_failure(self, result: TradeResult) -> None:
+    async def handle_failure(self, result: TradeExecution) -> None:
         """Handle complete failure of trade execution"""
         self.logger.error(f"Staggered trade failed: {result.error}")
         # Implement retry or circuit breaker logic if needed

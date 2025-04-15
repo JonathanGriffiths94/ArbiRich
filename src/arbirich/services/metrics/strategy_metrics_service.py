@@ -83,18 +83,31 @@ class StrategyMetricsService:
             start_str = period_start.strftime("%Y-%m-%d %H:%M:%S")
             end_str = period_end.strftime("%Y-%m-%d %H:%M:%S")
 
-            # Use SQLAlchemy text() for raw SQL queries
+            # Update query to join with trading_pairs and exchanges tables to get the necessary columns
             query = text(
                 """
-                SELECT * FROM trade_executions 
-                WHERE strategy = :strategy_name 
-                AND execution_timestamp BETWEEN :start_date AND :end_date
+                SELECT 
+                    e.*,
+                    tp.symbol as pair,
+                    be.name as buy_exchange,
+                    se.name as sell_exchange
+                FROM 
+                    trade_executions e
+                JOIN 
+                    trading_pairs tp ON e.trading_pair_id = tp.id
+                JOIN 
+                    exchanges be ON e.buy_exchange_id = be.id
+                JOIN 
+                    exchanges se ON e.sell_exchange_id = se.id
+                WHERE 
+                    e.strategy_id = :strategy_id 
+                    AND e.execution_timestamp BETWEEN :start_date AND :end_date
             """
             )
 
             # Execute with parameters
             executions_result = session.execute(
-                query, {"strategy_name": strategy_name, "start_date": start_str, "end_date": end_str}
+                query, {"strategy_id": strategy_id, "start_date": start_str, "end_date": end_str}
             )
 
             executions = list(executions_result)
@@ -218,7 +231,8 @@ class StrategyMetricsService:
             # Now create and save the pair metrics - using parameterized queries for safety
             for pair_name, pair_data in pair_metrics.items():
                 # Get the pair ID - using safer parameterized query
-                pair_query = text("SELECT id FROM pairs WHERE symbol = :symbol")
+                # Fix the table name from 'pairs' to 'trading_pairs'
+                pair_query = text("SELECT id FROM trading_pairs WHERE symbol = :symbol")
                 pair_result = session.execute(pair_query, {"symbol": pair_name}).first()
 
                 if pair_result:

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from src.arbirich.config.config import get_strategy_config
 from src.arbirich.core.trading.strategy.types.basic import BasicArbitrage
@@ -20,7 +20,7 @@ STRATEGY_TYPES = {
 _strategy_instances = {}
 
 
-def get_strategy(strategy_name: str) -> Optional[Any]:
+def get_strategy(strategy_name: str) -> Any:
     """
     Get a strategy instance by name.
 
@@ -28,7 +28,10 @@ def get_strategy(strategy_name: str) -> Optional[Any]:
         strategy_name: The name of the strategy
 
     Returns:
-        Strategy instance or None if not found
+        Strategy instance
+
+    Raises:
+        ValueError: If strategy configuration is not found or has invalid values
     """
     # Check if we already have an instance
     if strategy_name in _strategy_instances:
@@ -38,51 +41,39 @@ def get_strategy(strategy_name: str) -> Optional[Any]:
     # Get strategy configuration
     config = get_strategy_config(strategy_name)
     if not config:
-        logger.error(f"Strategy configuration not found for: {strategy_name}")
-        return None
+        raise ValueError(f"Strategy configuration not found for: {strategy_name}")
 
     # Get strategy type
     strategy_type_str = config.get("type")
     if not strategy_type_str:
-        logger.error(f"Strategy type not specified for: {strategy_name}")
-        return None
+        raise ValueError(f"Strategy type not specified for: {strategy_name}")
 
     # Convert string to enum value
-    try:
-        strategy_type = StrategyType(strategy_type_str)
-    except ValueError:
-        logger.error(f"Invalid strategy type string: {strategy_type_str}")
-        return None
+    strategy_type = StrategyType(strategy_type_str)
 
     # Get strategy class
     strategy_class = STRATEGY_TYPES.get(strategy_type)
     if not strategy_class:
-        logger.error(f"Strategy class not found for type: {strategy_type}")
-        return None
+        raise ValueError(f"Strategy class not found for type: {strategy_type}")
 
     # Create strategy instance
-    try:
-        logger.info(f"Creating new strategy instance: {strategy_name} (type: {strategy_type.value})")
+    logger.info(f"Creating new strategy instance: {strategy_name} (type: {strategy_type.value})")
 
-        # Initialize with the proper parameters
-        threshold = config.get("threshold", 0.001)
+    # Initialize with the proper parameters
+    threshold = config.get("threshold", 0.001)
 
-        # Log the configuration being used
-        logger.info(f"Strategy config: name={strategy_name}, threshold={threshold}")
+    # Log the configuration being used
+    logger.info(f"Strategy config: name={strategy_name}, threshold={threshold}")
 
-        # Create the strategy instance with the correct parameters
-        strategy = strategy_class(strategy_id=strategy_name, strategy_name=strategy_name, config=config)
+    # Create the strategy instance with the correct parameters
+    strategy = strategy_class(strategy_id=strategy_name, strategy_name=strategy_name, config=config)
 
-        # Cache the instance
-        _strategy_instances[strategy_name] = strategy
+    # Cache the instance
+    _strategy_instances[strategy_name] = strategy
 
-        # Log success
-        logger.info(f"Successfully created strategy: {strategy_name}")
-        return strategy
-
-    except Exception as e:
-        logger.error(f"Error creating strategy {strategy_name}: {e}", exc_info=True)
-        return None
+    # Log success
+    logger.info(f"Successfully created strategy: {strategy_name}")
+    return strategy
 
 
 def get_all_strategies() -> Dict[str, Any]:
@@ -91,16 +82,25 @@ def get_all_strategies() -> Dict[str, Any]:
 
     Returns:
         Dictionary of strategy instances by name
+
+    Raises:
+        Exception: If any strategies fail to initialize
     """
     from src.arbirich.config.config import get_all_strategy_names
 
     strategy_names = get_all_strategy_names()
     strategies = {}
+    failed_strategies = []
 
     for name in strategy_names:
-        strategy = get_strategy(name)
-        if strategy:
-            strategies[name] = strategy
+        try:
+            strategies[name] = get_strategy(name)
+        except Exception as e:
+            logger.error(f"Failed to initialize strategy {name}: {e}")
+            failed_strategies.append((name, str(e)))
+
+    if failed_strategies:
+        raise Exception(f"Failed to initialize {len(failed_strategies)} strategies: {failed_strategies}")
 
     return strategies
 

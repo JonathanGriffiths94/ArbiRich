@@ -48,9 +48,9 @@ class IngestionComponent(Component):
             active_strategies = self._get_active_strategies()
 
             if not active_strategies:
-                self.logger.warning("No active strategies found for ingestion component")
-                # Fall back to configuration approach
-                exchange_pairs = self._get_exchange_pairs_from_config()
+                self.logger.warning("No active strategies found for ingestion component - entering monitoring mode")
+                # Return success anyway - we'll handle the no-strategies case in run()
+                return True
             else:
                 # Initialize strategies and build exchange-pair mapping
                 for strategy in active_strategies:
@@ -225,6 +225,22 @@ class IngestionComponent(Component):
         self.logger.info("Starting data ingestion flows")
 
         try:
+            # Check if we have any strategies configured
+            if not self.strategies:
+                self.logger.warning("No active strategies found for ingestion - entering idle monitoring mode")
+                # Enter wait loop instead of failing
+                while self.active:
+                    await asyncio.sleep(5.0)  # Check every 5 seconds for shutdown signal
+                    # Periodically check for new strategies
+                    await self._refresh_active_strategies(force_check=True)
+                    if self.strategies:
+                        self.logger.info("Found newly activated strategies, restarting ingestion component")
+                        break  # Exit the loop to continue with normal flow operation
+
+                # If we exited the loop because self.active became False, return
+                if not self.active:
+                    return
+
             # Start all configured flows
             for flow_id, flow_manager in self.flow_managers.items():
                 flow_config = self.active_flows[flow_id]
@@ -265,14 +281,22 @@ class IngestionComponent(Component):
             # Ensure cleanup happens
             await self.cleanup()
 
-    def _refresh_active_strategies(self) -> None:
+    async def _refresh_active_strategies(self, force_check=False) -> None:
         """
         Refresh active strategies and update exchange-pair mappings if needed
         This allows adding or removing data feeds dynamically when strategies change
+
+        Args:
+            force_check: Force checking for new strategies even if there are none currently
         """
         try:
             # Get current active strategies
             current_strategies = self._get_active_strategies()
+
+            if not self.strategies and not current_strategies:
+                # Still no strategies, nothing to do unless forced
+                if not force_check:
+                    return
 
             # Check if we need to rebuild exchange-pair mappings
             needs_rebuild = False
@@ -311,7 +335,7 @@ class IngestionComponent(Component):
             # If we need to rebuild, update exchange-pair mappings and flows
             if needs_rebuild:
                 self.logger.info("Rebuilding exchange-pair mappings due to strategy changes")
-                self._update_exchange_pair_flows()
+                await self._update_exchange_pair_flows()
 
         except Exception as e:
             self.logger.error(f"Error refreshing active strategies: {e}", exc_info=True)

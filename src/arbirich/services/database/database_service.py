@@ -304,8 +304,7 @@ class DatabaseService:
             Dict containing aggregated trading statistics
         """
         try:
-            # This is a stub implementation - you would typically query your database
-            # for this information. For now, we'll return some default values.
+            # Get statistics from database
             stats = {
                 "total_profit": 0.0,
                 "total_trades": 0,
@@ -317,10 +316,25 @@ class DatabaseService:
                 "exchange_performance": {},
             }
 
-            # You would typically get this from your database, e.g.:
-            # with self.engine.connect() as conn:
-            #     result = conn.execute(text("SELECT SUM(profit) FROM trade_executions"))
-            #     stats["total_profit"] = result.scalar() or 0.0
+            # Use a more robust query pattern
+            with self.engine.connect() as conn:
+                # Try to get total profit
+                try:
+                    result = conn.execute(sa.text("SELECT SUM(profit) FROM trade_execution")).scalar()
+                    if result is not None:
+                        stats["total_profit"] = float(result)
+                except Exception as query_error:
+                    logger.warning(f"Error querying total profit: {query_error}")
+
+                # Try to get trade counts
+                try:
+                    result = conn.execute(sa.text("SELECT COUNT(*) FROM trade_execution")).scalar()
+                    if result is not None:
+                        stats["total_trades"] = int(result)
+                except Exception as query_error:
+                    logger.warning(f"Error querying trade count: {query_error}")
+
+                # Additional queries could be added here
 
             logger.info("Retrieved trading statistics")
             return stats

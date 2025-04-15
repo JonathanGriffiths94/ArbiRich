@@ -7,93 +7,36 @@ from typing import Dict, List, Optional, Tuple
 import redis
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
-from arbirich.constants import ORDER_BOOK_CHANNEL
 from arbirich.core.state.system_state import is_system_shutting_down
+from src.arbirich.core.trading.flows.bytewax_flows.common.redis_utils import (
+    close_all_pubsubs,
+    get_redis_client,
+    register_pubsub,
+    reset_all_redis_connections,
+)
+from src.arbirich.core.trading.flows.bytewax_flows.common.shutdown_utils import is_force_kill_set, mark_force_kill
 from src.arbirich.models.models import OrderBookUpdate
 from src.arbirich.services.redis.redis_service import register_redis_client
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Global Redis variables with proper locks
-_redis_client_lock = threading.RLock()
-_redis_client = None
-_client_closed = False
-_all_pubsubs = []  # Track all pubsubs for proper cleanup
-_pubsub_lock = threading.Lock()
-
-# Add a force-kill mechanism for detection flow
-_force_kill_flag = False
-_force_kill_lock = threading.Lock()
+# Add a debug mode toggle
 _debug_mode = False
 _debug_lock = threading.Lock()
 
 
 def mark_detection_force_kill():
     """Mark detection for force-kill, ensuring all partitions exit immediately"""
-    global _force_kill_flag
-    with _force_kill_lock:
-        _force_kill_flag = True
-        logger.warning("DETECTION FORCE KILL FLAG SET - all partitions will exit immediately")
+    mark_force_kill("detection")
 
     # Additional aggressive cleanup actions
     try:
         # Close all tracked pubsubs immediately
-        with _pubsub_lock:
-            for pubsub in _all_pubsubs:
-                try:
-                    if pubsub:
-                        try:
-                            pubsub.unsubscribe()
-                        except Exception:
-                            pass
-                        try:
-                            pubsub.close()
-                        except Exception:
-                            pass
-                        logger.info("Force closed pubsub connection")
-                except Exception as e:
-                    logger.warning(f"Error closing pubsub: {e}")
-
-            # Clear the list
-            _all_pubsubs.clear()
-            logger.info("All PubSub connections force closed")
+        close_all_pubsubs()
 
         # Force clean TCP connections to Redis
-        try:
-            import redis
-
-            # More aggressive connection pool cleanup
-            try:
-                # Get all Redis connection pools and close them
-                pools = redis.Redis.connection_pool.pools if hasattr(redis.Redis, "connection_pool") else {}
-                for key, pool in pools.items():
-                    try:
-                        pool.disconnect()
-                        logger.info(f"Disconnected pool: {key}")
-                    except Exception as e:
-                        logger.warning(f"Error disconnecting pool {key}: {e}")
-            except Exception:
-                # More graceful handling of Redis connection errors
-                try:
-                    redis.Redis().connection_pool.disconnect()
-                except Exception as e:
-                    logger.warning(f"Error disconnecting default Redis pool: {e}")
-
-            logger.info("Forcibly disconnected all Redis connections")
-        except Exception as e:
-            logger.warning(f"Error during force Redis disconnect: {e}")
-
-        # Attempt to kill all Redis-related threads
-        try:
-            import threading
-
-            for thread in threading.enumerate():
-                if "redis" in thread.name.lower():
-                    logger.warning(f"Detected Redis thread: {thread.name}")
-                    # Can't force kill other threads, but log them for awareness
-        except Exception:
-            pass
+        reset_all_redis_connections()
 
         # Force exit if called in standalone script context
         if __name__ == "__main__":
@@ -124,12 +67,6 @@ def mark_detection_force_kill():
             logger.error(f"Failed to exit process: {e}")
 
 
-def is_force_kill_set():
-    """Check if force kill has been requested"""
-    with _force_kill_lock:
-        return _force_kill_flag
-
-
 def enable_debug_mode():
     """Enable debug mode for detailed arbitrage detection logging"""
     global _debug_mode
@@ -152,103 +89,13 @@ def is_debug_mode_enabled():
         return _debug_mode
 
 
-def get_redis_client():
-    """Get or create a Redis client for this module."""
-    global _redis_client, _client_closed
-
-    # Immediate abort if force-kill is set
-    if is_force_kill_set():
-        return None
-
-    # Quick check for shutdown without holding lock
-    if is_system_shutting_down():
-        return None
-
-    with _redis_client_lock:
-        # Double-check shutdown
-        if _client_closed or is_system_shutting_down() or is_force_kill_set():
-            return None
-
-        if _redis_client is None:
-            try:
-                # Create a new RedisService instance
-                from src.arbirich.services.redis.redis_service import RedisService
-
-                redis_service = RedisService()
-                _redis_client = redis_service
-                _client_closed = False
-                logger.info("Created new Redis client for detection source")
-            except Exception as e:
-                logger.error(f"Error creating Redis client: {e}")
-                return None
-
-        return _redis_client
-
-
 def reset_shared_redis_client():
     """Reset the shared Redis client with proper cleanup."""
-    global _redis_client, _client_closed, _all_pubsubs
-
     # First set the force-kill flag to make partitions exit
     mark_detection_force_kill()
 
-    logger.info("Beginning aggressive shutdown of detection Redis clients")
-
-    # Close all tracked pubsubs first
-    with _pubsub_lock:
-        for pubsub in _all_pubsubs:
-            try:
-                if pubsub:
-                    try:
-                        pubsub.unsubscribe()
-                    except Exception:
-                        pass
-                    try:
-                        pubsub.close()
-                    except Exception:
-                        pass
-                    logger.info("Closed pubsub connection")
-            except Exception as e:
-                logger.warning(f"Error closing pubsub: {e}")
-
-        # Clear the list
-        _all_pubsubs.clear()
-        logger.info("All PubSub connections closed and cleared")
-
-    # Then close the main client
-    with _redis_client_lock:
-        if _redis_client is not None:
-            try:
-                # First close any partitions (try both class and instance attributes)
-                for exchange, partition in getattr(RedisOrderBookSource, "partitions", {}).items():
-                    try:
-                        if hasattr(partition, "close"):
-                            partition.close()
-                            logger.info(f"Closed partition for {exchange}")
-                    except Exception as e:
-                        logger.warning(f"Error closing partition for {exchange}: {e}")
-
-                # Now close the Redis client itself
-                if hasattr(_redis_client, "client") and hasattr(_redis_client.client, "close"):
-                    _redis_client.client.close()
-                elif hasattr(_redis_client, "close"):
-                    _redis_client.close()
-                logger.info("Detection Redis client closed successfully")
-            except Exception as e:
-                logger.error(f"Error closing Redis client: {e}")
-            finally:
-                _redis_client = None
-                _client_closed = True
-                logger.info("Redis client reference cleared")
-
-    # Final safety measure - forcibly disconnect from Redis
-    try:
-        import redis
-
-        redis.Redis().connection_pool.disconnect()
-        logger.info("Forcibly disconnected all Redis connections")
-    except Exception as e:
-        logger.warning(f"Error during force disconnect: {e}")
+    # Use the common utilities to reset all Redis connections
+    reset_all_redis_connections()
 
     return True
 
@@ -263,7 +110,7 @@ class RedisExchangePartition(StatefulSourcePartition):
         # Initialize basic properties
         self.exchange = exchange
         self.strategy_name = strategy_name
-        self.redis_client = get_redis_client()
+        self.redis_client = get_redis_client("detection")
         self.pubsub = None
         self.last_activity = time.time()
         self.pairs = []
@@ -272,7 +119,7 @@ class RedisExchangePartition(StatefulSourcePartition):
         self.partitions_closed = False
 
         # Exit immediately if in shutdown or force-kill mode
-        if is_system_shutting_down() or is_force_kill_set():
+        if is_system_shutting_down() or is_force_kill_set("detection"):
             self.initialization_failed = True
             logger.info(f"Skipping initialization for {exchange} - system is shutting down")
             return
@@ -322,12 +169,12 @@ class RedisExchangePartition(StatefulSourcePartition):
     def _initialize_pubsub(self):
         """Initialize Redis PubSub and subscribe to relevant channels"""
         # Quick exit if shutting down or force-kill set
-        if is_system_shutting_down() or is_force_kill_set():
+        if is_system_shutting_down() or is_force_kill_set("detection"):
             logger.info(f"System shutting down, not initializing pubsub for {self.exchange}")
             return
 
         if not self.redis_client:
-            self.redis_client = get_redis_client()
+            self.redis_client = get_redis_client("detection")
             if not self.redis_client:
                 logger.warning(f"Cannot initialize pubsub for {self.exchange} - Redis client unavailable")
                 self.initialization_failed = True
@@ -344,15 +191,16 @@ class RedisExchangePartition(StatefulSourcePartition):
                     self.pubsub = self.redis_client.pubsub(ignore_subscribe_messages=True)
 
                 # Track this pubsub for global cleanup
-                with _pubsub_lock:
-                    _all_pubsubs.append(self.pubsub)
+                register_pubsub(self.pubsub)
 
                 logger.info(f"Created pubsub for {self.exchange}")
 
             # Get channels from pairs
+            from src.arbirich.models.enums import ChannelName
+
             channels = []
             for pair in self.pairs:
-                channel = f"{ORDER_BOOK_CHANNEL}:{self.exchange}:{pair}"
+                channel = f"{ChannelName.ORDER_BOOK.value}:{self.exchange}:{pair}"
                 channels.append(channel)
 
             if not channels:
@@ -375,7 +223,7 @@ class RedisExchangePartition(StatefulSourcePartition):
         """Get the next batch of order book updates."""
         # Immediately return empty batch for a failed partition
         if self.initialization_failed:
-            if is_system_shutting_down() or is_force_kill_set():
+            if is_system_shutting_down() or is_force_kill_set("detection"):
                 # If we're shutting down, try to close just to be sure
                 if not self.partitions_closed:
                     self.close()
@@ -383,7 +231,7 @@ class RedisExchangePartition(StatefulSourcePartition):
             return []
 
         # Check if we're shutting down - first priority check
-        if is_system_shutting_down() or is_force_kill_set():
+        if is_system_shutting_down() or is_force_kill_set("detection"):
             if not self.shutdown_checked:
                 logger.info(f"System shutdown detected in {self.exchange} partition")
                 self.shutdown_checked = True
@@ -402,7 +250,7 @@ class RedisExchangePartition(StatefulSourcePartition):
             # Keep trying until we get an item or timeout
             while time.time() - start_time < timeout:
                 # Check shutdown again to abort quickly
-                if is_system_shutting_down() or is_force_kill_set():
+                if is_system_shutting_down() or is_force_kill_set("detection"):
                     return []
 
                 item = self.next()
@@ -417,7 +265,7 @@ class RedisExchangePartition(StatefulSourcePartition):
 
         except redis.exceptions.ConnectionError as e:
             # Don't attempt reconnection during shutdown
-            if is_system_shutting_down() or is_force_kill_set():
+            if is_system_shutting_down() or is_force_kill_set("detection"):
                 logger.info(f"Connection error during shutdown for {self.exchange}, not reconnecting")
                 self.close()
                 self.partitions_closed = True
@@ -429,7 +277,7 @@ class RedisExchangePartition(StatefulSourcePartition):
                 logger.info(f"Attempting to reconnect Redis for {self.exchange} partition")
                 self.close()  # Clean close of existing connection
                 self.pubsub = None
-                self.redis_client = get_redis_client()
+                self.redis_client = get_redis_client("detection")
                 self._initialize_pubsub()
             except Exception as reconnect_error:
                 logger.error(f"Failed to reconnect Redis for {self.exchange}: {reconnect_error}")
@@ -447,11 +295,11 @@ class RedisExchangePartition(StatefulSourcePartition):
     def next(self) -> Optional[Tuple[str, OrderBookUpdate]]:
         """Get the next order book update."""
         # Quick exit for shutdown
-        if is_system_shutting_down() or is_force_kill_set() or self.initialization_failed:
+        if is_system_shutting_down() or is_force_kill_set("detection") or self.initialization_failed:
             return None
 
         if not self.pubsub:
-            if is_system_shutting_down() or is_force_kill_set():
+            if is_system_shutting_down() or is_force_kill_set("detection"):
                 return None
 
             try:
@@ -466,7 +314,7 @@ class RedisExchangePartition(StatefulSourcePartition):
 
         try:
             # Final check before attempting to get a message
-            if is_system_shutting_down() or is_force_kill_set():
+            if is_system_shutting_down() or is_force_kill_set("detection"):
                 return None
 
             # Use very short timeout (non-blocking mode) to prevent getting stuck
@@ -594,9 +442,7 @@ class RedisExchangePartition(StatefulSourcePartition):
                     logger.debug(f"Error closing pubsub: {e}")
 
                 # Remove from global tracking
-                with _pubsub_lock:
-                    if self.pubsub in _all_pubsubs:
-                        _all_pubsubs.remove(self.pubsub)
+                close_all_pubsubs()
 
                 self.pubsub = None
                 logger.info(f"Closed PubSub for {self.exchange}")
@@ -657,7 +503,7 @@ class RedisOrderBookSource(FixedPartitionedSource):
     def build_part(self, step_id, for_key, resume_state) -> RedisExchangePartition:
         """Build a partition for an exchange."""
         # Fast exit during shutdown
-        if is_system_shutting_down() or is_force_kill_set():
+        if is_system_shutting_down() or is_force_kill_set("detection"):
             logger.info(f"System shutting down, returning minimal partition for {for_key}")
             minimal_partition = RedisExchangePartition(for_key, self.strategy_name)
             minimal_partition.initialization_failed = True

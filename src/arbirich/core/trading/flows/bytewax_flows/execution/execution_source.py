@@ -8,6 +8,7 @@ from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
 from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified, set_stop_event
 from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.models.models import TradeOpportunity
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
@@ -91,10 +92,10 @@ class RedisExecutionPartition(StatefulSourcePartition):
 
         self.channels_to_check = []
 
-        from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
+        from src.arbirich.models.enums import ChannelName
 
         if strategy_name:
-            strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}"
+            strategy_channel = f"{ChannelName.TRADE_OPPORTUNITIES.value}:{strategy_name}"
             self.channels_to_check.append(strategy_channel)
             logger.info(f"Will check only strategy-specific channel: {strategy_channel}")
         else:
@@ -102,7 +103,7 @@ class RedisExecutionPartition(StatefulSourcePartition):
             from src.arbirich.config.config import STRATEGIES
 
             for strat_name in STRATEGIES.keys():
-                strategy_channel = f"{TRADE_OPPORTUNITIES_CHANNEL}:{strat_name}"
+                strategy_channel = f"{ChannelName.TRADE_OPPORTUNITIES.value}:{strat_name}"
                 self.channels_to_check.append(strategy_channel)
                 logger.info(f"Will check strategy channel: {strategy_channel}")
 
@@ -160,8 +161,6 @@ class RedisExecutionPartition(StatefulSourcePartition):
                         for channel in self.channels_to_check:
                             self.pubsub.subscribe(channel)
                             logger.info(f"Resubscribed to: {channel}")
-                            # Fix missing closing parenthesis on the next line
-                            logger.info(f"Resubscribed to: {channel}")
 
                 if not self._running:
                     logger.info("Partition marked as not running, stopping")
@@ -182,15 +181,19 @@ class RedisExecutionPartition(StatefulSourcePartition):
 
                     logger.info(f"Received message from channel: {channel}")
                     try:
-                        opportunity = json.loads(data)
-                        logger.info(f"Parsed opportunity: {opportunity.get('id', '(no ID)')}")
+                        # Parse the JSON data into a dictionary
+                        opportunity_dict = json.loads(data)
+                        # Convert dictionary to TradeOpportunity model
+                        opportunity = TradeOpportunity(**opportunity_dict)
+                        logger.info(f"Parsed opportunity: {opportunity.id}")
                     except json.JSONDecodeError:
                         logger.error(f"Error decoding message data: {data}")
+                    except Exception as e:
+                        logger.error(f"Error creating TradeOpportunity model: {e}")
+                        opportunity = None
 
                 if opportunity:
-                    logger.info(
-                        f"Processing opportunity: {opportunity.get('id', '(no ID)')} for pair {opportunity.get('pair')}"
-                    )
+                    logger.info(f"Processing opportunity: {opportunity.id} for pair {opportunity.pair}")
                     self._last_activity = time.time()
                     self._error_backoff = 1  # Reset backoff on success
                     return [opportunity]

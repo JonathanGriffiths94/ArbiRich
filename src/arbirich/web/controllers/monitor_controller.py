@@ -131,12 +131,14 @@ async def get_exchange_status(db: DatabaseService):
         exchanges = db.get_all_exchanges()
         exchange_status = []
 
+        from src.arbirich.models.enums import Status
+
         for exchange in exchanges:
             # Mock latency and status data
             exchange_status.append(
                 {
                     "name": exchange.name,
-                    "status": "Online" if exchange.is_active else "Offline",
+                    "status": Status.ACTIVE.value if exchange.is_active else Status.INACTIVE.value,
                     "latency": f"{50 + hash(exchange.name) % 100}ms",
                     "last_update": datetime.now().strftime("%H:%M:%S"),
                     "api_rate_limit": exchange.api_rate_limit,
@@ -146,7 +148,7 @@ async def get_exchange_status(db: DatabaseService):
         return exchange_status
     except Exception as e:
         logger.error(f"Error getting exchange status: {e}")
-        return [{"name": "Error loading exchange status", "status": "Error"}]
+        return [{"name": "Error loading exchange status", "status": Status.ERROR.value}]
 
 
 async def get_trading_activity():

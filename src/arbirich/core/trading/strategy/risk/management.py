@@ -1,6 +1,9 @@
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+
+from arbirich.models.config_models import RiskConfig
+from arbirich.models.models import RiskProfile, TradeOpportunity
 
 from ..parameters.configuration import ConfigurationParameters
 from ..parameters.performance import PerformanceMetrics
@@ -11,35 +14,56 @@ logger = logging.getLogger(__name__)
 class RiskManagement:
     """Risk management component for arbitrage strategies"""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, risk_config: Dict[str, Any], risk_profile: Optional[RiskProfile] = None):
         """
         Initialize risk management with configuration
 
         Args:
-            config: Risk management configuration
+            risk_config: Risk management configuration from config file or dictionary
+            risk_profile: Optional risk profile from database
         """
-        self.config = config
+        # Convert dictionary to RiskConfig if needed
+        if isinstance(risk_config, dict):
+            logger.debug("Converting risk_config dictionary to RiskConfig model")
+            risk_config = RiskConfig(**risk_config)
+
+        self.risk_config = risk_config
+        self.risk_profile = risk_profile
 
         # Risk limits
-        self.max_position_size = config.get("max_position_size", 1.0)
-        self.max_daily_loss = config.get("max_daily_loss", 5.0)  # % of account
-        self.max_drawdown = config.get("max_drawdown", 10.0)  # % of account
-        self.max_consecutive_losses = config.get("max_consecutive_losses", 3)
+        self.max_position_size = risk_config.max_position_size
+        self.max_daily_loss = risk_config.max_daily_loss
+        self.max_drawdown = risk_config.max_drawdown
+        self.max_consecutive_losses = risk_config.max_consecutive_losses
 
         # Circuit breakers
-        self.circuit_breaker_cooldown = config.get("circuit_breaker_cooldown", 3600)  # 1 hour
+        self.circuit_breaker_cooldown = risk_config.circuit_breaker_cooldown
         self.last_circuit_break_time = 0
         self.circuit_breaker_active = False
 
         # Volume scaling
-        self.scale_by_spread = config.get("scale_by_spread", True)
-        self.base_spread_threshold = config.get("base_spread_threshold", 0.001)  # 0.1%
-        self.max_spread_multiple = config.get("max_spread_multiple", 5.0)  # Scale up to 5x for very good spreads
+        self.scale_by_spread = risk_config.scale_by_spread
+        self.base_spread_threshold = risk_config.base_spread_threshold
+        self.max_spread_multiple = risk_config.max_spread_multiple
 
         # Exchange risk adjustments
-        self.exchange_risk_factors = config.get("exchange_risk_factors", {})
+        self.exchange_risk_factors = risk_config.exchange_risk_factors
 
-    def validate_trade(self, opportunity: Any, spread: float) -> bool:
+        # Use risk profile values if available (override config)
+        if risk_profile:
+            if risk_profile.max_position_size_percentage:
+                # Convert percentage to absolute value (assuming 1.0 = 100%)
+                self.max_position_size = risk_profile.max_position_size_percentage / 100.0
+
+            if risk_profile.max_drawdown_percentage:
+                self.max_drawdown = risk_profile.max_drawdown_percentage
+
+            if risk_profile.circuit_breaker_conditions:
+                cb_conditions = risk_profile.circuit_breaker_conditions
+                self.max_consecutive_losses = cb_conditions.get("max_consecutive_losses", self.max_consecutive_losses)
+                self.circuit_breaker_cooldown = cb_conditions.get("cooldown_seconds", self.circuit_breaker_cooldown)
+
+    def validate_trade(self, opportunity: TradeOpportunity, spread: float) -> bool:
         """
         Validate if a trade meets risk criteria
 
@@ -64,16 +88,16 @@ class RiskManagement:
                 self.circuit_breaker_active = False
 
         # Check exchanges risk factors
-        buy_exchange = getattr(opportunity, "buy_exchange", None)
-        sell_exchange = getattr(opportunity, "sell_exchange", None)
+        buy_exchange = opportunity.buy_exchange
+        sell_exchange = opportunity.sell_exchange
 
-        if buy_exchange and buy_exchange in self.exchange_risk_factors:
+        if buy_exchange in self.exchange_risk_factors:
             risk_factor = self.exchange_risk_factors[buy_exchange]
             if risk_factor < 0.5:  # Example threshold
                 logger.warning(f"Buy exchange {buy_exchange} has high risk factor: {risk_factor}")
                 return False
 
-        if sell_exchange and sell_exchange in self.exchange_risk_factors:
+        if sell_exchange in self.exchange_risk_factors:
             risk_factor = self.exchange_risk_factors[sell_exchange]
             if risk_factor < 0.5:  # Example threshold
                 logger.warning(f"Sell exchange {sell_exchange} has high risk factor: {risk_factor}")
@@ -82,7 +106,7 @@ class RiskManagement:
         # All checks passed
         return True
 
-    def calculate_position_size(self, opportunity: Any, params: ConfigurationParameters) -> float:
+    def calculate_position_size(self, opportunity: TradeOpportunity, params: ConfigurationParameters) -> float:
         """
         Calculate appropriate position size based on risk parameters
 
@@ -94,7 +118,7 @@ class RiskManagement:
             Calculated position size
         """
         # Get base position size
-        position_size = min(getattr(opportunity, "volume", 0.0) or 0.0, params.max_volume)
+        position_size = min(opportunity.volume, params.max_volume)
 
         # Respect minimum position size
         if position_size < params.min_volume:
@@ -102,20 +126,20 @@ class RiskManagement:
 
         # Scale by spread if enabled
         if self.scale_by_spread:
-            spread = getattr(opportunity, "spread", 0.0)
+            spread = opportunity.spread
             if spread > self.base_spread_threshold:
                 # Calculate scaling factor (higher spread = larger position)
                 spread_multiple = min(spread / self.base_spread_threshold, self.max_spread_multiple)
                 position_size = min(position_size * spread_multiple, params.max_volume)
 
         # Apply exchange-specific scaling
-        buy_exchange = getattr(opportunity, "buy_exchange", None)
-        sell_exchange = getattr(opportunity, "sell_exchange", None)
+        buy_exchange = opportunity.buy_exchange
+        sell_exchange = opportunity.sell_exchange
 
-        if buy_exchange and buy_exchange in self.exchange_risk_factors:
+        if buy_exchange in self.exchange_risk_factors:
             position_size *= self.exchange_risk_factors[buy_exchange]
 
-        if sell_exchange and sell_exchange in self.exchange_risk_factors:
+        if sell_exchange in self.exchange_risk_factors:
             position_size *= self.exchange_risk_factors[sell_exchange]
 
         # Ensure position size is between min and max

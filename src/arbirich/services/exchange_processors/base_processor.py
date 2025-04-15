@@ -29,6 +29,11 @@ class BaseOrderBookProcessor(ABC):
         self.product = product
         self.mapping = {}
         self.delimiter = ""
+
+        # Define subscription type constants
+        self.SUBSCRIPTION_SNAPSHOT = "snapshot"
+        self.SUBSCRIPTION_DELTA = "delta"
+
         self.subscription_type = subscription_type  # "snapshot" or "delta"
         self.use_rest_snapshot = use_rest_snapshot
         self.order_book = {"bids": {}, "asks": {}}
@@ -80,7 +85,7 @@ class BaseOrderBookProcessor(ABC):
                         yield self.order_book
 
                     # For delta subscriptions, verify that the snapshot is recent.
-                    if self.subscription_type == "delta" and snapshot_update_id < first_event.get(
+                    if self.subscription_type == self.SUBSCRIPTION_DELTA and snapshot_update_id < first_event.get(
                         "U", snapshot_update_id
                     ):
                         logger.warning("Snapshot is older than first buffered event. Restarting...")
@@ -92,7 +97,7 @@ class BaseOrderBookProcessor(ABC):
                     ]
 
                     # In delta mode, filter events whose update id is greater than the snapshot.
-                    if self.subscription_type == "delta":
+                    if self.subscription_type == self.SUBSCRIPTION_DELTA:
                         deadline = asyncio.get_event_loop().time() + 5  # wait an extra 2 seconds
                         # Look for the next update id
                         while (
@@ -146,7 +151,10 @@ class BaseOrderBookProcessor(ABC):
                         event = json.loads(message)
 
                         # For delta subscriptions, if a previous update ID is provided, check it.
-                        if self.subscription_type == "delta" and self.get_first_update_id(event) is not None:
+                        if (
+                            self.subscription_type == self.SUBSCRIPTION_DELTA
+                            and self.get_first_update_id(event) is not None
+                        ):
                             if self.get_first_update_id(event) != self.local_update_id + 1:
                                 logger.error("Delta update sequence mismatch; re-subscribing...")
                                 await self.resubscribe(websocket)

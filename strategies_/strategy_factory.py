@@ -42,27 +42,22 @@ def get_strategy(strategy_name: str) -> ArbitrageStrategy:
 
     config = STRATEGIES[strategy_name]
 
-    # Determine strategy type from config or default to "basic"
-    strategy_type = config.get("type", "basic")
+    strategy_type = config.get("type")
 
-    # Get the strategy class
-    if strategy_type not in STRATEGY_CLASSES:
-        logger.warning(f"Unknown strategy type '{strategy_type}', falling back to basic")
-        strategy_type = "basic"
+    try:
+        if strategy_type not in STRATEGY_CLASSES:
+            raise ValueError(f"Unknown strategy type '{strategy_type}' not found in configuration")
 
-    strategy_class = STRATEGY_CLASSES[strategy_type]
+        strategy_class = STRATEGY_CLASSES[strategy_type]
 
-    # Create strategy instance with appropriate constructor based on the new implementation
-    if strategy_type in ["basic", "mid_price", "volume_adjusted"]:
-        # New implementations use strategy_id, name, and config parameters
-        strategy = strategy_class(
-            strategy_id=str(strategy_name),  # Use strategy name as ID
-            strategy_name=strategy_name,
-            config=config,
-        )
-    else:
-        # Fallback for any legacy implementations
-        strategy = strategy_class(strategy_name, config)
+        if strategy_type in ["basic", "mid_price", "volume_adjusted"]:
+            strategy = strategy_class(
+                strategy_id=str(strategy_name),  # Use strategy name as ID
+                strategy_name=strategy_name,
+                config=config,
+            )
+    except Exception as e:
+        raise ValueError(f"Error creating strategy instance for '{strategy_name}': {e}")
 
     # Cache the instance
     _strategy_instances[strategy_name] = strategy
@@ -78,13 +73,13 @@ def discover_strategies() -> None:
     logger.info("Discovering strategy implementations...")
 
     # Get the module path for the strategies package
-    import src.arbirich.services.strategies_ as strategies_pkg
+    import src.arbirich.core.trading.strategy as strategies_pkg
 
     for _, name, is_pkg in pkgutil.iter_modules(strategies_pkg.__path__):
-        if not is_pkg and name not in ("base_strategy", "strategy_factory"):
+        if not is_pkg and name not in ("base", "strategy_factory"):
             try:
                 # Import the module
-                importlib.import_module(f"src.arbirich.services.strategies.{name}")
+                importlib.import_module(f"src.arbirich.core.trading.strategy..{name}")
                 logger.debug(f"Imported strategy module: {name}")
             except Exception as e:
                 logger.error(f"Error importing strategy module {name}: {e}")

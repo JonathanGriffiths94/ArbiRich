@@ -237,13 +237,37 @@ def initialize_reporting(config=None):
     """
     from src.arbirich.services.reporting.reporting_service import ReportingService
 
-    try:
-        reporting_service = ReportingService(config)
-        reporting_service.initialize()
-        return reporting_service
-    except Exception as e:
-        import logging
+    if not config:
+        config = {}
 
-        logger = logging.getLogger(__name__)
+    config["add_strategy_channels"] = False
+
+    try:
+        # Create and initialize the service
+        reporting_service = ReportingService(config)
+        initialized = reporting_service.initialize()
+
+        if initialized:
+            # Start the service if requested in config
+            if config and config.get("auto_start", False):
+                import asyncio
+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(reporting_service.start())
+                    logger.info("Reporting service started asynchronously")
+                else:
+                    success = loop.run_until_complete(reporting_service.start())
+                    if success:
+                        logger.info("Reporting service started successfully")
+                    else:
+                        logger.error("Failed to start reporting service")
+
+            return reporting_service
+        else:
+            logger.error("Failed to initialize reporting service")
+            return None
+
+    except Exception as e:
         logger.error(f"Failed to initialize reporting: {str(e)}")
         return None

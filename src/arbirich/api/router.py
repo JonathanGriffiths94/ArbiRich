@@ -360,6 +360,47 @@ async def configure_component(
         raise HTTPException(status_code=500, detail=f"Failed to configure component: {str(e)}")
 
 
+@trading_router.post("/activate-shutdown", response_model=TradingStatusResponse)
+async def activate_system_shutdown(request: Request):
+    """Activate the full trading system shutdown process."""
+    logger.info("Full system shutdown requested via API")
+
+    # Check for emergency header
+    emergency = request.headers.get("X-Emergency-Shutdown") == "true"
+
+    try:
+        from src.arbirich.core.trading.trading_system import activate_shutdown
+
+        # Activate the shutdown process
+        success = await activate_shutdown(reason="api_requested", emergency=emergency, timeout=30 if emergency else 60)
+
+        message = "Trading system shutdown process activated"
+        if emergency:
+            message += " (EMERGENCY MODE)"
+
+        return TradingStatusResponse(
+            status="shutting_down",
+            message=message,
+            overall=False,
+            success=success,
+            components={
+                "ingestion": "shutting_down",
+                "detection": "shutting_down",
+                "execution": "shutting_down",
+                "reporting": "shutting_down",
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error activating system shutdown: {e}", exc_info=True)
+        return TradingStatusResponse(
+            status="error",
+            message=f"Error activating system shutdown: {str(e)}",
+            overall=None,
+            success=False,
+            components=None,
+        )
+
+
 # -------------------- STRATEGY ENDPOINTS --------------------
 
 
@@ -692,7 +733,17 @@ async def get_recent_opportunities(
 
     # Use the db_service instance to call the method
     opportunities = db_service.get_recent_opportunities(count, strategy_name)
-    return opportunities
+
+    # Convert TradeOpportunity objects to dictionaries
+    result = []
+    for opp in opportunities:
+        # Use model_dump() for Pydantic v2 or dict() for Pydantic v1
+        if hasattr(opp, "model_dump"):
+            result.append(opp.model_dump())
+        else:
+            result.append(opp.dict())
+
+    return result
 
 
 @trading_router.get("/executions", response_model=List[Dict[str, Any]])

@@ -5,6 +5,7 @@ from typing import Dict, Optional
 
 from src.arbirich.models.models import OrderBookState, TradeOpportunity
 
+from ..risk.exchange_profiles import ExchangeRiskProfiler
 from .arbitrage_type import ArbitrageType
 
 logger = logging.getLogger(__name__)
@@ -56,9 +57,19 @@ class LiquidityAdjustedArbitrage(ArbitrageType):
         self.liquidity_multiplier = self.config.get("liquidity_multiplier", 1.5)  # Reward higher liquidity
         self.exchange_risk_factors = self.config.get("exchange_risk_factors", {})
 
-        # Default risk factors if not specified in config
+        # Initialize the exchange risk profiler
+        custom_profiles = self.config.get("exchange_risk_profiles", {})
+        self.exchange_risk_profiler = ExchangeRiskProfiler(custom_profiles)
+
+        # Use the profiler to set risk factors if not explicitly configured
         if not self.exchange_risk_factors:
-            self.exchange_risk_factors = {exchange: 0.9 for exchange in self.config.get("exchanges", [])}
+            exchanges = self.config.get("exchanges", [])
+            self.exchange_risk_factors = {
+                exchange: self.exchange_risk_profiler.get_risk_factor(exchange) for exchange in exchanges
+            }
+
+        # Log the risk factors
+        logger.info(f"Exchange risk factors: {self.exchange_risk_factors}")
 
         # Dynamic adjustment parameters
         self.dynamic_volume_adjust = self.config.get("dynamic_volume_adjust", True)
@@ -230,9 +241,14 @@ class LiquidityAdjustedArbitrage(ArbitrageType):
         buy_volume = exchange_data[buy_exchange]["ask_volume"]
         sell_volume = exchange_data[sell_exchange]["bid_volume"]
 
-        # Risk-adjusted spread calculation
-        buy_risk = exchange_data[buy_exchange]["risk_factor"]
-        sell_risk = exchange_data[sell_exchange]["risk_factor"]
+        # Replace the direct risk factor access with a call to the risk profiler
+        # This ensures we get the most up-to-date risk factor including any dynamic adjustments
+        buy_risk = self.exchange_risk_profiler.get_risk_factor(buy_exchange)
+        sell_risk = self.exchange_risk_profiler.get_risk_factor(sell_exchange)
+
+        # Update the stored risk factors (useful for logging and other components)
+        exchange_data[buy_exchange]["risk_factor"] = buy_risk
+        exchange_data[sell_exchange]["risk_factor"] = sell_risk
 
         # Calculate raw and risk-adjusted spread
         raw_spread = (sell_price - buy_price) / buy_price
@@ -426,7 +442,7 @@ class LiquidityAdjustedArbitrage(ArbitrageType):
             return False
 
         # Extract metadata if available
-        metadata = getattr(opportunity, "metadata", {}) or {}
+        metadata = opportunity.metadata or {}
 
         # Check if spread exceeds threshold after slippage
         estimated_slippage = metadata.get("estimated_slippage", 0)
@@ -468,7 +484,7 @@ class LiquidityAdjustedArbitrage(ArbitrageType):
             Effective spread after slippage adjustment
         """
         # Extract metadata if available
-        metadata = getattr(opportunity, "metadata", {}) or {}
+        metadata = opportunity.metadata or {}
         estimated_slippage = metadata.get("estimated_slippage", 0)
 
         # Calculate net spread after slippage

@@ -1,6 +1,10 @@
+import logging
 from typing import Any, Dict, Optional, Union
 
 from src.arbirich.services.execution.execution_service import ExecutionService
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Global service instance
 _execution_service = None
@@ -20,6 +24,7 @@ async def get_execution_service(method_type: str = "parallel", config: Optional[
     global _execution_service
 
     if _execution_service is None:
+        logger.info(f"🔧 Creating new execution service with method {method_type}")
         _execution_service = ExecutionService(method_type=method_type, config=config or {})
         await _execution_service.initialize()
 
@@ -44,5 +49,6 @@ async def execute_trade(
     Returns:
         The result of the trade execution
     """
+    logger.info(f"🚀 Executing trade with method {method_type}")
     service = await get_execution_service(method_type, config)
     return await service.execute_trade(trade_data, position_size)
