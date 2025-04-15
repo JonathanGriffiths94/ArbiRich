@@ -29,6 +29,53 @@ class ParallelExecution(ExecutionMethod):
         self.logger.info(f"Executing parallel trade for {opportunity} with size {position_size}")
         start_time = time.time()
 
+        # Add validation before attempting execution
+        if not opportunity.buy_exchange or not opportunity.sell_exchange:
+            error_msg = f"Invalid exchanges: buy={opportunity.buy_exchange}, sell={opportunity.sell_exchange}"
+            self.logger.error(error_msg)
+            return TradeExecution(
+                id=f"invalid-{int(time.time())}",
+                strategy=opportunity.strategy,
+                pair=opportunity.pair,
+                buy_exchange=opportunity.buy_exchange or "",
+                sell_exchange=opportunity.sell_exchange or "",
+                executed_buy_price=0.0,
+                executed_sell_price=0.0,
+                spread=0.0,
+                volume=position_size,
+                execution_timestamp=time.time(),
+                success=False,
+                partial=False,
+                profit=0,
+                execution_time=0,
+                error=error_msg,
+                opportunity_id=opportunity.id,
+                details=None,
+            )
+
+        if opportunity.buy_price <= 0 or opportunity.sell_price <= 0:
+            error_msg = f"Invalid prices: buy={opportunity.buy_price}, sell={opportunity.sell_price}"
+            self.logger.error(error_msg)
+            return TradeExecution(
+                id=f"invalid-{int(time.time())}",
+                strategy=opportunity.strategy,
+                pair=opportunity.pair,
+                buy_exchange=opportunity.buy_exchange,
+                sell_exchange=opportunity.sell_exchange,
+                executed_buy_price=0.0,
+                executed_sell_price=0.0,
+                spread=0.0,
+                volume=position_size,
+                execution_timestamp=time.time(),
+                success=False,
+                partial=False,
+                profit=0,
+                execution_time=0,
+                error=error_msg,
+                opportunity_id=opportunity.id,
+                details=None,
+            )
+
         try:
             # Configure tasks for buy and sell legs
             buy_task = self._execute_buy(
@@ -213,9 +260,11 @@ class ParallelExecution(ExecutionMethod):
     async def _execute_buy(self, exchange: str, trading_pair: str, price: float, volume: float) -> Dict:
         """Execute a buy order"""
         # Use the execution service instead of direct exchange service
+        from src.arbirich.models.config_models import ExecutionConfig
         from src.arbirich.services.execution.execution_service import ExecutionService
 
-        execution_service = ExecutionService(method_type="parallel")
+        # Get singleton instance instead of creating a new one
+        execution_service = ExecutionService.get_instance(method_type="parallel", config=ExecutionConfig())
         await execution_service.initialize()
 
         # Format the trade data for the execution service
@@ -235,9 +284,11 @@ class ParallelExecution(ExecutionMethod):
     async def _execute_sell(self, exchange: str, trading_pair: str, price: float, volume: float) -> Dict:
         """Execute a sell order"""
         # Use the execution service instead of direct exchange service
+        from src.arbirich.models.config_models import ExecutionConfig
         from src.arbirich.services.execution.execution_service import ExecutionService
 
-        execution_service = ExecutionService(method_type="parallel")
+        # Get singleton instance instead of creating a new one
+        execution_service = ExecutionService.get_instance(method_type="parallel", config=ExecutionConfig())
         await execution_service.initialize()
 
         # Format the trade data for the execution service

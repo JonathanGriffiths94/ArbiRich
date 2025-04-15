@@ -13,6 +13,7 @@ _resources_lock = threading.RLock()
 _pubsub_resources = []
 _redis_client_resources = []
 _registered_cleanup_funcs = []
+_named_cleanup_funcs = {}  # New dictionary to store named cleanup functions
 
 
 def register_pubsub(pubsub: Any) -> None:
@@ -23,12 +24,31 @@ def register_pubsub(pubsub: Any) -> None:
             logger.debug(f"Registered Redis PubSub for cleanup (total: {len(_pubsub_resources)})")
 
 
-def register_redis_client(client: Any) -> None:
-    """Register a Redis client instance for cleanup during shutdown."""
+def register_redis_client(client_or_name: Any, cleanup_func: callable = None) -> None:
+    """
+    Register a Redis client instance or named cleanup function for cleanup during shutdown.
+
+    This function supports two usage patterns:
+    1. register_redis_client(client) - Register a Redis client object
+    2. register_redis_client("name", cleanup_func) - Register a named cleanup function
+
+    Args:
+        client_or_name: Either a Redis client object or a name string
+        cleanup_func: Optional cleanup function if client_or_name is a string
+    """
     with _resources_lock:
-        if client is not None and client not in _redis_client_resources:
-            _redis_client_resources.append(client)
-            logger.debug(f"Registered Redis client for cleanup (total: {len(_redis_client_resources)})")
+        # Case 1: Called with client object only
+        if cleanup_func is None:
+            client = client_or_name
+            if client is not None and client not in _redis_client_resources:
+                _redis_client_resources.append(client)
+                logger.debug(f"Registered Redis client for cleanup (total: {len(_redis_client_resources)})")
+        # Case 2: Called with name and cleanup function
+        else:
+            name = client_or_name
+            if isinstance(name, str) and cleanup_func is not None:
+                _named_cleanup_funcs[name] = cleanup_func
+                logger.debug(f"Registered named cleanup function for '{name}'")
 
 
 def register_cleanup_function(func: callable) -> None:
@@ -49,6 +69,12 @@ def get_registered_clients() -> List[Any]:
     """Get the list of registered Redis clients."""
     with _resources_lock:
         return list(_redis_client_resources)
+
+
+def get_registered_cleanup_functions() -> List[callable]:
+    """Get the list of registered cleanup functions."""
+    with _resources_lock:
+        return list(_registered_cleanup_funcs)
 
 
 def safe_close_pubsub(pubsub: Any) -> bool:
@@ -117,13 +143,24 @@ def cleanup_all_redis_resources() -> bool:
     # Call registered cleanup functions first
     with _resources_lock:
         cleanup_funcs = list(_registered_cleanup_funcs)
+        named_funcs = dict(_named_cleanup_funcs)  # Make a copy to avoid modification during iteration
 
+    # Call regular cleanup functions
     for func in cleanup_funcs:
         try:
             func()
         except Exception as e:
             all_success = False
             errors.append(f"Error in cleanup function {func.__name__}: {e}")
+
+    # Call named cleanup functions
+    for name, func in named_funcs.items():
+        try:
+            func()
+            logger.info(f"Executed cleanup function for '{name}'")
+        except Exception as e:
+            all_success = False
+            errors.append(f"Error in named cleanup function '{name}': {e}")
 
     # Close all PubSubs
     with _resources_lock:

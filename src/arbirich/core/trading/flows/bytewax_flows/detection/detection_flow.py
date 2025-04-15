@@ -3,6 +3,7 @@ import signal
 import sys
 import time
 from decimal import Decimal
+from typing import Optional
 
 from bytewax.dataflow import Dataflow
 from bytewax.operators import (
@@ -30,7 +31,7 @@ from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source im
     mark_detection_force_kill,
 )
 from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
-from src.arbirich.models.models import OrderBookState
+from src.arbirich.models.models import OrderBookState, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -195,7 +196,7 @@ def build_detection_flow(strategy_name: str, debug_mode: bool = False, threshold
     )
 
     # Enhanced detect_opps to better track exchanges compared - fix asset extraction
-    def detect_opps(input_data):
+    def detect_opps(input_data) -> Optional[TradeOpportunity]:
         # Add debugging to understand the input structure
         logger.info(f"detect_opps received input type: {type(input_data)}")
 
@@ -278,17 +279,31 @@ def build_detection_flow(strategy_name: str, debug_mode: bool = False, threshold
         logger.info(f"⏱️ Detection for {asset} completed in {process_time:.6f}s")
 
         if opportunity:
-            if isinstance(opportunity, dict) and "strategy" not in opportunity:
-                opportunity["strategy"] = strategy_name
+            # Ensure opportunity is a TradeOpportunity Pydantic model
+            if not isinstance(opportunity, TradeOpportunity):
+                logger.warning(f"⚠️ Opportunity is not a TradeOpportunity model, type: {type(opportunity)}")
+
+                # If it's a dictionary, convert it to a TradeOpportunity model
+                if isinstance(opportunity, dict):
+                    try:
+                        # If strategy is missing, add it
+                        if "strategy" not in opportunity:
+                            opportunity["strategy"] = strategy_name
+
+                        # Convert to Pydantic model
+                        opportunity = TradeOpportunity(**opportunity)
+                        logger.info("✅ Successfully converted opportunity dict to TradeOpportunity model")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to convert opportunity dict to TradeOpportunity model: {e}")
+                        return None
+                else:
+                    logger.error(f"❌ Opportunity is not a dict or TradeOpportunity model: {type(opportunity)}")
+                    return None
 
             logger.info(f"💰 FOUND OPPORTUNITY for {asset}!")
-
-            # Add some summary of the opportunity
-            if isinstance(opportunity, dict):
-                buy_exchange = opportunity.get("buy_exchange", "unknown")
-                sell_exchange = opportunity.get("sell_exchange", "unknown")
-                spread = opportunity.get("spread", 0)
-                logger.info(f"  • Buy: {buy_exchange}, Sell: {sell_exchange}, Spread: {spread:.4%}")
+            logger.info(
+                f"  • Buy: {opportunity.buy_exchange}, Sell: {opportunity.sell_exchange}, Spread: {opportunity.spread:.4%}"
+            )
         else:
             logger.info(f"❌ No opportunity found for {asset}")
 
@@ -394,6 +409,40 @@ async def stop_detection_flow_async():
 
     # Then stop via flow manager
     return await flow_manager.stop_flow_async()
+
+
+def process_output_opportunity(opportunity):
+    """Process output opportunity and ensure it's published."""
+    import sys
+
+    from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_sink import publish_trade_opportunity
+    from src.arbirich.models.models import TradeOpportunity
+
+    print(f"DETECTION FLOW - PROCESSING OUTPUT OPPORTUNITY: {opportunity}")
+    sys.stdout.flush()  # Force print to appear
+
+    if opportunity:
+        # Ensure it's a proper TradeOpportunity model
+        if not isinstance(opportunity, TradeOpportunity):
+            print(f"WARNING: Opportunity is not a TradeOpportunity model: {type(opportunity)}")
+            # Try to convert if it's a dict
+            if isinstance(opportunity, dict):
+                try:
+                    opportunity = TradeOpportunity(**opportunity)
+                    print("Successfully converted opportunity dict to TradeOpportunity model")
+                except Exception as e:
+                    print(f"ERROR: Failed to convert to TradeOpportunity: {e}")
+                    return None
+            else:
+                print(f"ERROR: Cannot process opportunity of type {type(opportunity)}")
+                return None
+
+        # Now publish the validated opportunity
+        result = publish_trade_opportunity(opportunity)
+        print(f"OPPORTUNITY PUBLISH RESULT: {result}")
+        sys.stdout.flush()  # Force print to appear
+        return result
+    return None
 
 
 if __name__ == "__main__":

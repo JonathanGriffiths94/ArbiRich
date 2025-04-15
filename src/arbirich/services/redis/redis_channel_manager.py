@@ -2,7 +2,7 @@ import logging
 import threading
 
 from src.arbirich.models.enums import ChannelName
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +53,11 @@ class RedisChannelManager:
             Number of subscribers that received the message
         """
         try:
-            # Convert to JSON directly using the model
-            json_data = execution.model_dump_json()
-
-            # Publish only to main channel
-            channel = ChannelName.TRADE_EXECUTIONS.value
-            subscribers = self.redis.client.publish(channel, json_data)
+            # Use the repository pattern through redis_service
+            subscribers = self.redis.get_trade_execution_repository().publish(execution)
 
             if self.logger:
+                channel = ChannelName.TRADE_EXECUTIONS.value
                 self.logger.info(f"Published execution to {channel} with {subscribers} subscribers")
 
             return subscribers
@@ -80,32 +77,53 @@ class RedisChannelManager:
             Number of subscribers that received the message
         """
         try:
-            # Convert to JSON directly using the model
-            json_data = opportunity.model_dump_json()
+            # Use the repository pattern through redis_service
+            subscribers = self.redis.get_trade_opportunity_repository().publish(opportunity)
 
-            # Publish to main opportunities channel
-            channel = ChannelName.TRADE_OPPORTUNITIES.value
-            subscribers = self.redis.client.publish(channel, json_data)
-
-            # Also publish to strategy-specific channel if strategy is available
-            strategy = opportunity.strategy
-            if strategy:
-                strategy_channel = f"{channel}:{strategy}"
-                strategy_subscribers = self.redis.client.publish(strategy_channel, json_data)
-                subscribers += strategy_subscribers
-
-                if self.logger:
+            # Log successful publishing
+            if self.logger:
+                channel = ChannelName.TRADE_OPPORTUNITIES.value
+                strategy = opportunity.strategy
+                if strategy:
+                    strategy_channel = f"{channel}:{strategy}"
                     self.logger.info(
                         f"Published opportunity to {channel} and {strategy_channel} with {subscribers} total subscribers"
                     )
-            else:
-                if self.logger:
+                else:
                     self.logger.info(f"Published opportunity to {channel} with {subscribers} subscribers")
 
             return subscribers
         except Exception as e:
             if self.logger:
                 self.logger.error(f"Error publishing opportunity: {e}")
+            return 0
+
+    def publish_order_book(self, order_book: OrderBookUpdate, exchange: str = None, symbol: str = None) -> int:
+        """
+        Publish order book data to the appropriate channel
+
+        Args:
+            order_book: Order book data object
+            exchange: Optional exchange override (defaults to order_book.exchange)
+            symbol: Optional symbol override (defaults to order_book.symbol)
+
+        Returns:
+            Number of subscribers that received the message
+        """
+        try:
+            # Use the repository pattern through redis_service
+            subscribers = self.redis.get_order_book_repository().publish(order_book, exchange, symbol)
+
+            if self.logger:
+                exchange_name = exchange or order_book.exchange
+                symbol_name = symbol or order_book.symbol
+                channel = f"{ChannelName.ORDER_BOOK.value}:{exchange_name}:{symbol_name}"
+                self.logger.debug(f"Published order book to {channel} with {subscribers} subscribers")
+
+            return subscribers
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error publishing order book: {e}")
             return 0
 
     def get_opportunity_channel(self) -> str:

@@ -21,7 +21,7 @@ class TableName(str, enum.Enum):
     """Database table names"""
 
     EXCHANGES = "exchanges"
-    TRADING_PAIRS = "trading_pairs"  # Updated to match new naming
+    TRADING_PAIRS = "trading_pairs"
     STRATEGIES = "strategies"
     TRADE_OPPORTUNITIES = "trade_opportunities"
     TRADE_EXECUTIONS = "trade_executions"

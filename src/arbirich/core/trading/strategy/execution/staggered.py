@@ -271,9 +271,11 @@ class StaggeredExecution(ExecutionMethod):
     async def _execute_buy(self, exchange: str, trading_pair: str, price: float, volume: float) -> Dict:
         """Execute a buy order"""
         # Use the execution service instead of direct exchange service
+        from src.arbirich.models.config_models import ExecutionConfig
         from src.arbirich.services.execution.execution_service import ExecutionService
 
-        execution_service = ExecutionService(method_type="parallel")
+        # Get singleton instance instead of creating a new one
+        execution_service = ExecutionService.get_instance(method_type="parallel", config=ExecutionConfig())
         await execution_service.initialize()
 
         # Format the trade data for the execution service
@@ -293,9 +295,11 @@ class StaggeredExecution(ExecutionMethod):
     async def _execute_sell(self, exchange: str, trading_pair: str, price: float, volume: float) -> Dict:
         """Execute a sell order"""
         # Use the execution service instead of direct exchange service
+        from src.arbirich.models.config_models import ExecutionConfig
         from src.arbirich.services.execution.execution_service import ExecutionService
 
-        execution_service = ExecutionService(method_type="parallel")
+        # Get singleton instance instead of creating a new one
+        execution_service = ExecutionService.get_instance(method_type="parallel", config=ExecutionConfig())
         await execution_service.initialize()
 
         # Format the trade data for the execution service

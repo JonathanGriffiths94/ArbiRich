@@ -1,7 +1,7 @@
 import logging
 import time
 import uuid
-from typing import Dict, Literal, Optional, Union
+from typing import ClassVar, Dict, Literal, Optional, Union
 
 from src.arbirich.core.trading.strategy.execution.method import ExecutionMethod
 from src.arbirich.core.trading.strategy.execution.parallel import ParallelExecution
@@ -16,31 +16,95 @@ class ExecutionService:
     Service responsible for executing trades across different exchanges.
     """
 
+    # Class variable to store instance registry
+    _instances: ClassVar[Dict[str, "ExecutionService"]] = {}
+    _initialization_lock = False
+
+    @classmethod
+    def get_instance(
+        cls, method_type: Literal["parallel", "staggered"] = "parallel", config: Union[Dict, ExecutionConfig] = None
+    ) -> "ExecutionService":
+        """
+        Get or create an ExecutionService instance (singleton pattern).
+
+        Args:
+            method_type: Type of execution method to use
+            config: Configuration for the execution service
+
+        Returns:
+            Shared ExecutionService instance for the specified method type
+        """
+        # Create a key that uniquely identifies this configuration
+        if isinstance(config, dict):
+            key = f"{method_type}"
+        else:
+            key = f"{method_type}"
+
+        # Return existing instance if available
+        if key in cls._instances:
+            return cls._instances[key]
+
+        # Create new instance
+        instance = cls(method_type=method_type, config=config)
+        cls._instances[key] = instance
+        return instance
+
+    @classmethod
+    def reset_instances(cls):
+        """Clear all cached ExecutionService instances"""
+        cls._instances.clear()
+
     def __init__(
-        self, method_type: Literal["parallel", "staggered"] = "parallel", config: Optional[ExecutionConfig] = None
+        self, method_type: Literal["parallel", "staggered"] = "parallel", config: Union[Dict, ExecutionConfig] = None
     ):
         """
         Initialize the execution service.
 
         Args:
             method_type: Type of execution method to use (parallel or staggered)
-            config: Configuration for the execution service
+            config: Configuration for the execution service (dict will be converted to ExecutionConfig)
         """
         self.logger = logging.getLogger(__name__)
         self.method_type = method_type
-        self.config = config or ExecutionConfig()  # Use default config if none provided
+
+        # Always convert config to ExecutionConfig if it's a dictionary
+        if isinstance(config, dict):
+            self.config = ExecutionConfig(**config)
+        else:
+            self.config = config or ExecutionConfig()  # Use default config if none provided
+
         self.execution_method: Optional[ExecutionMethod] = None
+        self._initialized = False
 
     async def initialize(self) -> None:
         """
         Initialize the execution service and its connections to exchanges.
+        Only initializes once, even if called multiple times.
         """
+        if self._initialized:
+            return
+
         self.logger.info(f"🔧 Initializing ExecutionService with method: {self.method_type}")
 
-        # Initialize the appropriate execution method
-        self.execution_method = self._create_execution_method(self.method_type, self.config.dict())
+        try:
+            # Always use the Pydantic model's model_dump or dict method
+            if hasattr(self.config, "model_dump"):
+                # Newer Pydantic v2 model
+                config_dict = self.config.model_dump()
+            elif hasattr(self.config, "dict"):
+                # Older Pydantic model
+                config_dict = self.config.dict()
+            else:
+                # Should never happen since we ensure self.config is a Pydantic model in __init__
+                config_dict = {}
+                self.logger.warning(f"Config object has no dict() or model_dump() method: {type(self.config)}")
 
-        self.logger.info(f"🟢 ExecutionService initialized with {self.method_type} method")
+            self.execution_method = self._create_execution_method(self.method_type, config_dict)
+            self._initialized = True
+            self.logger.info(f"🟢 ExecutionService initialized with {self.method_type} method")
+        except Exception as e:
+            self.logger.error(f"Error initializing execution service: {e}")
+            raise
 
     def _create_execution_method(self, method_type: str, config: Dict) -> ExecutionMethod:
         """

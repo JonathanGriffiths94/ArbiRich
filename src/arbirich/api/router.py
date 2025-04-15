@@ -285,7 +285,7 @@ async def stop_trading(request: Request, stop_request: TradingStopRequest = None
     try:
         # Stop all components
         from src.arbirich.core.state.system_state import mark_system_shutdown
-        from src.arbirich.core.trading.bytewax_flows.ingestion.ingestion_source import disable_processor_startup
+        from src.arbirich.core.trading.flows.bytewax_flows.ingestion.ingestion_source import disable_processor_startup
         from src.arbirich.services.exchange_processors.registry import set_processors_shutting_down
 
         # Set shutdown flags

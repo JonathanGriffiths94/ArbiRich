@@ -27,6 +27,8 @@ async def get_execution_service(method_type: str = "parallel", config: Optional[
         logger.info(f"🔧 Creating new execution service with method {method_type}")
         _execution_service = ExecutionService(method_type=method_type, config=config or {})
         await _execution_service.initialize()
+    else:
+        logger.debug(f"♻️ Reusing existing execution service with method {method_type}")
 
     return _execution_service
 

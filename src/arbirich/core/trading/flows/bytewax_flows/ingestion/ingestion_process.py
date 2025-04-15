@@ -1,6 +1,5 @@
 import logging
-import time
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 from src.arbirich.models.models import OrderBookUpdate
 
@@ -8,12 +7,12 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def process_order_book(data: Union[Dict, Tuple]) -> Optional[OrderBookUpdate]:
+def process_order_book(data: Tuple[str, str, OrderBookUpdate]) -> Optional[OrderBookUpdate]:
     """
-    Process raw order book data into a standardized OrderBookUpdate format.
+    Process order book data, assuming it's already an OrderBookUpdate model.
 
     Parameters:
-        data: Raw order book data as a Tuple of (exchange, symbol, order_book_dict)
+        data: A tuple of (exchange, symbol, order_book) where order_book is an OrderBookUpdate
 
     Returns:
         OrderBookUpdate model or None if processing fails
@@ -22,43 +21,20 @@ def process_order_book(data: Union[Dict, Tuple]) -> Optional[OrderBookUpdate]:
         return None
 
     try:
-        # Only handle tuple format: (exchange, symbol, order_book_dict)
+        # Assume data is a tuple with the third element being an OrderBookUpdate
         if isinstance(data, tuple) and len(data) == 3:
-            exchange = data[0]
-            symbol = data[1]
-            order_book_dict = data[2]
+            # Simply return the OrderBookUpdate model
+            order_book = data[2]
 
-            # Normalize timestamp
-            raw_timestamp = order_book_dict.get("timestamp", time.time())
+            # Make sure it's the right type
+            if not isinstance(order_book, OrderBookUpdate):
+                logger.error(f"❌ Expected OrderBookUpdate model, got {type(order_book)}")
+                return None
 
-            # Timestamp normalization - ensure it's in seconds since epoch
-            if isinstance(raw_timestamp, (int, float)):
-                # If timestamp is in milliseconds (common in crypto exchanges)
-                if raw_timestamp > 1600000000000:  # If timestamp is past 2020 in milliseconds
-                    timestamp = raw_timestamp / 1000.0
-                else:
-                    timestamp = raw_timestamp
-            else:
-                # If it's not a number, use current time
-                timestamp = time.time()
-
-            sequence = order_book_dict.get("sequence")
-
-            # Get bids and asks from the dictionary part
-            # Since we're receiving real dictionary data from Bybit and Crypto.com,
-            # we can simplify by using it directly
-            bids_dict = order_book_dict.get("bids", {})
-            asks_dict = order_book_dict.get("asks", {})
-
-            # Create OrderBookUpdate with the dictionary format
-            order_book_update = OrderBookUpdate(
-                exchange=exchange, symbol=symbol, bids=bids_dict, asks=asks_dict, timestamp=timestamp, sequence=sequence
-            )
-
-            return order_book_update
+            return order_book
         else:
-            logger.error(f"Invalid data format received: {type(data)}")
+            logger.error(f"❌ Invalid data format received: {type(data)}")
             return None
     except Exception as e:
-        logger.error(f"Error processing order book: {e}", exc_info=True)
+        logger.error(f"❌ Error processing order book: {e}", exc_info=True)
         return None

@@ -3,7 +3,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Type
+from typing import Any, List, Optional, Type
 
 from bytewax.inputs import FixedPartitionedSource, StatefulSourcePartition
 
@@ -39,13 +39,17 @@ _shutdown_lock = threading.Lock()
 
 _active_consumers = {}  # Track active consumers by exchange and symbol
 
+# Add a registry to track active partitions to prevent duplicates
+_active_partitions = {}
+_active_partitions_lock = threading.RLock()
+
 
 def reset_processor_states():
     """Reset processor states during system restart"""
     global _processor_states
     with _processor_state_lock:
         _processor_states.clear()
-    logger.info("Processor states reset")
+    logger.info("🔄 Processor states reset")
 
 
 def stop_processor(exchange, symbol):
@@ -58,7 +62,7 @@ def stop_processor(exchange, symbol):
 
         # Avoid redundant stops
         if current_state == PROCESSOR_STATE_STOPPING or current_state == PROCESSOR_STATE_STOPPED:
-            logger.debug(f"Ignoring redundant stop event for {processor_id}")
+            logger.debug(f"⏭️ Ignoring redundant stop event for {processor_id}")
             return False
 
         # Mark as stopping
@@ -67,14 +71,14 @@ def stop_processor(exchange, symbol):
     # Now do the actual stopping
     try:
         # Your existing stop logic here
-        logger.info(f"Stopping websocket consumer for {processor_id}")
+        logger.info(f"🛑 Stopping websocket consumer for {processor_id}")
 
         # After processor is stopped successfully
         with _processor_state_lock:
             _processor_states[processor_id] = PROCESSOR_STATE_STOPPED
         return True
     except Exception as e:
-        logger.error(f"Error stopping processor {processor_id}: {e}")
+        logger.error(f"❌ Error stopping processor {processor_id}: {e}")
         return False
 
 
@@ -83,7 +87,7 @@ def disable_processor_startup():
     global _startup_disabled
     with _processor_startup_lock:
         _startup_disabled = True
-    logger.info("Processor startup disabled during shutdown")
+    logger.info("🔒 Processor startup disabled during shutdown")
 
 
 def reset_processor_startup():
@@ -91,7 +95,7 @@ def reset_processor_startup():
     global _startup_disabled
     with _processor_startup_lock:
         _startup_disabled = False
-    logger.info("Processor startup re-enabled")
+    logger.info("🔓 Processor startup re-enabled")
 
 
 def start_websocket_consumer(exchange: str, symbol: str):
@@ -102,11 +106,11 @@ def start_websocket_consumer(exchange: str, symbol: str):
 
     # Check shutdown flags first - even before acquiring the lock
     if is_system_shutting_down() or are_processors_shutting_down() or is_force_kill_set("ingestion"):
-        logger.info(f"Skipping processor creation for {consumer_id} - system shutting down (early check)")
+        logger.info(f"⏹️ Skipping processor creation for {consumer_id} - system shutting down (early check)")
         return
 
     with _shutdown_lock:
-        logger.debug(f"Attempting to start consumer for {consumer_id}. Shutdown flag: {is_system_shutting_down()}")
+        logger.debug(f"🔍 Attempting to start consumer for {consumer_id}. Shutdown flag: {is_system_shutting_down()}")
 
         # Double check shutdown flag inside the lock
         if (
@@ -115,31 +119,31 @@ def start_websocket_consumer(exchange: str, symbol: str):
             or _startup_disabled
             or is_force_kill_set("ingestion")
         ):
-            logger.info(f"Skipping processor creation for {consumer_id} - system shutting down")
+            logger.info(f"⏹️ Skipping processor creation for {consumer_id} - system shutting down")
             return
 
         # Check if the consumer is already active
         if consumer_id in _active_consumers:
-            logger.info(f"WebSocket consumer for {consumer_id} is already running")
+            logger.info(f"✅ WebSocket consumer for {consumer_id} is already running")
             return
 
         # Attempt to register in the processor registry first
         if not register_processor("websocket", consumer_id, None):
-            logger.info(f"Skipping processor creation for {consumer_id} - registration failed")
+            logger.info(f"⚠️ Skipping processor creation for {consumer_id} - registration failed")
             return
 
         # At this point we know the system is not shutting down and we can proceed
         try:
-            logger.info(f"Starting WebSocket consumer for {consumer_id}")
+            logger.info(f"🚀 Starting WebSocket consumer for {consumer_id}")
             # ...existing code to start the WebSocket consumer...
             _active_consumers[consumer_id] = True
-            logger.debug(f"Consumer for {consumer_id} started successfully. Active consumers: {_active_consumers}")
+            logger.debug(f"✅ Consumer for {consumer_id} started successfully. Active consumers: {_active_consumers}")
         except Exception as e:
-            logger.error(f"Error starting WebSocket consumer for {consumer_id}: {e}")
+            logger.error(f"❌ Error starting WebSocket consumer for {consumer_id}: {e}")
             # Clean up on failure
             _active_consumers.pop(consumer_id, None)
             deregister_processor("websocket", consumer_id)
-            logger.debug(f"Active consumers after failure: {_active_consumers}")
+            logger.debug(f"🔄 Active consumers after failure: {_active_consumers}")
 
 
 def stop_all_consumers():
@@ -147,28 +151,28 @@ def stop_all_consumers():
     Stop all active WebSocket consumers.
     """
     with _shutdown_lock:
-        logger.debug(f"Stopping all consumers. Active consumers before stopping: {_active_consumers}")
+        logger.debug(f"🔍 Stopping all consumers. Active consumers before stopping: {_active_consumers}")
         try:
-            logger.info("Stopping all WebSocket consumers...")
+            logger.info("🛑 Stopping all WebSocket consumers...")
             for consumer_id in list(_active_consumers.keys()):
                 try:
                     # Stop the consumer
-                    logger.info(f"Stopping consumer for {consumer_id}")
+                    logger.info(f"🛑 Stopping consumer for {consumer_id}")
                     # ...existing code to stop the consumer...
                     del _active_consumers[consumer_id]  # Remove from active consumers
-                    logger.debug(f"Consumer for {consumer_id} stopped successfully.")
+                    logger.debug(f"✅ Consumer for {consumer_id} stopped successfully.")
                 except Exception as e:
-                    logger.error(f"Error stopping consumer for {consumer_id}: {e}")
-            logger.info("All WebSocket consumers stopped")
-            logger.debug(f"Active consumers after stopping: {_active_consumers}")
+                    logger.error(f"❌ Error stopping consumer for {consumer_id}: {e}")
+            logger.info("✅ All WebSocket consumers stopped")
+            logger.debug(f"🔍 Active consumers after stopping: {_active_consumers}")
         except Exception as e:
-            logger.error(f"Error stopping WebSocket consumers: {e}")
+            logger.error(f"❌ Error stopping WebSocket consumers: {e}")
 
 
 def mark_ingestion_force_kill():
     """Mark ingestion flow for force kill"""
     mark_force_kill("ingestion")
-    logger.warning("Ingestion force kill flag set - all processors will be stopped")
+    logger.warning("⚠️ Ingestion force kill flag set - all processors will be stopped")
 
     # Stop all consumers/processors as part of force kill
     try:
@@ -176,7 +180,7 @@ def mark_ingestion_force_kill():
         reset_processor_states()
         disable_processor_startup()
     except Exception as e:
-        logger.error(f"Error during ingestion force kill cleanup: {e}")
+        logger.error(f"❌ Error during ingestion force kill cleanup: {e}")
 
 
 class WebsocketPartition(StatefulSourcePartition):
@@ -222,7 +226,9 @@ class WebsocketPartition(StatefulSourcePartition):
         # Add explicit early check for system-wide shutdown
         if is_system_shutting_down() or are_processors_shutting_down() or is_force_kill_set("ingestion"):
             if self.running:
-                logger.info(f"Shutting down active websocket for {self.exchange}:{self.product} due to system shutdown")
+                logger.info(
+                    f"🛑 Shutting down active websocket for {self.exchange}:{self.product} due to system shutdown"
+                )
                 self.running = False
             return []
 
@@ -231,7 +237,7 @@ class WebsocketPartition(StatefulSourcePartition):
             if not self.running:
                 # Double-check shutdown status before starting
                 if is_system_shutting_down() or are_processors_shutting_down() or is_force_kill_set("ingestion"):
-                    logger.info(f"Skipping websocket start for {self.exchange}:{self.product} - system shutting down")
+                    logger.info(f"⏹️ Skipping websocket start for {self.exchange}:{self.product} - system shutting down")
                     return []
 
                 self.loop = self._get_or_create_event_loop()
@@ -241,7 +247,7 @@ class WebsocketPartition(StatefulSourcePartition):
 
                 # If processor initialization returned None (due to shutdown), don't proceed
                 if processor_init_result is None:
-                    logger.info(f"Websocket processor initialization aborted for {self.exchange}:{self.product}")
+                    logger.info(f"⚠️ Websocket processor initialization aborted for {self.exchange}:{self.product}")
                     return []
 
                 # Only set running=True if we should proceed
@@ -256,6 +262,14 @@ class WebsocketPartition(StatefulSourcePartition):
                 order_book = self.loop.run_until_complete(asyncio.wait_for(self.queue.get(), 0.1))
                 self.last_activity = time.time()
                 self.error_backoff = 1  # Reset backoff on successful message
+
+                # Assume order_book is already an OrderBookUpdate Pydantic model
+                # This is what our websocket processor should provide
+                from src.arbirich.models.models import OrderBookUpdate
+
+                assert isinstance(order_book, OrderBookUpdate), "Expected OrderBookUpdate model from websocket"
+
+                # Return the model in the expected tuple format
                 return [(self.exchange, self.product, order_book)]
             except asyncio.TimeoutError:
                 # No data available yet, return empty batch
@@ -263,7 +277,7 @@ class WebsocketPartition(StatefulSourcePartition):
 
         except Exception as e:
             # Use exponential backoff for error retries
-            logger.error(f"Error in next_batch for {self.exchange}:{self.product}: {e}")
+            logger.error(f"❌ Error in next_batch for {self.exchange}:{self.product}: {e}")
             time.sleep(min(self.error_backoff, self.max_backoff))
             self.error_backoff = min(self.error_backoff * 2, self.max_backoff)
             # Try to reconnect if necessary
@@ -277,13 +291,13 @@ class WebsocketPartition(StatefulSourcePartition):
 
             # Check BOTH shutdown flags outside of any locks
             if is_system_shutting_down() or are_processors_shutting_down() or is_force_kill_set("ingestion"):
-                logger.info(f"Skipping processor creation for {processor_id} - system shutting down")
+                logger.info(f"⏹️ Skipping processor creation for {processor_id} - system shutting down")
                 self.running = False  # Explicitly mark as not running
                 return None  # Return None to indicate failure
 
             # Then check registry to avoid duplicates
             if is_processor_registered("websocket", processor_id):
-                logger.info(f"Processor for {processor_id} already registered, skipping initialization")
+                logger.info(f"ℹ️ Processor for {processor_id} already registered, skipping initialization")
                 self.running = False
                 return None  # Return None to indicate failure
 
@@ -295,12 +309,12 @@ class WebsocketPartition(StatefulSourcePartition):
                     or are_processors_shutting_down()
                     or is_force_kill_set("ingestion")
                 ):
-                    logger.info(f"Skipping processor creation for {processor_id} - startup disabled")
+                    logger.info(f"⏹️ Skipping processor creation for {processor_id} - startup disabled")
                     self.running = False
                     return None  # Return None to indicate failure
 
             # Now we're sure we can proceed
-            logger.info(f"Initializing processor for {processor_id}")
+            logger.info(f"🔧 Initializing processor for {processor_id}")
             self.processor = self.processor_class(
                 exchange=self.exchange,
                 product=self.product,
@@ -310,14 +324,14 @@ class WebsocketPartition(StatefulSourcePartition):
 
             # Register the processor
             if not register_processor("websocket", processor_id, self.processor):
-                logger.warning(f"Failed to register processor {processor_id}, may already be registered")
+                logger.warning(f"⚠️ Failed to register processor {processor_id}, may already be registered")
                 return None  # Return None to indicate failure
 
             # Return True to indicate success
             return True
 
         except Exception as e:
-            logger.error(f"Error initializing processor for {self.exchange}:{self.product}: {e}")
+            logger.error(f"❌ Error initializing processor for {self.exchange}:{self.product}: {e}")
             self.running = False
             # Return None to indicate failure
             return None
@@ -331,33 +345,54 @@ class WebsocketPartition(StatefulSourcePartition):
         try:
             # Double-check at the start of consumption - BEFORE any logging
             if is_system_shutting_down() or are_processors_shutting_down() or is_force_kill_set("ingestion"):
-                logger.info(f"Aborting consumer for {processor_id} - system shutting down")
+                logger.info(f"⏹️ Aborting consumer for {processor_id} - system shutting down")
                 self.running = False
                 return
 
             # Only log start if we're actually going to start
-            logger.info(f"Starting websocket consumer for {processor_id}")
+            logger.info(f"🚀 Starting websocket consumer for {processor_id}")
 
             # Start consuming
             async for order_book in self.processor.run():
                 # Check for shutdown on EACH message
                 if is_system_shutting_down() or are_processors_shutting_down() or is_force_kill_set("ingestion"):
-                    logger.info(f"Consumer {processor_id} detected shutdown, stopping")
+                    logger.info(f"🛑 Consumer {processor_id} detected shutdown, stopping")
                     break
 
                 # Only check stop events if we haven't been notified
                 if not self.already_notified:
                     self.handle_stop_event(processor_id)
 
-                # Process the message
+                # Process the message - ensure we have an OrderBookUpdate instance
+                from src.arbirich.models.models import OrderBookUpdate
+
+                if not isinstance(order_book, OrderBookUpdate):
+                    try:
+                        # Try to convert dictionary to OrderBookUpdate if needed
+                        if isinstance(order_book, dict):
+                            order_book = OrderBookUpdate(
+                                exchange=self.exchange,
+                                symbol=self.product,
+                                bids=order_book.get("bids", {}),
+                                asks=order_book.get("asks", {}),
+                                timestamp=order_book.get("timestamp", time.time()),
+                                sequence=order_book.get("sequence", None),
+                            )
+                        else:
+                            logger.error(f"❌ Unexpected order book type: {type(order_book)} for {processor_id}")
+                            continue
+                    except Exception as e:
+                        logger.error(f"❌ Error converting order book data: {e} for {processor_id}")
+                        continue
+
                 await self.queue.put(order_book)
         except Exception as e:
-            logger.error(f"Error in websocket consumer for {processor_id}: {e}")
+            logger.error(f"❌ Error in websocket consumer for {processor_id}: {e}")
         finally:
             # Clean up no matter what happened
             self.running = False
             deregister_processor("websocket", processor_id)
-            logger.info(f"Websocket consumer for {processor_id} stopped")
+            logger.info(f"🛑 Websocket consumer for {processor_id} stopped")
 
     def snapshot(self):
         """Get the partition state for recovery.
@@ -389,7 +424,7 @@ class WebsocketPartition(StatefulSourcePartition):
     def force_stop(self):
         """Forcefully stop this WebSocket partition."""
         processor_id = f"{self.exchange}:{self.product}"
-        logger.info(f"Forcefully stopping WebSocket partition for {processor_id}")
+        logger.info(f"🛑 Forcefully stopping WebSocket partition for {processor_id}")
         self.running = False
 
         if hasattr(self, "processor") and self.processor:
@@ -399,7 +434,7 @@ class WebsocketPartition(StatefulSourcePartition):
                 # Deregister from the registry
                 deregister_processor("websocket", processor_id)
             except Exception as e:
-                logger.error(f"Error stopping processor for {processor_id}: {e}")
+                logger.error(f"❌ Error stopping processor for {processor_id}: {e}")
 
 
 @dataclass
@@ -421,17 +456,24 @@ class MultiExchangeSource(FixedPartitionedSource):
         self.processor_factory = processor_factory
         self.stop_event = stop_event
         self.logger = logging.getLogger(__name__)
+        # Clear partition registry on initialization to prevent stale entries
+        with _active_partitions_lock:
+            _active_partitions.clear()
 
-    def list_parts(self) -> List[Tuple[str, str]]:
+    def list_parts(self) -> List[str]:
         """
         List all exchange+product partitions.
         """
-        parts = []
+        # Use a set to ensure uniqueness
+        unique_parts = set()
+
         for exchange, products in self.exchanges_and_pairs.items():
             for product in products:
-                parts.append(f"{product}_{exchange}")
+                part_key = f"{product}_{exchange}"
+                unique_parts.add(part_key)
 
-        logger.info(f"List of partitions: {parts}")
+        parts = list(unique_parts)
+        logger.info(f"📋 List of partitions: {parts}")
         return parts
 
     def build_part(self, step_id: str, for_key: str, resume_state: Any) -> Optional[StatefulSourcePartition]:
@@ -445,23 +487,40 @@ class MultiExchangeSource(FixedPartitionedSource):
                 product = parts[0]
                 exchange = parts[1]
             else:
-                logger.error(f"Invalid partition key format: {for_key}")
+                logger.error(f"❌ Invalid partition key format: {for_key}")
                 return None
 
-            logger.info(f"Building partition for key: {for_key}")
+            # Check if this partition already exists to avoid duplicates
+            with _active_partitions_lock:
+                partition_id = f"{exchange}:{product}"
+                if partition_id in _active_partitions:
+                    logger.info(f"🔄 Partition for {partition_id} already exists, reusing")
+                    return _active_partitions[partition_id]
+
+            # Check if processor is already registered before creating a partition
+            processor_id = f"{exchange}:{product}"
+            if is_processor_registered("websocket", processor_id):
+                # Log at debug level since this is expected in a multi-worker setup
+                logger.debug(f"ℹ️ Processor for {processor_id} already registered elsewhere")
+
+            logger.info(f"🔧 Building partition for key: {for_key}")
 
             # Get the processor class for this exchange
             processor_class = self.processor_factory(exchange)
 
-            # Make sure we're returning a proper StatefulSourcePartition instance
+            # Create a new partition
             result = WebsocketPartition(exchange, product, processor_class, stop_event=self.stop_event)
+
+            # Register this partition in our registry
+            with _active_partitions_lock:
+                _active_partitions[partition_id] = result
 
             # Extra check to ensure we're returning the correct type
             if not isinstance(result, StatefulSourcePartition):
-                logger.error(f"Build part result is not a StatefulSourcePartition: {type(result)}")
+                logger.error(f"❌ Build part result is not a StatefulSourcePartition: {type(result)}")
                 return None
 
             return result
         except Exception as e:
-            logger.error(f"Error building partition for {for_key}: {e}")
+            logger.error(f"❌ Error building partition for {for_key}: {e}")
             return None

@@ -4,6 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Dict
 
+from src.arbirich.models.config_models import ExecutionConfig
 from src.arbirich.models.models import OrderBookState, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,47 @@ class ArbitrageType(ABC):
             asyncio.set_event_loop(loop)
             return loop
 
+    def validate_opportunity_for_execution(self, opportunity: TradeOpportunity) -> bool:
+        """
+        Perform additional validation specifically for execution.
+
+        Args:
+            opportunity: The opportunity to validate
+
+        Returns:
+            True if valid for execution, False otherwise
+        """
+        # Check for basic validity using the strategy's validation
+        if not self.validate_opportunity(opportunity):
+            logger.warning(f"Opportunity {opportunity.id} failed basic validation")
+            return False
+
+        # Check for required fields
+        if not opportunity.buy_exchange or not opportunity.sell_exchange:
+            logger.warning(
+                f"Opportunity {opportunity.id} missing exchange information: buy={opportunity.buy_exchange}, sell={opportunity.sell_exchange}"
+            )
+            return False
+
+        # Check for valid prices
+        if opportunity.buy_price <= 0 or opportunity.sell_price <= 0:
+            logger.warning(
+                f"Opportunity {opportunity.id} has invalid prices: buy={opportunity.buy_price}, sell={opportunity.sell_price}"
+            )
+            return False
+
+        # Check for valid volume
+        if opportunity.volume <= 0:
+            logger.warning(f"Opportunity {opportunity.id} has invalid volume: {opportunity.volume}")
+            return False
+
+        # Check for positive spread
+        if opportunity.spread <= 0:
+            logger.warning(f"Opportunity {opportunity.id} has non-positive spread: {opportunity.spread}")
+            return False
+
+        return True
+
     def execute_trade(self, opportunity: TradeOpportunity, position_size: float = None) -> TradeExecution:
         """
         Execute a trade based on the opportunity using the configured execution method.
@@ -88,22 +130,22 @@ class ArbitrageType(ABC):
             TradeExecution object with the execution results
         """
 
-        # Validate the opportunity
-        if not self.validate_opportunity(opportunity):
-            logger.warning(f"Opportunity {opportunity.id} is no longer valid")
+        # Enhanced validation for execution
+        if not self.validate_opportunity_for_execution(opportunity):
+            logger.warning(f"Opportunity {opportunity.id} is not valid for execution")
             return TradeExecution(
                 id=opportunity.id,
                 strategy=opportunity.strategy,
                 pair=opportunity.pair,
-                buy_exchange=opportunity.buy_exchange,
-                sell_exchange=opportunity.sell_exchange,
+                buy_exchange=opportunity.buy_exchange or "",
+                sell_exchange=opportunity.sell_exchange or "",
                 executed_buy_price=0.0,
                 executed_sell_price=0.0,
                 spread=0.0,
                 volume=0.0,
                 execution_timestamp=time.time(),
                 success=False,
-                error="Opportunity is no longer valid",
+                error="Opportunity is not valid for execution",
             )
 
         # Determine position size
@@ -155,8 +197,18 @@ class ArbitrageType(ABC):
         try:
             from src.arbirich.services.execution.execution_service import ExecutionService
 
-            # Create and initialize execution service
-            execution_service = ExecutionService(method_type=execution_method_type, config=self.config)
+            # Get execution-specific configuration
+            execution_config = self.config.get("execution", {})
+
+            # Create a proper ExecutionConfig object
+            if isinstance(execution_config, dict):
+                pydantic_config = ExecutionConfig(**execution_config)
+            else:
+                # If it's already a Pydantic model, use it as is
+                pydantic_config = execution_config
+
+            # Get or create execution service with Pydantic model - use singleton pattern
+            execution_service = ExecutionService.get_instance(method_type=execution_method_type, config=pydantic_config)
 
             # Run the initialization in the event loop
             loop = self._get_or_create_event_loop()
@@ -167,7 +219,6 @@ class ArbitrageType(ABC):
                 loop.run_until_complete(execution_service.initialize())
 
             # Execute the trade
-            result = None
             if loop.is_running():
                 future = asyncio.ensure_future(execution_service.execute_trade(opportunity, position_size))
                 result = loop.run_until_complete(future)
@@ -191,7 +242,6 @@ class ArbitrageType(ABC):
                     execution_timestamp=time.time(),
                     success=False,
                     error="Unexpected result type from execution service",
-                    opportunity_id=opportunity.id,
                 )
 
         except Exception as e:
@@ -209,5 +259,4 @@ class ArbitrageType(ABC):
                 execution_timestamp=time.time(),
                 success=False,
                 error=str(e),
-                opportunity_id=opportunity.id,
             )

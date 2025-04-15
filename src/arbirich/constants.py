@@ -1,57 +1,63 @@
+from src.arbirich.models.enums import (
+    ChannelName,
+    LogLevel,
+    OperationalConstants,
+    RedisKeyPrefix,
+    Status,
+    TableName,
+    TimeConstants,
+)
+
 # Redis channel names
-TRADE_OPPORTUNITIES_CHANNEL = "trade_opportunities"
-TRADE_EXECUTIONS_CHANNEL = "trade_executions"
-ORDER_BOOK_CHANNEL = "order_books"
+TRADE_OPPORTUNITIES_CHANNEL = ChannelName.TRADE_OPPORTUNITIES.value
+TRADE_EXECUTIONS_CHANNEL = ChannelName.TRADE_EXECUTIONS.value
+ORDER_BOOK_CHANNEL = ChannelName.ORDER_BOOK.value
 
 # Database table names
-EXCHANGES_TABLE = "exchanges"
-TRADING_PAIRS_TABLE = "trading_pairs"
-STRATEGIES_TABLE = "strategies"
-TRADE_OPPORTUNITIES_TABLE = "trade_opportunities"
-TRADE_EXECUTIONS_TABLE = "trade_executions"
-STRATEGY_METRICS_TABLE = "strategy_metrics"
-STRATEGY_TRADING_PAIR_METRICS_TABLE = "strategy_trading_pair_metrics"
-STRATEGY_TRADING_EXCHANGE_METRICS_TABLE = "strategy_trading_exchange_metrics"
+EXCHANGES_TABLE = TableName.EXCHANGES.value
+TRADING_PAIRS_TABLE = TableName.TRADING_PAIRS.value
+STRATEGIES_TABLE = TableName.STRATEGIES.value
+TRADE_OPPORTUNITIES_TABLE = TableName.TRADE_OPPORTUNITIES.value
+TRADE_EXECUTIONS_TABLE = TableName.TRADE_EXECUTIONS.value
+STRATEGY_METRICS_TABLE = TableName.STRATEGY_METRICS.value
+STRATEGY_TRADING_PAIR_METRICS_TABLE = TableName.STRATEGY_TRADING_PAIR_METRICS.value
+STRATEGY_TRADING_EXCHANGE_METRICS_TABLE = TableName.STRATEGY_EXCHANGE_METRICS.value
 
 # Redis key prefixes
-ORDER_BOOK_KEY_PREFIX = "order_book:"
-TRADE_OPPORTUNITY_KEY_PREFIX = "trade_opportunity:"
-TRADE_EXECUTION_KEY_PREFIX = "trade_execution:"
-DEDUP_KEY_PREFIX = "dedup:"
+ORDER_BOOK_KEY_PREFIX = RedisKeyPrefix.ORDER_BOOK.value
+TRADE_OPPORTUNITY_KEY_PREFIX = RedisKeyPrefix.TRADE_OPPORTUNITY.value
+TRADE_EXECUTION_KEY_PREFIX = RedisKeyPrefix.TRADE_EXECUTION.value
+DEDUP_KEY_PREFIX = RedisKeyPrefix.DEDUP.value
 
 # Time constants (in seconds)
-OPPORTUNITY_TTL = 300  # How long to keep opportunities in Redis
-DEBOUNCE_TTL = 10  # Debounce time for similar opportunities
-HEALTH_CHECK_INTERVAL = 30  # How often to check Redis health
+OPPORTUNITY_TTL = TimeConstants.OPPORTUNITY_TTL
+DEBOUNCE_TTL = TimeConstants.DEBOUNCE_TTL
+HEALTH_CHECK_INTERVAL = TimeConstants.HEALTH_CHECK_INTERVAL
+RECONNECT_DELAY = TimeConstants.RECONNECT_DELAY
 
 # Operational constants
-MAX_RETRY_ATTEMPTS = 3
-RECONNECT_DELAY = 5
-DEFAULT_BATCH_SIZE = 10
-
-# Numeric constants
-PRICE_PRECISION = 8  # Decimal places for price
-VOLUME_PRECISION = 8  # Decimal places for volume
+MAX_RETRY_ATTEMPTS = OperationalConstants.MAX_RETRY_ATTEMPTS
+DEFAULT_BATCH_SIZE = OperationalConstants.DEFAULT_BATCH_SIZE
+PRICE_PRECISION = OperationalConstants.PRICE_PRECISION
+VOLUME_PRECISION = OperationalConstants.VOLUME_PRECISION
+MIN_ORDER_SIZE = OperationalConstants.MIN_ORDER_SIZE
+MAX_SLIPPAGE_PERCENT = OperationalConstants.MAX_SLIPPAGE_PERCENT
+MAX_EXECUTION_RETRIES = OperationalConstants.MAX_EXECUTION_RETRIES
+EXECUTION_TIMEOUT_MS = OperationalConstants.EXECUTION_TIMEOUT_MS
 
 # Status constants
-STATUS_ACTIVE = "active"
-STATUS_INACTIVE = "inactive"
-STATUS_ERROR = "error"
-STATUS_PENDING = "pending"
-STATUS_COMPLETE = "complete"
-
-# Trading constants
-MIN_ORDER_SIZE = 0.001  # Minimum order size for most exchanges
-MAX_SLIPPAGE_PERCENT = 0.5  # Maximum allowed slippage (0.5%)
-MAX_EXECUTION_RETRIES = 3  # Maximum number of execution retry attempts
-EXECUTION_TIMEOUT_MS = 10000  # Timeout for executions (10 seconds)
+STATUS_ACTIVE = Status.ACTIVE.value
+STATUS_INACTIVE = Status.INACTIVE.value
+STATUS_ERROR = Status.ERROR.value
+STATUS_PENDING = Status.PENDING.value
+STATUS_COMPLETE = Status.COMPLETE.value
 
 # Log levels as constants
-LOG_DEBUG = "DEBUG"
-LOG_INFO = "INFO"
-LOG_WARNING = "WARNING"
-LOG_ERROR = "ERROR"
-LOG_CRITICAL = "CRITICAL"
+LOG_DEBUG = LogLevel.DEBUG.value
+LOG_INFO = LogLevel.INFO.value
+LOG_WARNING = LogLevel.WARNING.value
+LOG_ERROR = LogLevel.ERROR.value
+LOG_CRITICAL = LogLevel.CRITICAL.value
 
 # Define channels for WebSocket communication
 WEBSOCKET_CHANNELS = [

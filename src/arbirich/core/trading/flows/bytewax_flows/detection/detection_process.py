@@ -29,43 +29,43 @@ def detect_arbitrage(
         TradeOpportunity object if found, None otherwise
     """
     start_time = time.time()
-    logger.info(f"Starting arbitrage detection for {asset} using strategy {strategy_name}")
+    logger.info(f"🔍 Starting arbitrage detection for {asset} using strategy {strategy_name}")
 
     # First check if we have data from at least 2 exchanges for this asset
     if asset not in state.symbols or len(state.symbols[asset]) < 2:
         logger.info(
-            f"Skipping arbitrage detection for {asset}: Need at least 2 exchanges, have {len(state.symbols.get(asset, {}))}"
+            f"⏭️ Skipping arbitrage detection for {asset}: Need at least 2 exchanges, have {len(state.symbols.get(asset, {}))}"
         )
         return None
 
     # Get the strategy instance using the factory
     strategy = get_strategy(strategy_name)
 
-    logger.info(f"Running arbitrage detection for {asset} with {len(state.symbols[asset])} exchanges")
+    logger.info(f"⚙️ Running arbitrage detection for {asset} with {len(state.symbols[asset])} exchanges")
     # Log the exchanges we have data for
     for exchange in state.symbols[asset]:
         book = state.symbols[asset][exchange]
         bid_count = len(book.bids)
         ask_count = len(book.asks)
-        logger.info(f"  Exchange {exchange}: {bid_count} bids, {ask_count} asks")
+        logger.info(f"  📊 Exchange {exchange}: {bid_count} bids, {ask_count} asks")
 
         # Log top bids and asks for better visibility
         if bid_count > 0:
             top_bid = max(book.bids.items(), key=lambda x: float(x[0]))[0]
             top_bid_vol = book.bids.get(top_bid, 0)
-            logger.debug(f"    Top bid: {top_bid} (vol: {top_bid_vol})")
+            logger.debug(f"    📈 Top bid: {top_bid} (vol: {top_bid_vol})")
 
         if ask_count > 0:
             top_ask = min(book.asks.items(), key=lambda x: float(x[0]))[0]
             top_ask_vol = book.asks.get(top_ask, 0)
-            logger.debug(f"    Top ask: {top_ask} (vol: {top_ask_vol})")
+            logger.debug(f"    📉 Top ask: {top_ask} (vol: {top_ask_vol})")
 
     # Use the detect_arbitrage method from the strategy
     detection_start = time.time()
     opportunity = strategy.detect_arbitrage(asset, state)
     detection_time = time.time() - detection_start
 
-    logger.info(f"Strategy detection completed in {detection_time:.6f}s")
+    logger.info(f"⏱️ Strategy detection completed in {detection_time:.6f}s")
 
     if opportunity:
         logger.info(
@@ -90,7 +90,7 @@ def detect_arbitrage(
 def extract_asset_key(record: Tuple[str, OrderBookUpdate]) -> str:
     """Extract just the asset symbol key from the record"""
     exchange, data = record
-    asset = normalize_symbol(data.symbol)
+    asset = data.symbol
     logger.info(f"🔑 EXTRACT_ASSET_KEY: Using key '{asset}' for {exchange}")
     return asset
 
@@ -98,10 +98,9 @@ def extract_asset_key(record: Tuple[str, OrderBookUpdate]) -> str:
 def process_order_book_record(record: Tuple[str, OrderBookUpdate]) -> Tuple[str, OrderBookUpdate]:
     """Process and enrich order book record"""
     exchange, data = record
-    asset = normalize_symbol(data.symbol)
+    asset = data.symbol
     logger.info(f"🔄 PROCESS_RECORD: Processed {exchange}:{asset}")
 
-    # Ensure symbol is set in the data object too
     data.symbol = asset
 
     return asset, data
@@ -112,29 +111,22 @@ def key_by_asset(record: Tuple[str, OrderBookUpdate]) -> str:
     return extract_asset_key(record)
 
 
-def normalize_symbol(symbol: str) -> str:
-    """Normalize symbol format to ensure consistency"""
-    # Replace various separators with standard format and uppercase
-    normalized = symbol.replace("_", "-").replace("/", "-").upper()
-    return normalized
-
-
 def update_asset_state(key: str, records: list, state: OrderBookState = None) -> Tuple[str, OrderBookState]:
     """Update order book state for an asset"""
     # Check if records is a single item or a collection
     if not isinstance(records, (list, tuple)):
         records = [records]
 
-    logger.info(f"🔄 UPDATE_STATE: Processing {len(records)} records for key: {key}")
+    logger.info(f"📝 UPDATE_STATE: Processing {len(records)} records for key: {key}")
 
     if state is None:
-        logger.info("🆕 Creating new OrderBookState")
+        logger.info("🏗️ Creating new OrderBookState")
         state = OrderBookState()
 
     # Log current state summary
     logger.info(f"📊 Current state has {len(state.symbols)} symbols")
     for symbol, exchanges in state.symbols.items():
-        logger.info(f"  • Symbol {symbol} has {len(exchanges)} exchanges: {list(exchanges.keys())}")
+        logger.info(f"  📌 Symbol {symbol} has {len(exchanges)} exchanges: {list(exchanges.keys())}")
 
     # Use the validated key
     asset = key
@@ -255,4 +247,5 @@ def format_opportunity(opportunity: TradeOpportunity) -> Optional[Tuple[str, Tra
     )
 
     # Return a tuple (key, value) as required by Bytewax for routing
-    return (opportunity.pair, opportunity)
+    # Include the strategy name in the key for proper channel routing
+    return (f"{opportunity.strategy}:{opportunity.pair}", opportunity)
