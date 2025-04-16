@@ -9,6 +9,11 @@ from src.arbirich.models.schema import exchanges, strategies, trade_opportunitie
 from src.arbirich.services.database.base_repository import BaseRepository
 from src.arbirich.services.database.utils.timestamp_converter import convert_unix_timestamp_for_db
 
+# Create module-level tracking for processed opportunity IDs
+# This will help coordinate between different instances
+_processed_opportunity_ids = set()
+_MAX_PROCESSED_IDS = 1000
+
 
 class TradeOpportunityRepository(BaseRepository[TradeOpportunity]):
     """Repository for Trade Opportunity entity operations"""
@@ -114,6 +119,18 @@ class TradeOpportunityRepository(BaseRepository[TradeOpportunity]):
             ValueError: If any referenced entity (strategy, trading pair, exchange) doesn't exist
         """
         try:
+            # First check if this opportunity ID is already processed
+            if str(opportunity.id) in _processed_opportunity_ids:
+                self.logger.info(f"Opportunity {opportunity.id} already processed (in memory), skipping create")
+                return opportunity
+
+            # Then check if it exists in the database
+            exists = self.check_exists(opportunity.id)
+            if exists:
+                self.logger.info(f"Opportunity {opportunity.id} already exists in database, skipping create")
+                return opportunity
+
+            # Proceed with normal creation process
             if opportunity.strategy:
                 if isinstance(opportunity.strategy, str):
                     strategy_id = self.get_strategy_id_by_name(opportunity.strategy)
@@ -166,7 +183,7 @@ class TradeOpportunityRepository(BaseRepository[TradeOpportunity]):
                 original_buy_exchange = opportunity.buy_exchange
                 original_sell_exchange = opportunity.sell_exchange
 
-                return TradeOpportunity(
+                created_opportunity = TradeOpportunity(
                     id=str(row.id),
                     strategy=original_strategy,
                     pair=original_pair,
@@ -178,6 +195,19 @@ class TradeOpportunityRepository(BaseRepository[TradeOpportunity]):
                     volume=float(row.volume),
                     opportunity_timestamp=row.opportunity_timestamp.timestamp() if row.opportunity_timestamp else None,
                 )
+
+                # Add to processed IDs
+                _processed_opportunity_ids.add(str(opportunity.id))
+
+                # Trim if necessary
+                if len(_processed_opportunity_ids) > _MAX_PROCESSED_IDS:
+                    id_list = list(_processed_opportunity_ids)
+                    id_list.sort()
+                    _processed_opportunity_ids.clear()
+                    _processed_opportunity_ids.update(id_list[-_MAX_PROCESSED_IDS:])
+
+                return created_opportunity
+
         except Exception as e:
             self.logger.error(f"Error creating trade opportunity: {e}", exc_info=True)
             raise
@@ -214,6 +244,45 @@ class TradeOpportunityRepository(BaseRepository[TradeOpportunity]):
         except Exception as e:
             self.logger.error(f"Error getting trade opportunity by ID {opportunity_id}: {e}")
             raise
+
+    def check_exists(self, opportunity_id: Union[str, UUID]) -> bool:
+        """
+        Check if an opportunity with the given ID already exists in the database.
+
+        Args:
+            opportunity_id: ID to check
+
+        Returns:
+            bool: True if opportunity exists, False otherwise
+        """
+        try:
+            # First check in-memory cache
+            if str(opportunity_id) in _processed_opportunity_ids:
+                return True
+
+            # Then query database
+            if isinstance(opportunity_id, str):
+                opportunity_id = UUID(opportunity_id)
+
+            with self.engine.begin() as conn:
+                query = sa.select(sa.func.count()).select_from(self.table).where(self.table.c.id == opportunity_id)
+                result = conn.execute(query).scalar()
+
+                # If found in database, add to in-memory cache
+                if result > 0:
+                    _processed_opportunity_ids.add(str(opportunity_id))
+                    # Trim if necessary
+                    if len(_processed_opportunity_ids) > _MAX_PROCESSED_IDS:
+                        # Extract portion to keep (newest IDs)
+                        id_list = list(_processed_opportunity_ids)
+                        id_list.sort()  # Sort lexicographically
+                        _processed_opportunity_ids.clear()
+                        _processed_opportunity_ids.update(id_list[-_MAX_PROCESSED_IDS:])
+
+                return result > 0
+        except Exception as e:
+            self.logger.warning(f"Error checking if opportunity exists: {e}")
+            return False
 
     def get_strategy_name(self, strategy_id: int, conn=None) -> str:
         """
@@ -389,3 +458,64 @@ class TradeOpportunityRepository(BaseRepository[TradeOpportunity]):
         except Exception as e:
             self.logger.error(f"Error getting opportunities for strategy '{strategy_name}': {e}")
             return []
+
+    def mark_processed(self, opportunity_id: str) -> None:
+        """
+        Mark an opportunity ID as processed without storing it in the database.
+        Useful for coordinating between repository instances.
+
+        Args:
+            opportunity_id: The ID to mark as processed
+        """
+        _processed_opportunity_ids.add(str(opportunity_id))
+
+        # Trim if necessary
+        if len(_processed_opportunity_ids) > _MAX_PROCESSED_IDS:
+            id_list = list(_processed_opportunity_ids)
+            id_list.sort()
+            _processed_opportunity_ids.clear()
+            _processed_opportunity_ids.update(id_list[-_MAX_PROCESSED_IDS:])
+
+    def sync_processed_ids_with_redis(self) -> bool:
+        """
+        Sync processed opportunity IDs with Redis repository to coordinate tracking.
+
+        Returns:
+            bool: True if sync was successful, False otherwise
+        """
+        try:
+            from src.arbirich.services.redis.redis_service import get_shared_redis_client
+            from src.arbirich.services.redis.repositories.trade_opportunity_repository import TradeOpportunityRepository
+
+            redis_client = get_shared_redis_client()
+            if not redis_client:
+                self.logger.warning("Cannot sync with Redis: No Redis client available")
+                return False
+
+            redis_repo = TradeOpportunityRepository(redis_client.client)
+
+            # Get all IDs from Redis recently published set
+            # This must be implemented in the Redis repository
+            if hasattr(redis_repo, "get_recently_published_ids"):
+                redis_ids = redis_repo.get_recently_published_ids()
+
+                # Add all Redis IDs to our local tracking
+                for redis_id in redis_ids:
+                    _processed_opportunity_ids.add(str(redis_id))
+
+                # Trim if necessary
+                if len(_processed_opportunity_ids) > _MAX_PROCESSED_IDS:
+                    id_list = list(_processed_opportunity_ids)
+                    id_list.sort()
+                    _processed_opportunity_ids.clear()
+                    _processed_opportunity_ids.update(id_list[-_MAX_PROCESSED_IDS:])
+
+                self.logger.debug(f"Synced {len(redis_ids)} IDs from Redis repository")
+                return True
+            else:
+                self.logger.warning("Redis repository doesn't support get_recently_published_ids")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error syncing with Redis repository: {e}")
+            return False

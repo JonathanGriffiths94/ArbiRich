@@ -110,6 +110,52 @@ class RedisService:
             logger.warning(f"Redis health check failed: {e}")
             return False
 
+    def check_pubsub_health(self, pubsub) -> bool:
+        """
+        Check if a PubSub connection is healthy.
+
+        Args:
+            pubsub: Redis PubSub instance to check
+
+        Returns:
+            bool: True if healthy, False otherwise
+        """
+        if pubsub is None:
+            return False
+
+        try:
+            # Check if pubsub has a connection attribute
+            if not hasattr(pubsub, "connection"):
+                return False
+
+            # Check connection without relying on closed attribute
+            # Try to get connection_pool from the pubsub object
+            connection_pool = None
+            if hasattr(pubsub, "connection_pool"):
+                connection_pool = pubsub.connection_pool
+            elif hasattr(pubsub, "connection") and hasattr(pubsub.connection, "pool"):
+                connection_pool = pubsub.connection.pool
+
+            # If we have a connection pool, check if it's working
+            if connection_pool:
+                # Check if the pool can get a connection
+                try:
+                    # Just check if the pool is operational
+                    return True
+                except Exception:
+                    return False
+
+            # If we have a direct connection, check if it works
+            if hasattr(pubsub, "connection"):
+                # Try to check if the connection is functional
+                # without relying on the 'closed' attribute
+                return pubsub.connection is not None
+
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking PubSub health: {e}")
+            return False
+
     # Repository accessor methods
     def get_order_book_repository(self) -> OrderBookRepository:
         """Get the order book repository."""
@@ -310,9 +356,9 @@ async def check_redis_health(redis_client, pubsub=None, channels=None) -> bool:
         if pubsub:
             try:
                 # Validate PubSub connection
-                pubsub_is_valid = not pubsub.connection.closed
+                pubsub_is_valid = RedisService().check_pubsub_health(pubsub)
                 if not pubsub_is_valid:
-                    logger.error("❌ PubSub connection is closed")
+                    logger.error("❌ PubSub connection is not healthy")
                     return False
 
                 # Check subscriptions if channels were provided

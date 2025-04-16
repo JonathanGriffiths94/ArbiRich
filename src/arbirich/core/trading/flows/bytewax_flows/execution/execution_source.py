@@ -39,7 +39,15 @@ def should_process_opportunity(opportunity: TradeOpportunity) -> bool:
 
     # Basic validation
     if not opportunity:
+        logger.warning("Null opportunity received")
         return False
+
+    # Log the opportunity for debugging
+    logger.info(f"Validating opportunity: {opportunity.id} for {opportunity.pair} - {opportunity.strategy}")
+    logger.debug(
+        f"Opportunity details: buy_exchange={opportunity.buy_exchange}, sell_exchange={opportunity.sell_exchange}, "
+        f"buy_price={opportunity.buy_price}, sell_price={opportunity.sell_price}, spread={opportunity.spread}"
+    )
 
     if not opportunity.buy_exchange or not opportunity.sell_exchange:
         logger.warning(f"Skipping opportunity {opportunity.id}: Missing exchange information")
@@ -69,6 +77,7 @@ def should_process_opportunity(opportunity: TradeOpportunity) -> bool:
         if current_time - _debounce_dict[key] > _DEBOUNCE_INTERVAL * 5:
             del _debounce_dict[key]
 
+    logger.info(f"Opportunity {opportunity.id} passed validation and debounce checks")
     return True
 
 
@@ -134,7 +143,7 @@ class RedisExecutionPartition(StatefulSourcePartition):
             strategy_name: Optional filter for a specific strategy
             stop_event: Optional threading.Event for stopping the partition
         """
-        logger.info(f"🛠️ Initializing RedisExecutionPartition for strategy: {strategy_name or 'all'}")
+        logger.info(f"🛠️ Initializing RedisExecutionPartition for strategy: {strategy_name}")
         self.strategy_name = strategy_name
         self.stop_event = stop_event  # Store the passed stop event
         self.redis_client = get_shared_redis_client()
@@ -147,18 +156,10 @@ class RedisExecutionPartition(StatefulSourcePartition):
 
         self.channels_to_check = []
 
-        if strategy_name:
-            strategy_channel = f"{ChannelName.TRADE_OPPORTUNITIES.value}:{strategy_name}"
-            self.channels_to_check.append(strategy_channel)
-            logger.info(f"Will check only strategy-specific channel: {strategy_channel}")
-        else:
-            # If no strategy specified, get all configured strategies
-            from src.arbirich.config.config import STRATEGIES
+        strategy_channel = f"{ChannelName.TRADE_OPPORTUNITIES.value}:{strategy_name}"
+        self.channels_to_check.append(strategy_channel)
 
-            for strat_name in STRATEGIES.keys():
-                strategy_channel = f"{ChannelName.TRADE_OPPORTUNITIES.value}:{strat_name}"
-                self.channels_to_check.append(strategy_channel)
-                logger.info(f"Will check strategy channel: {strategy_channel}")
+        logger.info(f"Will check strategy channel: {strategy_channel}")
 
         # Create explicit subscriptions for all channels
         self.pubsub = self.redis_client.client.pubsub(ignore_subscribe_messages=True)
@@ -174,7 +175,7 @@ class RedisExecutionPartition(StatefulSourcePartition):
             # Only check for shutdown if we've been initialized
             # This prevents premature shutdown during restart
             if self._initialized and is_system_shutting_down():
-                component_id = f"execution:{self.strategy_name or 'all'}"
+                component_id = f"execution:{self.strategy_name}"
                 if mark_component_notified("execution", component_id):
                     logger.info(f"🛑 Stop event detected for {component_id}")
                     # Clean up resources
@@ -325,10 +326,21 @@ class RedisExecutionPartition(StatefulSourcePartition):
 def parse_opportunity_message(message: Dict) -> Optional[TradeOpportunity]:
     """Parse a trade opportunity message from Redis."""
     try:
-        # Convert Redis message to TradeOpportunity model
+        # Handle the event message envelope
+        if "event" in message and message["event"] == "new_opportunity":
+            if isinstance(message.get("data"), dict):
+                message = message["data"]
+            else:
+                logger.warning(f"Invalid opportunity data format: {message.get('data')}")
+                return None
+
+        if "model_dump" in message:
+            message = message["model_dump"]
+
+        # Convert to TradeOpportunity model
         opportunity = TradeOpportunity(**message)
 
-        # Enhanced validation and debouncing
+        # Validate the opportunity
         if not should_process_opportunity(opportunity):
             return None
 
@@ -432,7 +444,6 @@ class RedisExecutionSource(FixedPartitionedSource):
         ):
             logger.info(f"Adding specific channel {for_key} to partition subscription")
             partition.channels_to_check = [for_key]  # Only subscribe to this specific channel
-
             # Update the pubsub subscription if it exists
             if hasattr(partition, "pubsub") and partition.pubsub:
                 try:

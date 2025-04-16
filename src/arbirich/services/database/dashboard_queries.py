@@ -93,8 +93,9 @@ def get_recent_opportunities(conn, limit=10, strategy=None):
         List of opportunity dictionaries
     """
     try:
+        # Use a query that guarantees unique IDs
         query = """
-        SELECT * FROM trade_opportunities 
+        SELECT DISTINCT ON (id) * FROM trade_opportunities 
         """
         params = {}
 
@@ -102,21 +103,31 @@ def get_recent_opportunities(conn, limit=10, strategy=None):
             query += " WHERE strategy = :strategy"
             params["strategy"] = strategy
 
-        query += " ORDER BY opportunity_timestamp DESC LIMIT :limit"
+        query += " ORDER BY id, opportunity_timestamp DESC LIMIT :limit"
         params["limit"] = limit
 
         result = conn.execute(text(query), params).fetchall()
 
         # Convert rows to dictionaries
         opportunities = []
+        processed_ids = set()  # Track IDs we've already processed
+
         for row in result:
             opp_dict = row._asdict()
+
+            # Skip duplicate IDs
+            if str(opp_dict.get("id")) in processed_ids:
+                continue
+
             # Convert timestamp to datetime
             if "opportunity_timestamp" in opp_dict:
                 opp_dict["created_at"] = opp_dict["opportunity_timestamp"]
+
             # Convert UUID to string
             if "id" in opp_dict:
                 opp_dict["id"] = str(opp_dict["id"])
+                processed_ids.add(opp_dict["id"])
+
             opportunities.append(opp_dict)
 
         return opportunities

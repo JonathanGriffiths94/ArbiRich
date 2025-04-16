@@ -7,8 +7,7 @@ from src.arbirich.core.trading.strategy.execution.method import ExecutionMethod
 from src.arbirich.core.trading.strategy.execution.parallel import ParallelExecution
 from src.arbirich.core.trading.strategy.execution.staggered import StaggeredExecution
 from src.arbirich.models.config_models import ExecutionConfig
-from src.arbirich.models.enums import OrderType
-from src.arbirich.models.models import TradeExecution, TradeOpportunity, TradeRequest
+from src.arbirich.models.models import TradeExecution, TradeOpportunity
 
 
 class ExecutionService:
@@ -87,17 +86,7 @@ class ExecutionService:
         self.logger.info(f"🔧 Initializing ExecutionService with method: {self.method_type}")
 
         try:
-            # Always use the Pydantic model's model_dump or dict method
-            if hasattr(self.config, "model_dump"):
-                # Newer Pydantic v2 model
-                config_dict = self.config.model_dump()
-            elif hasattr(self.config, "dict"):
-                # Older Pydantic model
-                config_dict = self.config.dict()
-            else:
-                # Should never happen since we ensure self.config is a Pydantic model in __init__
-                config_dict = {}
-                self.logger.warning(f"Config object has no dict() or model_dump() method: {type(self.config)}")
+            config_dict = self.config.model_dump()
 
             self.execution_method = self._create_execution_method(self.method_type, config_dict)
             self._initialized = True
@@ -126,96 +115,68 @@ class ExecutionService:
             return ParallelExecution(config)
 
     async def execute_trade(
-        self, trade_data: Union[TradeRequest, Dict, TradeOpportunity], position_size: Optional[float] = None
+        self, trade_data: Union[Dict, TradeOpportunity], position_size: Optional[float] = None
     ) -> TradeExecution:
         """
-        Execute a trade based on the provided trade data or opportunity.
+        Execute a trade based on the provided trade opportunity.
 
         Args:
-            trade_data: Trade request model, dictionary, or TradeOpportunity
+            trade_data: Trade opportunity or dictionary convertible to TradeOpportunity
             position_size: The size/volume of the position to take
 
         Returns:
             TradeExecution: Result of the trade execution
         """
-        # Handle different input formats
-        opportunity: TradeOpportunity
-
-        if isinstance(trade_data, TradeRequest):
-            from src.arbirich.models.enums import OrderSide
-
-            if trade_data.side == OrderSide.BUY:
-                opportunity = TradeOpportunity(
-                    id=trade_data.execution_id or str(uuid.uuid4()),
-                    strategy=trade_data.strategy,
-                    pair=trade_data.symbol,
-                    buy_exchange=trade_data.exchange,
-                    sell_exchange="",  # Not applicable for single-exchange trades
-                    buy_price=trade_data.price or 0.0,
-                    sell_price=0.0,  # Not applicable
-                    spread=0.0,  # Not applicable
-                    volume=trade_data.amount,
-                    opportunity_timestamp=time.time(),
-                )
-            else:  # sell
-                opportunity = TradeOpportunity(
-                    id=trade_data.execution_id or str(uuid.uuid4()),
-                    strategy=trade_data.strategy,
-                    pair=trade_data.symbol,
-                    buy_exchange="",  # Not applicable for single-exchange trades
-                    sell_exchange=trade_data.exchange,
-                    buy_price=0.0,  # Not applicable
-                    sell_price=trade_data.price or 0.0,
-                    spread=0.0,  # Not applicable
-                    volume=trade_data.amount,
-                    opportunity_timestamp=time.time(),
+        # Convert dictionary to TradeOpportunity if needed
+        if isinstance(trade_data, dict):
+            self.logger.info("🔄 Converting dictionary to TradeOpportunity")
+            # Try to convert the dictionary to a TradeOpportunity
+            try:
+                trade_data = TradeOpportunity(**trade_data)
+            except Exception as e:
+                error_msg = f"Failed to convert dictionary to TradeOpportunity: {str(e)}"
+                self.logger.error(f"❌ {error_msg}")
+                return self._create_error_execution(
+                    str(uuid.uuid4()),
+                    trade_data.get("strategy", "unknown"),
+                    trade_data.get("pair", "unknown"),
+                    trade_data.get("buy_exchange", ""),
+                    trade_data.get("sell_exchange", ""),
+                    position_size or trade_data.get("volume", 0.0),
+                    error_msg,
                 )
 
-            # Use provided amount as position size if none was explicitly provided
-            if position_size is None:
-                position_size = trade_data.amount
-        elif isinstance(trade_data, dict):
-            # For backward compatibility, convert dict to TradeRequest
-            trade_request = TradeRequest(
-                exchange=trade_data["exchange"],
-                symbol=trade_data["symbol"],
-                side=trade_data["side"],
-                price=trade_data.get("price"),
-                amount=trade_data["amount"],
-                order_type=trade_data.get("order_type", OrderType.LIMIT),
-                strategy=trade_data.get("strategy", "legacy"),
+        # At this point, trade_data should be a TradeOpportunity
+        if not isinstance(trade_data, TradeOpportunity):
+            error_msg = f"Unsupported trade data type: {type(trade_data)}, expected TradeOpportunity"
+            self.logger.error(f"❌ {error_msg}")
+            return self._create_error_execution(
+                str(uuid.uuid4()),
+                "unknown",
+                "unknown",
+                "",
+                "",
+                position_size or 0.0,
+                error_msg,
             )
-            return await self.execute_trade(trade_request, position_size)
-        else:
-            # TradeOpportunity object
-            opportunity = trade_data
-            self.logger.info(f"🎯 Executing trade for opportunity: {opportunity.id} on {opportunity.pair}")
 
-            # Get position size from opportunity if not provided
-            if position_size is None:
-                position_size = opportunity.volume
+        opportunity = trade_data
+        self.logger.info(f"🎯 Executing trade for opportunity: {opportunity.id} on {opportunity.pair}")
+
+        # Get position size from opportunity if not provided
+        if position_size is None:
+            position_size = opportunity.volume
 
         if not self.execution_method:
             self.logger.error("❌ Execution method not initialized")
-            # Return empty trade execution with error
-            return TradeExecution(
-                id=str(uuid.uuid4()),
-                strategy=opportunity.strategy,
-                pair=opportunity.pair,
-                buy_exchange=opportunity.buy_exchange,
-                sell_exchange=opportunity.sell_exchange,
-                executed_buy_price=0.0,
-                executed_sell_price=0.0,
-                spread=0.0,
-                volume=position_size,
-                execution_timestamp=time.time(),
-                success=False,
-                partial=False,
-                profit=0.0,
-                execution_time=0.0,
-                error="Execution method not initialized",
-                opportunity_id=opportunity.id,
-                details={},
+            return self._create_error_execution(
+                opportunity.id,
+                opportunity.strategy,
+                opportunity.pair,
+                opportunity.buy_exchange,
+                opportunity.sell_exchange,
+                position_size,
+                "Execution method not initialized",
             )
 
         try:
@@ -236,26 +197,39 @@ class ExecutionService:
 
         except Exception as e:
             self.logger.error(f"❌ Failed to execute trade: {str(e)}")
-            # Return error execution result
-            return TradeExecution(
-                id=str(uuid.uuid4()),
-                strategy=opportunity.strategy,
-                pair=opportunity.pair,
-                buy_exchange=opportunity.buy_exchange,
-                sell_exchange=opportunity.sell_exchange,
-                executed_buy_price=0.0,
-                executed_sell_price=0.0,
-                spread=0.0,
-                volume=position_size,
-                execution_timestamp=time.time(),
-                success=False,
-                partial=False,
-                profit=0.0,
-                execution_time=0.0,
-                error=str(e),
-                opportunity_id=opportunity.id,
-                details={},
+            return self._create_error_execution(
+                opportunity.id,
+                opportunity.strategy,
+                opportunity.pair,
+                opportunity.buy_exchange,
+                opportunity.sell_exchange,
+                position_size,
+                str(e),
             )
+
+    def _create_error_execution(
+        self, id: str, strategy: str, pair: str, buy_exchange: str, sell_exchange: str, volume: float, error: str
+    ) -> TradeExecution:
+        """Create a TradeExecution object representing an error"""
+        return TradeExecution(
+            id=id,
+            strategy=strategy,
+            pair=pair,
+            buy_exchange=buy_exchange,
+            sell_exchange=sell_exchange,
+            executed_buy_price=0.0,
+            executed_sell_price=0.0,
+            spread=0.0,
+            volume=volume,
+            execution_timestamp=time.time(),
+            success=False,
+            partial=False,
+            profit=0.0,
+            execution_time=0.0,
+            error=error,
+            opportunity_id=id,
+            details={},
+        )
 
     async def handle_partial_execution(self, result: TradeExecution) -> None:
         """
@@ -288,3 +262,57 @@ class ExecutionService:
             await self.execution_method.handle_failure(result)
         except Exception as e:
             self.logger.error(f"❌ Error handling failure: {e}")
+
+    @classmethod
+    async def execute_opportunity(
+        cls, opportunity: TradeOpportunity, position_size: Optional[float] = None
+    ) -> TradeExecution:
+        """
+        Static helper method to directly execute a trade opportunity.
+        Gets or creates an execution service instance and handles initialization.
+
+        Args:
+            opportunity: The opportunity to execute
+            position_size: Optional position size (will use opportunity.volume if None)
+
+        Returns:
+            TradeExecution with the execution results
+        """
+        logger = logging.getLogger(__name__)
+
+        try:
+            # Get the singleton instance
+            service = cls.get_instance()
+
+            # Initialize if needed
+            if not service._initialized:
+                await service.initialize()
+
+            # Execute the trade
+            return await service.execute_trade(opportunity, position_size)
+
+        except Exception as e:
+            logger.error(f"Error executing opportunity via static method: {e}", exc_info=True)
+
+            # Create and return an error execution result
+            error_result = TradeExecution(
+                id=str(uuid.uuid4()),
+                strategy=opportunity.strategy,
+                pair=opportunity.pair,
+                buy_exchange=opportunity.buy_exchange or "",
+                sell_exchange=opportunity.sell_exchange or "",
+                executed_buy_price=0.0,
+                executed_sell_price=0.0,
+                spread=0.0,
+                volume=position_size or opportunity.volume or 0.0,
+                execution_timestamp=time.time(),
+                success=False,
+                partial=False,
+                profit=0.0,
+                execution_time=0.0,
+                error=f"Execution service error: {str(e)}",
+                opportunity_id=opportunity.id,
+                details={"error": str(e)},
+            )
+
+            return error_result

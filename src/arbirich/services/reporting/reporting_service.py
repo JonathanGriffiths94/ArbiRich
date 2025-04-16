@@ -203,15 +203,10 @@ class ReportingService:
                         self.logger.warning(f"Database connection test failed: {db_e}")
 
                 # Check Redis connection if available
-                redis_healthy = False
-                if self.redis_client:
-                    try:
-                        redis_healthy = self.redis_client.client.ping()
-                    except Exception as redis_e:
-                        self.logger.warning(f"Redis health check failed: {redis_e}")
+                redis_healthy = self.check_redis_health()
 
                 # Log health status
-                if not db_healthy or (self.redis_client and not redis_healthy):
+                if not db_healthy or not redis_healthy:
                     self.logger.warning(f"Health check: DB={db_healthy}, Redis={redis_healthy}")
                 else:
                     self.logger.debug("All systems healthy")
@@ -594,3 +589,88 @@ class ReportingService:
             channels.append("broadcast")
 
         return channels
+
+    def check_redis_health(self) -> bool:
+        """Check if Redis connection is healthy"""
+        try:
+            # Check the Redis client first - using self.redis_client instead of self.redis_service
+            if not self.redis_client:
+                self.logger.warning("Redis client not initialized")
+                return False
+
+            # Check if Redis client is healthy
+            if hasattr(self.redis_client, "is_healthy") and callable(self.redis_client.is_healthy):
+                if not self.redis_client.is_healthy():
+                    self.logger.warning("Redis client is not healthy")
+                    return False
+            # Alternative check for raw Redis clients
+            elif hasattr(self.redis_client, "ping"):
+                try:
+                    if not self.redis_client.ping():
+                        self.logger.warning("Redis client ping failed")
+                        return False
+                except Exception as ping_error:
+                    self.logger.warning(f"Redis client ping error: {ping_error}")
+                    return False
+            # Check client attribute if it's a service wrapper
+            elif hasattr(self.redis_client, "client") and self.redis_client.client:
+                try:
+                    if not self.redis_client.client.ping():
+                        self.logger.warning("Redis client ping failed")
+                        return False
+                except Exception as ping_error:
+                    self.logger.warning(f"Redis client ping error: {ping_error}")
+                    return False
+
+            # Check the PubSub connection if it exists
+            if hasattr(self, "pubsub") and self.pubsub:
+                # Check if the pubsub is functional
+                if hasattr(self.redis_client, "check_pubsub_health") and callable(
+                    self.redis_client.check_pubsub_health
+                ):
+                    # Use the new method for checking PubSub health if available
+                    if not self.redis_client.check_pubsub_health(self.pubsub):
+                        self.logger.warning("Redis PubSub is not healthy")
+                        return False
+                else:
+                    # Basic check if client doesn't have specialized method
+                    if not self.pubsub:
+                        self.logger.warning("PubSub object is None")
+                        return False
+
+                    # Check if it has a connection
+                    if hasattr(self.pubsub, "connection") and self.pubsub.connection is None:
+                        self.logger.warning("PubSub connection is None")
+                        return False
+
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Error checking Redis health: {e}")
+            return False
+
+    async def perform_health_check(self) -> dict:
+        """Perform a comprehensive health check of all reporting services"""
+        health_status = {"redis": False, "database": False, "pubsub": False, "overall": False}
+
+        try:
+            # Check Redis health
+            health_status["redis"] = self.check_redis_health()
+
+            # Check database health
+            if self.db_service:
+                try:
+                    # Simple check - can we connect and query?
+                    with self.db_service.engine.connect() as conn:
+                        result = conn.execute("SELECT 1").scalar()
+                        health_status["database"] = result == 1
+                except Exception as e:
+                    self.logger.warning(f"Database health check failed: {e}")
+                    health_status["database"] = False
+
+            # Set overall health
+            health_status["overall"] = health_status["redis"] and health_status["database"]
+
+            return health_status
+        except Exception as e:
+            self.logger.error(f"Error performing health check: {e}")
+            return health_status

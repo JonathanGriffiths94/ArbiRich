@@ -125,208 +125,80 @@ def build_detection_flow(strategy_name: str, debug_mode: bool = False, threshold
 
     inspected = inspect("inspect_input", inp, log_order_book)
 
-    # Group by asset - use the extract_asset_key function that returns just a string
+    # Group by asset
     keyed = key_on("key_by_asset", inspected, extract_asset_key)
 
-    # Periodically log state for debugging
-    def debug_state_and_update(state, item):
-        start_time = time.time()
-
-        # In a key-partitioned stateful_map, state is already specific to this key
-        # No need to do state.get(key, None) as each key has its own state
+    # State update function - returns OrderBookState directly without nesting
+    def update_state(state, item):
+        """Update order book state for an asset."""
         if state is None:
-            logger.info("🆕 Creating new OrderBookState for this key")
             state = OrderBookState()
 
-        # item is the data for this key
-        data = item
+        # Extract the exchange and order book
+        exchange, order_book = item
+        asset = order_book.symbol
 
-        # Extract the key from the item for logging - remove fallback to UNKNOWN and raise error
-        try:
-            if isinstance(data, tuple) and len(data) == 2:
-                # If data is a tuple, extract from the second element (OrderBookUpdate)
-                _, order_book = data
-                if not hasattr(order_book, "symbol") or not order_book.symbol:
-                    raise ValueError(f"Missing symbol attribute in order book: {order_book}")
-                asset = order_book.symbol
-            else:
-                # Otherwise try to get it directly from the data object
-                if not hasattr(data, "symbol") or not data.symbol:
-                    raise ValueError(f"Missing symbol attribute in data: {data}")
-                asset = data.symbol
+        # Update the state with this single data item
+        _, updated_state = update_asset_state(asset, [item], state)
 
-            logger.info(f"🔑 Using asset key for state update: {asset}")
-        except Exception as e:
-            logger.error(f"❌ Failed to extract asset key: {e}")
-            raise  # Re-raise to halt processing
+        # Return the updated state and the state itself as output (not wrapped in tuple)
+        return updated_state, updated_state
 
-        # Update the state with this single data item - Pass the asset explicitly
-        _, updated_state = update_asset_state(asset, [data], state)
+    # Apply state updates
+    state_updated = stateful_map("update_state", keyed, update_state)
 
-        # Periodically log comprehensive state information
-        current_time = int(time.time())
-        if current_time % 10 == 0:  # Every ~10 seconds
-            exchange_count = 0
-            if asset in updated_state.symbols:
-                exchange_count = len(updated_state.symbols[asset])
-                exchanges = list(updated_state.symbols[asset].keys())
-                logger.info(f"🔍 STATE DEBUG - Asset {asset} has {exchange_count} exchanges: {exchanges}")
+    # Function to detect opportunities from OrderBookState
+    def detect_opportunities(state) -> Optional[TradeOpportunity]:
+        """Detect arbitrage opportunities for all assets in the state."""
+        # Handle tuple input if it comes through
+        if isinstance(state, tuple) and len(state) > 1:
+            state = state[1]  # Take the second element if it's a tuple
 
-                # Check data quality for each exchange
-                for exchange in exchanges:
-                    book = updated_state.symbols[asset][exchange]
-                    bid_count = len(book.bids) if hasattr(book, "bids") else 0
-                    ask_count = len(book.asks) if hasattr(book, "asks") else 0
-                    logger.info(f"  • {exchange}: {bid_count} bids, {ask_count} asks")
-            else:
-                logger.warning(f"⚠️ Asset {asset} not found in state symbols")
-
-        process_time = time.time() - start_time
-        logger.debug(f"⏱️ State update for {asset} completed in {process_time:.6f}s")
-
-        # Return both the updated state and the data as a tuple
-        # This is required for stateful_map - it needs (new_state, output)
-        # IMPORTANT: Return the correct asset key, not UNKNOWN
-        return updated_state, (asset, updated_state)
-
-    reduced = stateful_map(
-        step_id="update_state",
-        up=keyed,
-        mapper=debug_state_and_update,
-    )
-
-    # Enhanced detect_opps to better track exchanges compared - fix asset extraction
-    def detect_opps(input_data) -> Optional[TradeOpportunity]:
-        # Add debugging to understand the input structure
-        logger.info(f"detect_opps received input type: {type(input_data)}")
-
-        # Handle different possible input formats to extract asset and state
-        if isinstance(input_data, tuple):
-            logger.info(f"Input is tuple with {len(input_data)} elements")
-
-            if len(input_data) == 2:
-                # Basic tuple unpacking
-                asset, state = input_data
-                logger.info(f"Unpacked asset={asset}, state type={type(state)}")
-
-                # Handle case where state is also a tuple (double wrapping)
-                if isinstance(state, tuple) and len(state) == 2:
-                    logger.info("State is also a tuple - unwrapping a level")
-                    # Unwrap one more level - taking the second element which should be the state
-                    inner_asset, state = state
-                    # No special handling for "UNKNOWN" - always use the inner asset if it exists
-                    asset = inner_asset
-                    logger.info(f"Unwrapped again to asset={asset}, state type={type(state)}")
-            else:
-                error_msg = f"Unexpected tuple length: {len(input_data)}"
-                logger.error(error_msg)
-                raise ValueError(error_msg)
-        else:
-            error_msg = f"Input is not a tuple: {type(input_data)}"
-            logger.error(error_msg)
-            raise TypeError(error_msg)
-
-        # Verify state is valid
-        if not hasattr(state, "symbols"):
-            logger.error(f"State {type(state)} has no symbols attribute")
+        # Validate state
+        if not hasattr(state, "symbols") or not state.symbols:
             return None
 
-        # Find the asset key in the state
-        if not state.symbols:
-            logger.warning("❌ DETECT SKIP: Empty state symbols")
-            return None
+        # Process all symbols
+        for asset, exchange_books in state.symbols.items():
+            # Need at least 2 exchanges with valid order books
+            if len(exchange_books) < 2:
+                continue
 
-        # Check if we have data for this asset
-        if asset not in state.symbols:
-            logger.info(f"❌ DETECT SKIP: Asset {asset} not found in state symbols")
-            return None
+            # Check for valid order books
+            valid_exchanges = [exchange for exchange, book in exchange_books.items() if book.bids and book.asks]
 
-        # Check if we have enough exchanges
-        exchanges = list(state.symbols[asset].keys())
-        if len(exchanges) < 2:
-            logger.info(f"❌ DETECT SKIP: Not enough exchanges for {asset}, have {len(exchanges)}, need at least 2")
-            return None
+            if len(valid_exchanges) < 2:
+                continue
 
-        # Log the exchange comparisons we'll be making
-        logger.info(f"🔍 DETECTING: Asset {asset} across {len(exchanges)} exchanges: {exchanges}")
+            # Run detection for this asset
+            opportunity = detect_arbitrage(asset, state, threshold, strategy_name)
 
-        # Check each exchange has valid data
-        valid_exchanges = []
-        for exchange in exchanges:
-            book = state.symbols[asset][exchange]
-            bid_count = len(book.bids) if hasattr(book, "bids") else 0
-            ask_count = len(book.asks) if hasattr(book, "asks") else 0
+            if opportunity:
+                logger.info(f"💰 FOUND OPPORTUNITY for {asset}!")
+                logger.info(
+                    f"  • Buy: {opportunity.buy_exchange}, Sell: {opportunity.sell_exchange}, Spread: {opportunity.spread:.4%}"
+                )
+                return opportunity
 
-            if bid_count > 0 and ask_count > 0:
-                valid_exchanges.append(exchange)
-                logger.info(f"✅ Valid data: {exchange} for {asset} has {bid_count} bids, {ask_count} asks")
-            else:
-                logger.info(f"❌ Invalid data: {exchange} for {asset} has {bid_count} bids, {ask_count} asks")
+        return None
 
-        if len(valid_exchanges) < 2:
-            logger.info(
-                f"❌ DETECT SKIP: Not enough valid exchanges for {asset}, have {len(valid_exchanges)}/{len(exchanges)}"
-            )
-            return None
-
-        logger.info(f"🚀 RUNNING DETECTION: Asset {asset} with {len(valid_exchanges)} valid exchanges")
-        start_time = time.time()
-
-        # Run detection
-        opportunity = detect_arbitrage(asset, state, threshold, strategy_name)
-
-        process_time = time.time() - start_time
-        logger.info(f"⏱️ Detection for {asset} completed in {process_time:.6f}s")
-
-        if opportunity:
-            # Ensure opportunity is a TradeOpportunity Pydantic model
-            if not isinstance(opportunity, TradeOpportunity):
-                logger.warning(f"⚠️ Opportunity is not a TradeOpportunity model, type: {type(opportunity)}")
-
-                # If it's a dictionary, convert it to a TradeOpportunity model
-                if isinstance(opportunity, dict):
-                    try:
-                        # If strategy is missing, add it
-                        if "strategy" not in opportunity:
-                            opportunity["strategy"] = strategy_name
-
-                        # Convert to Pydantic model
-                        opportunity = TradeOpportunity(**opportunity)
-                        logger.info("✅ Successfully converted opportunity dict to TradeOpportunity model")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to convert opportunity dict to TradeOpportunity model: {e}")
-                        return None
-                else:
-                    logger.error(f"❌ Opportunity is not a dict or TradeOpportunity model: {type(opportunity)}")
-                    return None
-
-            logger.info(f"💰 FOUND OPPORTUNITY for {asset}!")
-            logger.info(
-                f"  • Buy: {opportunity.buy_exchange}, Sell: {opportunity.sell_exchange}, Spread: {opportunity.spread:.4%}"
-            )
-        else:
-            logger.info(f"❌ No opportunity found for {asset}")
-
-        return opportunity
-
-    opportunities = filter_map("detect_opportunities", reduced, detect_opps)
+    # Filter for opportunities
+    opportunities = filter_map("detect_opportunities", state_updated, detect_opportunities)
 
     # Format opportunities
     formatted = filter_map("format_opportunities", opportunities, format_opportunity)
 
-    # Publish opportunities to Redis
+    # Publish opportunities to Redis with simplified logic
     def publish_logic(state, item):
+        """Publish a trade opportunity to Redis."""
         start_time = time.time()
-
-        # Will raise error instead of returning None if it fails
         publish_trade_opportunity(item)
 
         process_time = time.time() - start_time
-
         if debug_mode:
             logger.debug(f"Opportunity publish completed in {process_time:.6f}s")
 
-        return state, None  # Return the unchanged state and no output
+        return state, None
 
     stateful_map(
         step_id="publish_opportunities",

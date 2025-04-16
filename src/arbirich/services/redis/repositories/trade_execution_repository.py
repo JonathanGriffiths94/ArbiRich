@@ -50,10 +50,11 @@ class TradeExecutionRepository:
     def publish(self, execution: TradeExecution) -> int:
         """Publish a trade execution to the appropriate channel."""
         try:
-            # Create message with type field for better handling
-            message = {"event": "new_execution", "data": execution.model_dump()}
+            # Publish raw execution data directly without event wrapper
+            # This ensures consistency between producer and consumer
+            message_json = execution.model_dump_json()
 
-            result = self.redis_client.publish(TRADE_EXECUTIONS_CHANNEL, json.dumps(message))
+            result = self.redis_client.publish(TRADE_EXECUTIONS_CHANNEL, message_json)
             return result
         except RedisError as e:
             logger.error(f"Error publishing trade execution {execution.id}: {e}")

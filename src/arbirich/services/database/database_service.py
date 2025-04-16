@@ -6,7 +6,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from src.arbirich.config.config import DATABASE_URL
-from src.arbirich.models.models import Exchange, Strategy, TradingPair
+from src.arbirich.models.models import Exchange, Strategy, TradeOpportunity, TradingPair
 from src.arbirich.models.schema import metadata
 from src.arbirich.services.database.repositories.exchange_repository import ExchangeRepository
 from src.arbirich.services.database.repositories.strategy_metrics_repository import (
@@ -295,6 +295,41 @@ class DatabaseService:
     def get_recent_opportunities(self, count: int = 10, strategy_name: str = None) -> list:
         """Get most recent trade opportunities."""
         return self.trade_opportunity_repo.get_recent(count, strategy_name)
+
+    def create_opportunity(self, opportunity: TradeOpportunity) -> TradeOpportunity:
+        """
+        Create a new trade opportunity with duplicate checking.
+
+        Args:
+            opportunity: The opportunity to create
+
+        Returns:
+            The created opportunity or existing one if already exists
+        """
+        try:
+            # First check if this opportunity ID is already in our recent list
+            if (
+                hasattr(self.trade_opportunity_repo, "_recent_opportunities")
+                and opportunity.id in self.trade_opportunity_repo._recent_opportunities
+            ):
+                self.logger.info(f"Opportunity {opportunity.id} recently processed, skipping database save")
+                return opportunity
+
+            # Then check if it exists in the database
+            exists = self.trade_opportunity_repo.check_exists(opportunity.id)
+            if exists:
+                self.logger.info(f"Opportunity {opportunity.id} already exists in database, skipping save")
+                # Add to recently processed set
+                if hasattr(self.trade_opportunity_repo, "_recent_opportunities"):
+                    self.trade_opportunity_repo._recent_opportunities.add(opportunity.id)
+                return opportunity
+
+            # If not, create it
+            return self.trade_opportunity_repo.create(opportunity)
+        except Exception as e:
+            self.logger.error(f"Error creating opportunity {opportunity.id}: {e}")
+            # Return the original opportunity even if save failed
+            return opportunity
 
     async def get_trading_statistics(self):
         """

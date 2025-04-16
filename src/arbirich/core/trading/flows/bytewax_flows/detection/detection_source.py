@@ -97,6 +97,25 @@ def reset_shared_redis_client():
     # Use the common utilities to reset all Redis connections
     reset_all_redis_connections()
 
+    # Explicitly wait a brief moment after reset to allow connections to fully close
+    time.sleep(0.1)
+
+    # Now try to establish a fresh connection to ensure it's working
+    try:
+        from src.arbirich.services.redis.redis_service import RedisService
+
+        # Create and immediately close a Redis connection to verify connectivity
+        test_client = RedisService()
+        is_healthy = test_client.is_healthy()
+        test_client.close()
+
+        if is_healthy:
+            logger.info("✅ Redis connectivity verified after reset")
+        else:
+            logger.warning("⚠️ New Redis connection not healthy after reset")
+    except Exception as e:
+        logger.error(f"❌ Failed to verify Redis connectivity after reset: {e}")
+
     return True
 
 

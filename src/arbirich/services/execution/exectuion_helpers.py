@@ -52,5 +52,20 @@ async def execute_trade(
         The result of the trade execution
     """
     logger.info(f"🚀 Executing trade with method {method_type}")
-    service = await get_execution_service(method_type, config)
-    return await service.execute_trade(trade_data, position_size)
+
+    # Import TradeOpportunity for type conversion if needed
+    from src.arbirich.models.models import TradeOpportunity
+
+    # Convert dictionary to TradeOpportunity if needed
+    if isinstance(trade_data, dict):
+        try:
+            trade_data = TradeOpportunity(**trade_data)
+        except Exception as e:
+            logger.error(f"Failed to convert trade data to TradeOpportunity: {e}")
+            return {"success": False, "error": str(e)}
+
+    # Use the ExecutionService directly
+    from src.arbirich.services.execution.execution_service import ExecutionService
+
+    # Use the new static method
+    return await ExecutionService.execute_opportunity(trade_data, position_size)

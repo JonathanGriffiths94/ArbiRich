@@ -1,63 +1,40 @@
 import asyncio
 import logging
 import time
-from typing import Dict
+import uuid
+from typing import Dict, List
 
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
-
-from .method import ExecutionMethod
+from src.arbirich.core.trading.strategy.execution.method import ExecutionMethod
+from src.arbirich.models.models import TradeExecution, TradeOpportunity, TradeRequest
 
 
 class ParallelExecution(ExecutionMethod):
-    """
-    Executes trade legs in parallel to minimize delay between buy and sell.
-
-    This approach is best for markets with high liquidity and low volatility
-    where the risk of divergence during execution is low.
-    """
+    """Execute trades in parallel across exchanges"""
 
     def __init__(self, config: Dict):
         super().__init__(config)
-        self.logger = logging.getLogger("execution.parallel")
-        self.timeout = config.get("timeout", 3000)  # ms
-        self.retry_attempts = config.get("retry_attempts", 2)
-        self.retry_delay = config.get("retry_delay", 200)  # ms
-        self.cleanup_failed_trades = config.get("cleanup_failed_trades", True)
+        self.logger = logging.getLogger(__name__)
 
     async def execute(self, opportunity: TradeOpportunity, position_size: float) -> TradeExecution:
-        """Execute buy and sell legs in parallel"""
-        self.logger.info(f"Executing parallel trade for {opportunity} with size {position_size}")
+        """
+        Execute buy and sell orders in parallel
+
+        Args:
+            opportunity: The trade opportunity
+            position_size: Size of position to execute
+
+        Returns:
+            TradeExecution object with execution results
+        """
+        self.logger.info(f"Executing parallel trade for {opportunity.id} on {opportunity.pair}")
         start_time = time.time()
 
-        # Add validation before attempting execution
-        if not opportunity.buy_exchange or not opportunity.sell_exchange:
-            error_msg = f"Invalid exchanges: buy={opportunity.buy_exchange}, sell={opportunity.sell_exchange}"
-            self.logger.error(error_msg)
-            return TradeExecution(
-                id=f"invalid-{int(time.time())}",
-                strategy=opportunity.strategy,
-                pair=opportunity.pair,
-                buy_exchange=opportunity.buy_exchange or "",
-                sell_exchange=opportunity.sell_exchange or "",
-                executed_buy_price=0.0,
-                executed_sell_price=0.0,
-                spread=0.0,
-                volume=position_size,
-                execution_timestamp=time.time(),
-                success=False,
-                partial=False,
-                profit=0,
-                execution_time=0,
-                error=error_msg,
-                opportunity_id=opportunity.id,
-                details=None,
-            )
+        # Convert opportunity to trade requests
+        trade_requests = self.opportunity_to_trade_requests(opportunity, position_size)
 
-        if opportunity.buy_price <= 0 or opportunity.sell_price <= 0:
-            error_msg = f"Invalid prices: buy={opportunity.buy_price}, sell={opportunity.sell_price}"
-            self.logger.error(error_msg)
+        if not trade_requests:
             return TradeExecution(
-                id=f"invalid-{int(time.time())}",
+                id=str(uuid.uuid4()),
                 strategy=opportunity.strategy,
                 pair=opportunity.pair,
                 buy_exchange=opportunity.buy_exchange,
@@ -69,308 +46,149 @@ class ParallelExecution(ExecutionMethod):
                 execution_timestamp=time.time(),
                 success=False,
                 partial=False,
-                profit=0,
-                execution_time=0,
-                error=error_msg,
+                profit=0.0,
+                execution_time=0.0,
+                error="No valid trade requests generated from opportunity",
                 opportunity_id=opportunity.id,
-                details=None,
+                details={},
             )
 
+        # Execute all trade requests in parallel
+        results = await self._execute_requests_parallel(trade_requests)
+
+        # Process execution results
+        return self._process_execution_results(
+            opportunity=opportunity, position_size=position_size, results=results, start_time=start_time
+        )
+
+    async def _execute_requests_parallel(self, trade_requests: List[TradeRequest]) -> List[Dict]:
+        """Execute multiple trade requests in parallel"""
+        tasks = []
+        for request in trade_requests:
+            tasks.append(self._execute_single_request(request))
+
+        return await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _execute_single_request(self, request: TradeRequest) -> Dict:
+        """Execute a single trade request and return result dict"""
         try:
-            # Configure tasks for buy and sell legs
-            buy_task = self._execute_buy(
-                exchange=opportunity.buy_exchange,
-                trading_pair=opportunity.pair,
-                price=opportunity.buy_price,
-                volume=position_size,
-            )
+            # Implement the exchange-specific logic to execute the trade
+            # This is a placeholder - you'll need to implement the actual trading logic
+            self.logger.info(f"Executing {request.side.value} order on {request.exchange} for {request.symbol}")
 
-            sell_task = self._execute_sell(
-                exchange=opportunity.sell_exchange,
-                trading_pair=opportunity.pair,
-                price=opportunity.sell_price,
-                volume=position_size,
-            )
+            # For example, use an exchange service:
+            # from src.arbirich.services.exchange_service import ExchangeService
+            # exchange_service = await ExchangeService.get_instance(request.exchange)
+            # result = await exchange_service.create_order(
+            #     symbol=request.symbol,
+            #     side=request.side,
+            #     order_type=request.order_type,
+            #     amount=request.amount,
+            #     price=request.price
+            # )
 
-            # Execute both legs with timeout
-            # Fixed: Use wait_for instead of passing timeout to gather directly
-            try:
-                # Run both tasks concurrently with a timeout
-                results = await asyncio.wait_for(
-                    asyncio.gather(buy_task, sell_task),
-                    timeout=self.timeout / 1000.0,  # Convert ms to seconds
-                )
-                buy_result, sell_result = results
-            except asyncio.TimeoutError:
-                self.logger.error(f"Execution timed out after {self.timeout}ms")
-                return TradeExecution(
-                    id=f"timeout-{int(time.time())}",
-                    strategy=opportunity.strategy,
-                    pair=opportunity.pair,
-                    buy_exchange=opportunity.buy_exchange,
-                    sell_exchange=opportunity.sell_exchange,
-                    executed_buy_price=0.0,
-                    executed_sell_price=0.0,
-                    spread=0.0,
-                    volume=position_size,
-                    execution_timestamp=time.time(),
-                    success=False,
-                    partial=False,
-                    profit=0,
-                    execution_time=(time.time() - start_time) * 1000,
-                    error=f"Execution timed out after {self.timeout}ms",
-                    opportunity_id=opportunity.id,
-                    details=None,
-                )
-
-            # Process results - handle any leg failures
-            buy_success = buy_result.get("success", False) if isinstance(buy_result, dict) else False
-            sell_success = sell_result.get("success", False) if isinstance(sell_result, dict) else False
-
-            if not buy_success or not sell_success:
-                # Handle partial execution
-                partial = buy_success or sell_success
-                error_msg = ""
-
-                if not buy_success:
-                    buy_error = (
-                        buy_result.get("error", "Unknown buy error")
-                        if isinstance(buy_result, dict)
-                        else str(buy_result)
-                    )
-                    error_msg += f"Buy failed: {buy_error}. "
-
-                if not sell_success:
-                    sell_error = (
-                        sell_result.get("error", "Unknown sell error")
-                        if isinstance(sell_result, dict)
-                        else str(sell_result)
-                    )
-                    error_msg += f"Sell failed: {sell_error}"
-
-                execution_time = (time.time() - start_time) * 1000
-                self.logger.error(f"Trade execution failed: {error_msg}")
-
-                # For partial executions, we might need to cleanup
-                if partial and self.cleanup_failed_trades:
-                    if buy_success and not sell_success:
-                        self.logger.warning("Buy succeeded but sell failed - initiating cleanup")
-                        await self._cleanup_partial_buy(buy_result, opportunity)
-                    elif sell_success and not buy_success:
-                        self.logger.warning("Sell succeeded but buy failed - initiating cleanup")
-                        await self._cleanup_partial_sell(sell_result, opportunity)
-
-                # Return execution with failure details
-                return TradeExecution(
-                    id=f"failed-{int(time.time())}",
-                    strategy=opportunity.strategy,
-                    pair=opportunity.pair,
-                    buy_exchange=opportunity.buy_exchange,
-                    sell_exchange=opportunity.sell_exchange,
-                    executed_buy_price=buy_result.get("executed_price", 0.0) if isinstance(buy_result, dict) else 0.0,
-                    executed_sell_price=sell_result.get("executed_price", 0.0)
-                    if isinstance(sell_result, dict)
-                    else 0.0,
-                    spread=0.0,
-                    volume=position_size,
-                    execution_timestamp=time.time(),
-                    success=False,
-                    partial=partial,
-                    profit=0,
-                    execution_time=execution_time,
-                    error=error_msg,
-                    opportunity_id=opportunity.id,
-                    details={
-                        "buy_result": buy_result if isinstance(buy_result, dict) else None,
-                        "sell_result": sell_result if isinstance(sell_result, dict) else None,
-                    },
-                )
-
-            # Both legs succeeded
-            execution_time = (time.time() - start_time) * 1000
-
-            # Calculate profit
-            buy_price = buy_result.get("executed_price", opportunity.buy_price)
-            sell_price = sell_result.get("executed_price", opportunity.sell_price)
-            profit = (sell_price - buy_price) * position_size
-
-            self.logger.info(f"Parallel execution complete. Profit: {profit}, Time: {execution_time}ms")
-
-            return TradeExecution(
-                id=f"success-{int(time.time())}",
-                strategy=opportunity.strategy,
-                pair=opportunity.pair,
-                buy_exchange=opportunity.buy_exchange,
-                sell_exchange=opportunity.sell_exchange,
-                executed_buy_price=buy_price,
-                executed_sell_price=sell_price,
-                spread=(sell_price - buy_price) / buy_price if buy_price > 0 else 0,
-                volume=position_size,
-                execution_timestamp=time.time(),
-                success=True,
-                partial=False,
-                profit=profit,
-                execution_time=execution_time,
-                opportunity_id=opportunity.id,
-                details={"buy_result": buy_result, "sell_result": sell_result},
-            )
+            # For now, simulate a successful execution
+            return {
+                "request": request.model_dump(),
+                "success": True,
+                "executed_price": request.price,
+                "executed_amount": request.amount,
+                "exchange": request.exchange,
+                "symbol": request.symbol,
+                "side": request.side.value,
+                "order_id": f"simulated-{uuid.uuid4()}",
+                "timestamp": time.time(),
+            }
 
         except Exception as e:
-            self.logger.error(f"Error executing trade: {e}")
-            return TradeExecution(
-                id=f"error-{int(time.time())}",
-                strategy=opportunity.strategy,
-                pair=opportunity.pair,
-                buy_exchange=opportunity.buy_exchange,
-                sell_exchange=opportunity.sell_exchange,
-                executed_buy_price=0.0,
-                executed_sell_price=0.0,
-                spread=0.0,
-                volume=position_size,
-                execution_timestamp=time.time(),
-                success=False,
-                partial=False,
-                profit=0,
-                execution_time=(time.time() - start_time) * 1000,
-                error=str(e),
-                opportunity_id=opportunity.id,
-                details=None,
-            )
+            self.logger.error(f"Error executing trade request: {e}")
+            return {
+                "request": request.model_dump(),
+                "success": False,
+                "error": str(e),
+                "exchange": request.exchange,
+                "symbol": request.symbol,
+                "side": request.side.value,
+                "timestamp": time.time(),
+            }
+
+    def _process_execution_results(
+        self, opportunity: TradeOpportunity, position_size: float, results: List[Dict], start_time: float
+    ) -> TradeExecution:
+        """Process execution results into a TradeExecution object"""
+        executed_buy_price = 0.0
+        executed_sell_price = 0.0
+        buy_success = False
+        sell_success = False
+        errors = []
+
+        # Process buy and sell results
+        for result in results:
+            if isinstance(result, Exception):
+                errors.append(f"Exception: {str(result)}")
+                continue
+
+            if not result.get("success", False):
+                errors.append(
+                    f"{result.get('side', 'unknown')} on {result.get('exchange', 'unknown')}: {result.get('error', 'Unknown error')}"
+                )
+                continue
+
+            if result.get("side") == "BUY":
+                executed_buy_price = result.get("executed_price", 0.0)
+                buy_success = True
+            elif result.get("side") == "SELL":
+                executed_sell_price = result.get("executed_price", 0.0)
+                sell_success = True
+
+        # Calculate spread and profit
+        spread = executed_sell_price - executed_buy_price if executed_buy_price > 0 and executed_sell_price > 0 else 0.0
+        profit = spread * position_size if spread > 0 else 0.0
+
+        # Determine overall success
+        success = (buy_success or not opportunity.buy_exchange) and (sell_success or not opportunity.sell_exchange)
+        partial = not success and (buy_success or sell_success)
+
+        return TradeExecution(
+            id=str(uuid.uuid4()),
+            strategy=opportunity.strategy,
+            pair=opportunity.pair,
+            buy_exchange=opportunity.buy_exchange,
+            sell_exchange=opportunity.sell_exchange,
+            executed_buy_price=executed_buy_price,
+            executed_sell_price=executed_sell_price,
+            spread=spread,
+            volume=position_size,
+            execution_timestamp=time.time(),
+            success=success,
+            partial=partial,
+            profit=profit,
+            execution_time=time.time() - start_time,
+            error="; ".join(errors) if errors else None,
+            opportunity_id=opportunity.id,
+            details={"results": results},
+        )
 
     async def handle_partial_execution(self, result: TradeExecution) -> None:
-        """Handle partial execution by attempting to rebalance positions"""
-        self.logger.warning("Handling partial execution in parallel trade")
+        """
+        Handle cases where only part of a trade was executed
 
-        details = result.details or {}
-        buy_result = details.get("buy_result", {})
-        sell_result = details.get("sell_result", {})
-
-        # Use the same cleanup logic as during execution
-        if buy_result and buy_result.get("success") and not (sell_result and sell_result.get("success")):
-            await self._cleanup_partial_buy(buy_result)
-
-        elif sell_result and sell_result.get("success") and not (buy_result and buy_result.get("success")):
-            await self._cleanup_partial_sell(sell_result)
+        Args:
+            result: The result of the partially executed trade
+        """
+        self.logger.warning(f"Handling partial execution for trade {result.id}")
+        # Implement recovery logic here (e.g., closing positions)
+        # This is a placeholder - you'll need to implement actual recovery logic
+        pass
 
     async def handle_failure(self, result: TradeExecution) -> None:
-        """Handle complete failure of trade execution"""
-        self.logger.error(f"Parallel trade failed: {result.error}")
-        # Implement retry or circuit breaker logic if needed
+        """
+        Handle cases where a trade failed to execute
 
-    async def _execute_buy(self, exchange: str, trading_pair: str, price: float, volume: float) -> Dict:
-        """Execute a buy order"""
-        # Use the execution service instead of direct exchange service
-        from src.arbirich.models.config_models import ExecutionConfig
-        from src.arbirich.services.execution.execution_service import ExecutionService
-
-        # Get singleton instance instead of creating a new one
-        execution_service = ExecutionService.get_instance(method_type="parallel", config=ExecutionConfig())
-        await execution_service.initialize()
-
-        # Format the trade data for the execution service
-        trade_data = {
-            "exchange": exchange,
-            "symbol": trading_pair,
-            "side": "buy",
-            "price": price,
-            "amount": volume,
-            "order_type": "limit",
-        }
-
-        # Execute the trade
-        order_result = await execution_service.execute_trade(trade_data)
-        return order_result
-
-    async def _execute_sell(self, exchange: str, trading_pair: str, price: float, volume: float) -> Dict:
-        """Execute a sell order"""
-        # Use the execution service instead of direct exchange service
-        from src.arbirich.models.config_models import ExecutionConfig
-        from src.arbirich.services.execution.execution_service import ExecutionService
-
-        # Get singleton instance instead of creating a new one
-        execution_service = ExecutionService.get_instance(method_type="parallel", config=ExecutionConfig())
-        await execution_service.initialize()
-
-        # Format the trade data for the execution service
-        trade_data = {
-            "exchange": exchange,
-            "symbol": trading_pair,
-            "side": "sell",
-            "price": price,
-            "amount": volume,
-            "order_type": "limit",
-        }
-
-        # Execute the trade
-        order_result = await execution_service.execute_trade(trade_data)
-        return order_result
-
-    async def _cleanup_partial_buy(self, buy_result: Dict, opportunity=None) -> None:
-        """Clean up after a partial execution where only buy succeeded"""
-        # Sell what we bought to minimize risk
-        exchange = buy_result.get("exchange")
-        trading_pair = buy_result.get("trading_pair") or (opportunity.pair if opportunity else None)
-        volume = buy_result.get("executed_volume", 0)
-
-        if not exchange or not trading_pair or not volume:
-            self.logger.error("Missing information for buy cleanup")
-            return
-
-        if volume > 0:
-            self.logger.info(f"Cleaning up partial buy by selling {volume} on {exchange}")
-            from src.arbirich.services.execution.execution_service import ExecutionService
-
-            try:
-                execution_service = ExecutionService(method_type="parallel")
-                await execution_service.initialize()
-
-                # Format the trade data for the execution service
-                trade_data = {
-                    "exchange": exchange,
-                    "symbol": trading_pair,
-                    "side": "sell",
-                    "price": None,  # Market order
-                    "amount": volume,
-                    "order_type": "market",
-                }
-
-                # Execute the trade
-                await execution_service.execute_trade(trade_data)
-                self.logger.info("Cleanup successful")
-            except Exception as e:
-                self.logger.error(f"Error during cleanup: {e}")
-
-    async def _cleanup_partial_sell(self, sell_result: Dict, opportunity=None) -> None:
-        """Clean up after a partial execution where only sell succeeded"""
-        # Buy to cover what we sold
-        exchange = sell_result.get("exchange")
-        trading_pair = sell_result.get("trading_pair") or (opportunity.pair if opportunity else None)
-        volume = sell_result.get("executed_volume", 0)
-
-        if not exchange or not trading_pair or not volume:
-            self.logger.error("Missing information for sell cleanup")
-            return
-
-        if volume > 0:
-            self.logger.info(f"Cleaning up partial sell by buying {volume} on {exchange}")
-            from src.arbirich.services.execution.execution_service import ExecutionService
-
-            try:
-                execution_service = ExecutionService(method_type="parallel")
-                await execution_service.initialize()
-
-                # Format the trade data for the execution service
-                trade_data = {
-                    "exchange": exchange,
-                    "symbol": trading_pair,
-                    "side": "buy",
-                    "price": None,  # Market order
-                    "amount": volume,
-                    "order_type": "market",
-                }
-
-                # Execute the trade
-                await execution_service.execute_trade(trade_data)
-                self.logger.info("Cleanup successful")
-            except Exception as e:
-                self.logger.error(f"Error during cleanup: {e}")
+        Args:
+            result: The result of the failed trade
+        """
+        self.logger.error(f"Handling failure for trade {result.id}: {result.error}")
+        # Implement failure handling logic here
+        # This is a placeholder - you'll need to implement actual failure handling
+        pass

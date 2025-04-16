@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Dict
+from typing import Dict, List
 
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.models.enums import OrderSide, OrderType
+from src.arbirich.models.models import TradeExecution, TradeOpportunity, TradeRequest
 
 
 class ExecutionMethod(ABC):
@@ -23,6 +24,50 @@ class ExecutionMethod(ABC):
             TradeExecution with execution details
         """
         pass
+
+    def opportunity_to_trade_requests(self, opportunity: TradeOpportunity, position_size: float) -> List[TradeRequest]:
+        """
+        Convert a TradeOpportunity to a list of TradeRequest objects.
+        This helper method can be used by implementations of the execute method.
+
+        Args:
+            opportunity: The trade opportunity to convert
+            position_size: The size/volume to use
+
+        Returns:
+            List of TradeRequest objects
+        """
+        requests = []
+
+        # Create buy request if applicable
+        if opportunity.buy_exchange:
+            buy_request = TradeRequest(
+                exchange=opportunity.buy_exchange,
+                symbol=opportunity.pair,
+                side=OrderSide.BUY,
+                price=opportunity.buy_price,
+                amount=position_size,
+                order_type=OrderType.LIMIT,
+                strategy=opportunity.strategy,
+                execution_id=opportunity.id,
+            )
+            requests.append(buy_request)
+
+        # Create sell request if applicable
+        if opportunity.sell_exchange:
+            sell_request = TradeRequest(
+                exchange=opportunity.sell_exchange,
+                symbol=opportunity.pair,
+                side=OrderSide.SELL,
+                price=opportunity.sell_price,
+                amount=position_size,
+                order_type=OrderType.LIMIT,
+                strategy=opportunity.strategy,
+                execution_id=opportunity.id,
+            )
+            requests.append(sell_request)
+
+        return requests
 
     @abstractmethod
     async def handle_partial_execution(self, result: TradeExecution) -> None:
