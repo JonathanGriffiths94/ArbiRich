@@ -3,10 +3,10 @@ import time
 import uuid
 from typing import ClassVar, Dict, Literal, Optional, Union
 
-from src.arbirich.core.trading.strategy.execution.method import ExecutionMethod
-from src.arbirich.core.trading.strategy.execution.parallel import ParallelExecution
-from src.arbirich.core.trading.strategy.execution.staggered import StaggeredExecution
-from src.arbirich.models.config_models import ExecutionConfig
+from src.arbirich.core.strategy.execution.method import ExecutionMethod
+from src.arbirich.core.strategy.execution.parallel import ParallelExecution
+from src.arbirich.core.strategy.execution.staggered import StaggeredExecution
+from src.arbirich.models.config import ExecutionConfig
 from src.arbirich.models.models import TradeExecution, TradeOpportunity
 
 
