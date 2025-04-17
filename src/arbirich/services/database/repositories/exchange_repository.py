@@ -1,8 +1,8 @@
 import json
 from typing import List, Optional
 
+from arbirich.models.db.schema import exchanges
 from src.arbirich.models.models import Exchange
-from src.arbirich.models.schema import exchanges
 from src.arbirich.services.database.base_repository import BaseRepository
 
 

@@ -8,16 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.sql.schema import Table
 
-from src.arbirich.models.models import (
-    RiskProfile,
-    Strategy,
-    StrategyExchangePairMapping,
-    StrategyExecutionMapping,
-    StrategyParameters,
-    StrategyType,
-    StrategyTypeParameters,
-)
-from src.arbirich.models.schema import (
+from arbirich.models.db.schema import (
     exchanges,
     risk_profiles,
     strategies,
@@ -27,6 +18,15 @@ from src.arbirich.models.schema import (
     strategy_type_parameters,
     strategy_types,
     trading_pairs,
+)
+from src.arbirich.models.models import (
+    RiskProfile,
+    Strategy,
+    StrategyExchangePairMapping,
+    StrategyExecutionMapping,
+    StrategyParameters,
+    StrategyType,
+    StrategyTypeParameters,
 )
 from src.arbirich.services.database.base_repository import BaseRepository
 

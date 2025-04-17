@@ -6,13 +6,13 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from src.arbirich.models.models import StrategyDB as Strategy
-from src.arbirich.models.models import (
+from src.arbirich.models.execution import TradeExecution
+from src.arbirich.models.metrics import (
     StrategyExchangeMetrics,
     StrategyMetrics,
     StrategyTradingPairMetrics,
-    TradeExecution,
 )
+from src.arbirich.models.strategy import Strategy
 from src.arbirich.services.database.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class StrategyMetricsService:
         """
         try:
             # Get executions for this strategy in the time period
-            from src.arbirich.models.schema import strategies
+            from arbirich.models.db.schema import strategies
 
             # Get the strategy first
             strategy_query = select(strategies).where(strategies.c.id == strategy_id)
@@ -216,8 +216,8 @@ class StrategyMetricsService:
                 profit_factor=profit_factor,
                 max_drawdown=max_drawdown,
                 max_drawdown_percentage=max_drawdown_percentage,
-                avg_profit_per_trade=avg_profit_per_trade,
-                avg_loss_per_trade=avg_loss_per_trade,
+                avg_profit_per_trade=avg_profit_per_trade if "avg_profit_per_trade" in locals() else Decimal("0"),
+                avg_loss_per_trade=avg_loss_per_trade if "avg_loss_per_trade" in locals() else Decimal("0"),
                 risk_reward_ratio=risk_reward_ratio,
                 total_volume=total_volume,
                 avg_volume_per_trade=avg_volume_per_trade,

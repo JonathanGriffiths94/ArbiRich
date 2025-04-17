@@ -12,13 +12,13 @@ from src.arbirich.config.config import get_all_strategy_names, get_strategy_conf
 from src.arbirich.core.config.model_registry import ConfigModelRegistry
 from src.arbirich.core.config.validator import BasicStrategyConfig
 from src.arbirich.core.trading.trading_service import get_trading_service
-from src.arbirich.models.models import Strategy
-from src.arbirich.models.router_models import (
+from src.arbirich.models import (
     ChartData,
     ChartDataset,
     DashboardStats,
     HealthResponse,
     StatusResponse,
+    Strategy,
     TradingStatusResponse,
     TradingStopRequest,
 )
@@ -837,7 +837,7 @@ async def get_dashboard_stats():
                     continue
 
             # Get opportunities count
-            from src.arbirich.models.schema import trade_opportunities
+            from arbirich.models.db.schema import trade_opportunities
 
             with db_service.engine.begin() as conn:
                 import sqlalchemy as sa

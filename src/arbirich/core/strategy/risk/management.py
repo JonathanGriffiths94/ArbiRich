@@ -2,8 +2,9 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-from arbirich.models.config_models import RiskConfig
-from arbirich.models.models import RiskProfile, TradeOpportunity
+from src.arbirich.models.config import RiskConfig
+from src.arbirich.models.models import TradeOpportunity
+from src.arbirich.models.risk import RiskProfile
 
 from ..parameters.configuration import ConfigurationParameters
 from ..parameters.performance import PerformanceMetrics

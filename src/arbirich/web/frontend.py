@@ -459,7 +459,7 @@ def get_dashboard_stats(db_service: DatabaseService) -> dict:
     with db_service.engine.begin() as conn:
         import sqlalchemy as sa
 
-        from src.arbirich.models.schema import trade_executions, trade_opportunities
+        from arbirich.models.db.schema import trade_executions, trade_opportunities
 
         # Count opportunities
         opp_result = conn.execute(sa.select(sa.func.count()).select_from(trade_opportunities))
@@ -655,7 +655,7 @@ def get_enhanced_dashboard_stats(db_service: DatabaseService) -> dict:
 
         import sqlalchemy as sa
 
-        from src.arbirich.models.schema import strategies, trade_executions, trade_opportunities
+        from arbirich.models.db.schema import strategies, trade_executions, trade_opportunities
 
         # Count opportunities
         opp_result = conn.execute(sa.select(sa.func.count()).select_from(trade_opportunities))

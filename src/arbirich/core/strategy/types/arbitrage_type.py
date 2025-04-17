@@ -4,8 +4,9 @@ import time
 from abc import ABC, abstractmethod
 from typing import Dict
 
-from src.arbirich.models.config_models import ExecutionConfig
-from src.arbirich.models.models import OrderBookState, TradeExecution, TradeOpportunity
+from src.arbirich.models.config import ExecutionConfig
+from src.arbirich.models.execution import OrderBookState
+from src.arbirich.models.models import TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 

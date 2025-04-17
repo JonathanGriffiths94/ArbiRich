@@ -37,6 +37,15 @@ exchanges = Table(
     Column("additional_info", JSON),
     Column("is_active", Boolean, nullable=False, server_default=text("false")),
     Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
+    Column("api_key", String),
+    Column("api_secret", String),
+    Column("paper_trading", Boolean, server_default=text("true")),
+    Column("has_websocket", Boolean, server_default=text("false")),
+    Column("has_rest", Boolean, server_default=text("true")),
+    Column("has_private_api", Boolean, server_default=text("false")),
+    Column("status", String, server_default=text("'online'")),
+    Column("version", String),
+    Column("description", String),
 )
 
 trading_pairs = Table(
@@ -47,6 +56,12 @@ trading_pairs = Table(
     Column("quote_currency", String, nullable=False),
     Column("symbol", String, nullable=False, unique=True),
     Column("is_active", Boolean, nullable=False, server_default=text("false")),
+    Column("min_qty", Numeric(18, 8), server_default=text("0")),
+    Column("max_qty", Numeric(18, 8), server_default=text("0")),
+    Column("price_precision", Integer, server_default=text("8")),
+    Column("qty_precision", Integer, server_default=text("8")),
+    Column("min_notional", Numeric(18, 8), server_default=text("0")),
+    Column("enabled", Boolean, server_default=text("true")),
     UniqueConstraint("base_currency", "quote_currency", name="uix_pair_base_quote"),
 )
 
@@ -179,6 +194,7 @@ trade_opportunities = Table(
     Column("spread", Numeric(18, 8), nullable=False),
     Column("volume", Numeric(18, 8), nullable=False),
     Column("opportunity_timestamp", TIMESTAMP, nullable=False),
+    Column("opportunity_key", String),
 )
 
 trade_executions = Table(
@@ -196,6 +212,55 @@ trade_executions = Table(
     Column("execution_timestamp", TIMESTAMP, nullable=False),
     Column("execution_id", String),
     Column("opportunity_id", UUID, ForeignKey("trade_opportunities.id")),
+    Column("profit", Numeric(18, 8)),
+    Column("status", String, server_default=text("'completed'")),
+    Column("buy_execution_result_id", UUID, ForeignKey("trade_execution_results.id")),
+    Column("sell_execution_result_id", UUID, ForeignKey("trade_execution_results.id")),
+)
+
+trade_execution_results = Table(
+    "trade_execution_results",
+    metadata,
+    Column("id", UUID, primary_key=True, default=uuid.uuid4),
+    Column("exchange_id", Integer, ForeignKey("exchanges.id"), nullable=False),
+    Column("trading_pair_id", Integer, ForeignKey("trading_pairs.id"), nullable=False),
+    Column("side", String, nullable=False),  # buy or sell
+    Column("order_type", String, nullable=False),
+    Column("requested_amount", Numeric(18, 8), nullable=False),
+    Column("executed_amount", Numeric(18, 8), nullable=False),
+    Column("price", Numeric(18, 8)),
+    Column("average_price", Numeric(18, 8)),
+    Column("status", String, nullable=False),
+    Column("timestamp", TIMESTAMP, nullable=False),
+    Column("fees", JSON),
+    Column("trade_id", String),
+    Column("order_id", String),
+    Column("error", String),
+    Column("raw_response", JSON),
+    Column("strategy_id", Integer, ForeignKey("strategies.id")),
+    Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
+    Column("trade_execution_id", UUID, ForeignKey("trade_executions.id")),
+)
+
+orders = Table(
+    "orders",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("exchange_id", Integer, ForeignKey("exchanges.id"), nullable=False),
+    Column("trading_pair_id", Integer, ForeignKey("trading_pairs.id"), nullable=False),
+    Column("side", String, nullable=False),  # buy or sell
+    Column("order_type", String, nullable=False),  # market, limit, etc.
+    Column("price", Numeric(18, 8)),
+    Column("amount", Numeric(18, 8), nullable=False),
+    Column("filled", Numeric(18, 8), server_default=text("0")),
+    Column("remaining", Numeric(18, 8)),
+    Column("status", String, nullable=False),
+    Column("timestamp", TIMESTAMP, nullable=False),
+    Column("average_price", Numeric(18, 8)),
+    Column("fees", JSON),
+    Column("raw_response", JSON),
+    Column("strategy_id", Integer, ForeignKey("strategies.id")),
+    Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
 )
 
 # Performance metrics tables
@@ -293,6 +358,10 @@ order_book_snapshots = Table(
     "order_book_snapshots",
     metadata,
     Column("id", UUID, primary_key=True, default=uuid.uuid4),
+    Column("exchange_id", Integer, ForeignKey("exchanges.id"), nullable=False),
+    Column("trading_pair_id", Integer, ForeignKey("trading_pairs.id"), nullable=False),
     Column("timestamp", TIMESTAMP, nullable=False),
+    Column("sequence", Integer),
     Column("data", JSON, nullable=False),  # Serialized order book state
+    Column("hash_value", String),  # Renamed from hash to avoid conflict
 )

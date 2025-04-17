@@ -1,10 +1,19 @@
+"""
+Configuration models for the ArbiRich application.
+These models represent the application configuration and are used to
+initialize the application components.
+"""
+
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from src.arbirich.models.base import BaseModel
+from src.arbirich.models.enums import LogLevel
 
 
 class ExecutionConfig(BaseModel):
-    """Execution method configuration matching the EXECUTION_METHODS in config.py"""
+    """Execution method configuration."""
 
     method: str = "parallel"  # Could be "parallel" or "staggered"
     timeout: int = 3000  # Timeout in milliseconds
@@ -13,16 +22,12 @@ class ExecutionConfig(BaseModel):
     max_slippage: float = 0.0005  # Maximum allowed slippage
     cleanup_failed_trades: bool = True  # Whether to clean up after failed trades
     stagger_delay: int = 500  # ms delay between trade legs (for staggered execution)
-    abort_on_first_failure: bool = True  # Whether to abort on first failure (for staggered execution)
+    abort_on_first_failure: bool = True  # Whether to abort on first failure
     leg_order: str = "buy_first"  # "buy_first" or "sell_first" (for staggered execution)
-
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Convert to dictionary with proper field casing"""
-        return super().dict(*args, **kwargs)
 
 
 class RiskConfig(BaseModel):
-    """Risk management configuration matching the risk_management section in ALL_STRATEGIES"""
+    """Risk management configuration."""
 
     max_position_size: float = 1.0
     max_daily_loss: float = 5.0  # Percentage of capital
@@ -34,13 +39,9 @@ class RiskConfig(BaseModel):
     max_spread_multiple: float = 5.0  # Scale up to 5x for very good spreads
     exchange_risk_factors: Dict[str, float] = Field(default_factory=dict)
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Convert to dictionary with proper field casing"""
-        return super().dict(*args, **kwargs)
-
 
 class ExchangeConfig(BaseModel):
-    """Exchange configuration matching ALL_EXCHANGES entries in config.py"""
+    """Exchange configuration."""
 
     name: str
     api_rate_limit: int = 100
@@ -53,7 +54,7 @@ class ExchangeConfig(BaseModel):
     mapping: Dict[str, str] = Field(default_factory=dict)
     additional_info: Dict[str, Any] = Field(default_factory=dict)
 
-    # Fields not in config but needed for API usage
+    # Fields for API usage
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
     enabled: bool = True
@@ -61,22 +62,19 @@ class ExchangeConfig(BaseModel):
 
 
 class TradingPairConfig(BaseModel):
-    """Trading pair configuration matching ALL_PAIRS entries in config.py"""
+    """Trading pair configuration."""
 
     base_currency: str
     quote_currency: str
     symbol: Optional[str] = None
 
-    # Additional fields used in APIs but not in config.py
+    # Additional fields for APIs
     min_qty: float = 0.0
     max_qty: float = 0.0
     price_precision: int = 8
     qty_precision: int = 8
     min_notional: float = 0.0
     enabled: bool = True
-
-    class Config:
-        validate_assignment = True
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -86,7 +84,7 @@ class TradingPairConfig(BaseModel):
 
 
 class StrategyConfig(BaseModel):
-    """Strategy configuration matching ALL_STRATEGIES entries in config.py"""
+    """Strategy configuration."""
 
     type: str
     name: str
@@ -100,9 +98,9 @@ class StrategyConfig(BaseModel):
     additional_info: Dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Convert to dictionary with proper field casing"""
-        result = super().dict(*args, **kwargs)
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary with processed pairs."""
+        result = super().to_dict()
 
         # Process pairs to ensure they're in the right format
         if "pairs" in result:
@@ -122,7 +120,7 @@ class StrategyConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    """Main application configuration"""
+    """Main application configuration."""
 
     strategies: Dict[str, StrategyConfig] = Field(default_factory=dict)
     exchanges: Dict[str, ExchangeConfig] = Field(default_factory=dict)
@@ -130,7 +128,7 @@ class AppConfig(BaseModel):
     risk: RiskConfig = Field(default_factory=RiskConfig)
     execution_methods: Dict[str, ExecutionConfig] = Field(default_factory=dict)
     database_uri: str = "sqlite:///arbirich.db"
-    log_level: str = "INFO"
+    log_level: LogLevel = LogLevel.INFO
     websocket_port: int = 8000
     api_port: int = 8001
     enable_telemetry: bool = False

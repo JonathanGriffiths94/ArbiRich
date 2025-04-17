@@ -5,9 +5,9 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
+from arbirich.models.db.schema import metadata
 from src.arbirich.config.config import DATABASE_URL
 from src.arbirich.models.models import Exchange, Strategy, TradeOpportunity, TradingPair
-from src.arbirich.models.schema import metadata
 from src.arbirich.services.database.repositories.exchange_repository import ExchangeRepository
 from src.arbirich.services.database.repositories.strategy_metrics_repository import (
     StrategyExchangeMetricsRepository,

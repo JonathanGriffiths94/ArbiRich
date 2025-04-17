@@ -14,6 +14,7 @@ from src.arbirich.core.trading.flows.bytewax_flows.common.shutdown_utils import 
     is_force_kill_set,
     mark_force_kill,
 )
+from src.arbirich.models import OrderBookUpdate
 from src.arbirich.services.exchange_processors.registry import (
     are_processors_shutting_down,
     deregister_processor,
@@ -265,8 +266,6 @@ class WebsocketPartition(StatefulSourcePartition):
 
                 # Assume order_book is already an OrderBookUpdate Pydantic model
                 # This is what our websocket processor should provide
-                from src.arbirich.models.models import OrderBookUpdate
-
                 assert isinstance(order_book, OrderBookUpdate), "Expected OrderBookUpdate model from websocket"
 
                 # Return the model in the expected tuple format
@@ -364,8 +363,6 @@ class WebsocketPartition(StatefulSourcePartition):
                     self.handle_stop_event(processor_id)
 
                 # Process the message - ensure we have an OrderBookUpdate instance
-                from src.arbirich.models.models import OrderBookUpdate
-
                 if not isinstance(order_book, OrderBookUpdate):
                     try:
                         # Try to convert dictionary to OrderBookUpdate if needed

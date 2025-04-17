@@ -224,16 +224,16 @@ async def get_next_message(pubsub) -> Optional[Dict]:
     """Get the next message from Redis PubSub with async support"""
     try:
         # Check if we have a message available
-        message = pubsub.get_message(timeout=0.01)
+        message = pubsub.get_message(timeout=0.1)
 
-        if message and message.get("type") == "message":
+        # If we got a message, return it immediately
+        if message:
             return message
 
-        # No message immediately available, use asyncio to wait a bit
-        # without blocking the event loop
-        await asyncio.sleep(0.1)
+        # If no message is available, wait a brief moment before returning None
+        # This avoids excessive CPU usage while still being responsive
+        await asyncio.sleep(0.01)
         return None
-
     except Exception as e:
-        logger.error(f"❌ Error getting Redis message: {e}")
+        logger.error(f"Error getting message from Redis PubSub: {e}")
         return None

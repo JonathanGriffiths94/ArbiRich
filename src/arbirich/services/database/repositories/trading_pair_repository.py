@@ -3,8 +3,8 @@ from typing import List, Optional, Tuple
 
 import sqlalchemy as sa
 
+from arbirich.models.db.schema import trading_pairs
 from src.arbirich.models.models import TradingPair
-from src.arbirich.models.schema import trading_pairs
 from src.arbirich.services.database.base_repository import BaseRepository
 
 

@@ -49,18 +49,18 @@ ALL_EXCHANGES = {
         "mapping": {},
         "additional_info": {"connection_count": 1},
     },
-    # "binance": {
-    #     "name": "binance",
-    #     "api_rate_limit": 1200,
-    #     "trade_fees": 0.001,
-    #     "rest_url": "https://api.binance.com",
-    #     "ws_url": "wss://stream.binance.com:9443/ws",
-    #     "delimiter": "",
-    #     "withdrawal_fee": {"BTC": 0.0005, "ETH": 0.005, "USDT": 1.0},
-    #     "api_response_time": 50,
-    #     "mapping": {"USDT": "USDT"},
-    #     "additional_info": {"connection_count": 2},
-    # },
+    "binance": {
+        "name": "binance",
+        "api_rate_limit": 1200,
+        "trade_fees": 0.001,
+        "rest_url": "https://api.binance.com",
+        "ws_url": "wss://stream.binance.com:9443/ws",
+        "delimiter": "",
+        "withdrawal_fee": {"BTC": 0.0005, "ETH": 0.005, "USDT": 1.0},
+        "api_response_time": 50,
+        "mapping": {"USDT": "USDT"},
+        "additional_info": {"connection_count": 2},
+    },
 }
 
 # Use only active exchanges for the primary configuration
@@ -362,3 +362,113 @@ def get_execution_method_config(method_name):
 
     # Not found
     return None
+
+
+def get_strategy_params(strategy_name):
+    """
+    Extract strategy parameters suitable for database StrategyParameters entry.
+
+    Args:
+        strategy_name: Name of the strategy
+
+    Returns:
+        Dict with parameters that match the StrategyParameters table fields
+    """
+    strategy = get_strategy_config(strategy_name)
+    if not strategy:
+        return None
+
+    params = {
+        "min_spread": strategy.get("min_spread", 0.001),
+        "threshold": strategy.get("threshold", 0.001),
+    }
+
+    # Add optional parameters if they exist
+    if "execution" in strategy and isinstance(strategy["execution"], dict):
+        if "max_slippage" in strategy["execution"]:
+            params["max_slippage"] = strategy["execution"]["max_slippage"]
+        if "timeout" in strategy["execution"]:
+            params["max_execution_time_ms"] = strategy["execution"]["timeout"]
+
+    if "additional_info" in strategy and isinstance(strategy["additional_info"], dict):
+        if "min_volume" in strategy["additional_info"]:
+            params["min_volume"] = strategy["additional_info"]["min_volume"]
+
+    # Add all remaining parameters as additional_parameters
+    additional = {}
+    for k, v in strategy.items():
+        if k not in ["name", "min_spread", "threshold"] and k not in params:
+            additional[k] = v
+
+    if additional:
+        params["additional_parameters"] = additional
+
+    return params
+
+
+def get_risk_profile_for_strategy(strategy_name):
+    """
+    Extract risk profile parameters for a strategy
+
+    Args:
+        strategy_name: Name of the strategy
+
+    Returns:
+        Dict suitable for RiskProfile model
+    """
+    strategy = get_strategy_config(strategy_name)
+    if not strategy or "risk_management" not in strategy:
+        return None
+
+    rm = strategy["risk_management"]
+
+    profile = {
+        "name": f"{strategy_name}_risk_profile",
+        "max_position_size_percentage": rm.get("max_position_size", 0) / 100
+        if isinstance(rm.get("max_position_size"), (int, float))
+        else None,
+        "max_drawdown_percentage": rm.get("max_daily_loss"),
+        "circuit_breaker_conditions": {
+            "max_consecutive_losses": rm.get("max_consecutive_losses"),
+            "cooldown": rm.get("circuit_breaker_cooldown"),
+        },
+    }
+
+    return profile
+
+
+def get_execution_strategy_for_strategy(strategy_name):
+    """
+    Extract execution strategy parameters for a strategy
+
+    Args:
+        strategy_name: Name of the strategy
+
+    Returns:
+        Dict suitable for ExecutionStrategy model
+    """
+    strategy = get_strategy_config(strategy_name)
+    if not strategy or "execution" not in strategy:
+        return None
+
+    execution = strategy["execution"]
+
+    # Get method details from EXECUTION_METHODS
+    method_name = execution.get("method", "parallel")
+    method_config = get_execution_method_config(method_name) or {}
+
+    strategy = {
+        "name": f"{strategy_name}_{method_name}_execution",
+        "timeout": execution.get("timeout", method_config.get("timeout", 3000)),
+        "retry_attempts": execution.get("retry_attempts", method_config.get("retry_attempts", 2)),
+        "parameters": {
+            "method": method_name,
+            "max_slippage": execution.get("max_slippage", 0.0005),
+        },
+    }
+
+    # Add method-specific parameters
+    if method_name == "staggered" and "stagger_delay" in execution:
+        strategy["parameters"]["stagger_delay"] = execution["stagger_delay"]
+
+    return strategy

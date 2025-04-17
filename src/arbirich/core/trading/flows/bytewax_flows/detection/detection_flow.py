@@ -155,7 +155,7 @@ def build_detection_flow(strategy_name: str, debug_mode: bool = False, threshold
             state = state[1]  # Take the second element if it's a tuple
 
         # Validate state
-        if not hasattr(state, "symbols") or not state.symbols:
+        if not isinstance(state, OrderBookState) or not hasattr(state, "symbols") or not state.symbols:
             return None
 
         # Process all symbols
@@ -288,7 +288,6 @@ def process_output_opportunity(opportunity):
     import sys
 
     from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_sink import publish_trade_opportunity
-    from src.arbirich.models.models import TradeOpportunity
 
     print(f"DETECTION FLOW - PROCESSING OUTPUT OPPORTUNITY: {opportunity}")
     sys.stdout.flush()  # Force print to appear
@@ -330,6 +329,10 @@ if __name__ == "__main__":
     else:
         # Get the first strategy from config
         from src.arbirich.config.config import STRATEGIES
+
+        if not STRATEGIES:
+            logger.error("No strategies found in config. Please define at least one strategy.")
+            sys.exit(1)
 
         strategy_name = next(iter(STRATEGIES.keys()))
 

@@ -10,10 +10,12 @@ from src.arbirich.core.config.validator import (
     DetectionComponentConfig,
     ExecutionComponentConfig,
     IngestionComponentConfig,
+    LiquidityAdjustedStrategyConfig,
     MidPriceStrategyConfig,
     ReportingComponentConfig,
+    VwapStrategyConfig,
 )
-from src.arbirich.models.enums import StrategyType
+from src.arbirich.models.enums import StrategyType  # Use StrategyType from enums
 
 
 class ConfigModelRegistry:
@@ -35,7 +37,9 @@ class ConfigModelRegistry:
     _strategy_models = {
         StrategyType.BASIC: BasicStrategyConfig,
         StrategyType.MID_PRICE: MidPriceStrategyConfig,
-        "base": BaseStrategyConfig,
+        StrategyType.VWAP: VwapStrategyConfig,
+        StrategyType.LIQUIDITY_ADJUSTED: LiquidityAdjustedStrategyConfig,
+        "base": BaseStrategyConfig,  # Keep 'base' as string - it's not an enum value
     }
 
     @classmethod
@@ -63,12 +67,12 @@ class ConfigModelRegistry:
             Pydantic model class for the strategy
         """
         # Handle both string and enum values
-        if isinstance(strategy_type, StrategyType):
+        if isinstance(strategy_type, StrategyType):  # Use StrategyType from enums
             return cls._strategy_models.get(strategy_type, BaseStrategyConfig)
 
         # Try to match with enum value
         try:
-            strat_type = StrategyType(strategy_type)
+            strat_type = StrategyType(strategy_type)  # Use StrategyType from enums
             return cls._strategy_models.get(strat_type, BaseStrategyConfig)
         except ValueError:
             # Fall back to checking raw string

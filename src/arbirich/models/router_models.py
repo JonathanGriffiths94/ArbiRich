@@ -3,70 +3,60 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 
-class StatusResponse(BaseModel):
-    """Response model for the status endpoint."""
+class HealthResponse(BaseModel):
+    api: str
+    redis: str
+    database: str
 
+
+class StatusResponse(BaseModel):
     status: str
     version: str
     timestamp: str
     environment: str
-    components: Dict[str, str] = {}
-    active_strategies: List[str] = []
-    active_pairs: List[str] = []
-    active_exchanges: List[str] = []
-    active_trading: bool = False
+    components: Dict[str, str]
+    processes: List[Dict[str, str]]
+    active_strategies: List[str]
+    active_pairs: List[str]
+    active_exchanges: List[str]
+    active_trading: bool
     trading_start_time: Optional[str] = None
     trading_stop_time: Optional[str] = None
     trading_stop_reason: Optional[str] = None
     trading_stop_emergency: Optional[bool] = None
 
 
-class HealthResponse(BaseModel):
-    """Response model for the health check endpoint."""
-
-    api: str
-    redis: str
-    database: str
+class TradingStopRequest(BaseModel):
+    emergency: bool = False
+    reason: Optional[str] = None
 
 
 class TradingStatusResponse(BaseModel):
-    """Standard response with status and message"""
-
     success: bool
     message: str
+    status: Optional[str] = None
+    overall: Optional[bool] = None
+    components: Optional[Dict[str, str]] = None
     data: Optional[Dict[str, Any]] = None
 
 
-class DashboardStats(BaseModel):
-    """Dashboard statistics model."""
+class ChartDataset(BaseModel):
+    label: str
+    data: List[float]
+    borderColor: str
+    backgroundColor: str
+    fill: bool = False
 
+
+class ChartData(BaseModel):
+    labels: List[str]
+    datasets: List[ChartDataset]
+
+
+class DashboardStats(BaseModel):
     total_profit: float = 0.0
     total_trades: int = 0
     win_rate: float = 0.0
     executions_24h: int = 0
     opportunities_count: int = 0
     active_strategies: int = 0
-
-
-class ChartDataset(BaseModel):
-    """Chart dataset model."""
-
-    label: str
-    data: List[float]
-    borderColor: str
-    backgroundColor: str
-    fill: bool = False
-    tension: float = 0.4
-
-
-class ChartData(BaseModel):
-    """Chart data model."""
-
-    labels: List[str]
-    datasets: List[ChartDataset]
-
-
-class TradingStopRequest(BaseModel):
-    """Request model for stopping trading operations."""
-
-    emergency: bool = False
