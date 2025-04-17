@@ -4,7 +4,7 @@ import time
 import uuid
 from typing import Optional
 
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.models import TradeExecution, TradeOpportunity
 from src.arbirich.services.execution.execution_service import ExecutionService
 
 logger = logging.getLogger(__name__)

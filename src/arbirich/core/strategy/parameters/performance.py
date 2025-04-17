@@ -3,7 +3,7 @@ import time
 from datetime import date
 from typing import Dict, Optional
 
-from src.arbirich.models.models import TradeExecution
+from src.arbirich.models import TradeExecution
 
 
 class PerformanceMetrics:

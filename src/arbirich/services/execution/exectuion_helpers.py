@@ -54,7 +54,7 @@ async def execute_trade(
     logger.info(f"🚀 Executing trade with method {method_type}")
 
     # Import TradeOpportunity for type conversion if needed
-    from src.arbirich.models.models import TradeOpportunity
+    from src.arbirich.models import TradeOpportunity
 
     # Convert dictionary to TradeOpportunity if needed
     if isinstance(trade_data, dict):

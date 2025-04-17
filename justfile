@@ -162,7 +162,3 @@ reset-db:
 # Create seed data for development
 prefill-db *arguments:
     {{ python }} -m src.arbirich.services.database.prefill_database {{arguments}}
-
-seed-db:
-    {{ python }} ./scripts/create_seed_data.py
-    {{ python }} ./scripts/recalculate_metrics.py

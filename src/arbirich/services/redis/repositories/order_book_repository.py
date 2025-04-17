@@ -4,8 +4,8 @@ from typing import Dict, List, Optional
 
 from redis.exceptions import RedisError
 
-from src.arbirich.constants import ORDER_BOOK_CHANNEL, ORDER_BOOK_KEY_PREFIX
-from src.arbirich.models.models import OrderBookUpdate
+from src.arbirich.config.constants import ORDER_BOOK_CHANNEL, ORDER_BOOK_KEY_PREFIX
+from src.arbirich.models import OrderBookUpdate
 
 logger = logging.getLogger(__name__)
 

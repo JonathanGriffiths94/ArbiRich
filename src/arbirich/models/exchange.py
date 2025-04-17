@@ -5,20 +5,21 @@ These models define common data structures for responses from exchange APIs,
 ensuring consistent typing and validation across different exchange connectors.
 """
 
+import logging
 import time
-import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import Field, computed_field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.arbirich.models.base import BaseModel, IdentifiableModel, StatusAwareModel, TimestampedModel
-from src.arbirich.models.enums import ExchangeType, OrderSide, OrderType, TradeStatus
+from arbirich.models.db.schema import exchanges as exchanges_table
+from src.arbirich.models.base import BaseModel, StatusAwareModel, TimestampedModel, TradeExecutionResultModel
+from src.arbirich.models.enums import ExchangeType, OrderSide, OrderStatus, OrderType
 
-if TYPE_CHECKING:
-    from src.arbirich.models.exchange_models import TradingPair
+logger = logging.getLogger(__name__)
 
 
 class Exchange(StatusAwareModel, TimestampedModel):
@@ -38,7 +39,7 @@ class Exchange(StatusAwareModel, TimestampedModel):
     is_active: bool = False
     created_at: Optional[datetime] = None
 
-    # Fields from DB schema
+    # API configuration
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
     paper_trading: bool = True
@@ -52,17 +53,48 @@ class Exchange(StatusAwareModel, TimestampedModel):
     # Fields not in DB but used in app
     enabled: bool = True
 
+    class Config:
+        from_attributes = True
+
     @property
     def exchange_type(self) -> Optional[ExchangeType]:
         """Get the corresponding enum value for this exchange."""
         try:
             return ExchangeType(self.name.lower())
         except ValueError:
+            logger.warning(f"No matching ExchangeType for {self.name}")
             return None
+
+    def to_db_dict(self) -> dict:
+        """Convert to a dictionary suitable for exchanges table"""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "api_rate_limit": self.api_rate_limit,
+            "trade_fees": self.trade_fees,
+            "rest_url": self.rest_url,
+            "ws_url": self.ws_url,
+            "delimiter": self.delimiter,
+            "withdrawal_fee": self.withdrawal_fee,
+            "api_response_time": self.api_response_time,
+            "mapping": self.mapping,
+            "additional_info": self.additional_info,
+            "is_active": self.is_active,
+            "created_at": self.created_at,
+            "status": self.status,
+            "paper_trading": self.paper_trading,
+            "has_websocket": self.has_websocket,
+            "has_rest": self.has_rest,
+            "has_private_api": self.has_private_api,
+            "api_key": self.api_key,
+            "api_secret": self.api_secret,
+            "version": self.version,
+            "description": self.description,
+        }
 
     @classmethod
     def from_config(cls, config_model) -> "Exchange":
-        """Create an Exchange from an ExchangeConfig."""
+        """Create an Exchange from an ExchangeConfig"""
         return cls(
             name=config_model.name,
             api_rate_limit=config_model.api_rate_limit,
@@ -83,19 +115,22 @@ class Exchange(StatusAwareModel, TimestampedModel):
 
     @classmethod
     async def get_by_name(cls, db_session: AsyncSession, name: str) -> Optional["Exchange"]:
-        """Get exchange by name from database."""
-        # This method would use the appropriate DB access code
-        # Implementation would be in a repository class
-        pass
+        """Get exchange by name."""
+        query = select(exchanges_table).where(exchanges_table.c.name == name)
+        result = await db_session.execute(query)
+        row = result.fetchone()
+        if not row:
+            return None
+        return cls(**row._mapping)
 
     @classmethod
     async def get_all_active(cls, db_session: AsyncSession) -> List["Exchange"]:
-        """Get all active exchanges from database."""
-        # This method would use the appropriate DB access code
-        # Implementation would be in a repository class
-        pass
+        """Get all active exchanges."""
+        query = select(exchanges_table).where(exchanges_table.c.is_active)
+        result = await db_session.execute(query)
+        return [cls(**row._mapping) for row in result.fetchall()]
 
-    def format_symbol(self, pair: Union["TradingPair", str]) -> str:
+    def format_symbol(self, pair: Union[str, Any]) -> str:
         """
         Format a trading pair symbol according to exchange requirements.
         Uses the exchange's delimiter and any symbol mappings.
@@ -192,18 +227,6 @@ class AccountBalances(BaseModel):
     raw_response: Optional[Dict[str, Any]] = None
 
 
-class OrderStatus(str):
-    """Standardized order statuses across exchanges."""
-
-    OPEN = "open"
-    PARTIAL = "partially_filled"
-    FILLED = "filled"
-    CANCELED = "canceled"
-    REJECTED = "rejected"
-    EXPIRED = "expired"
-    UNKNOWN = "unknown"
-
-
 class ExchangeOrder(BaseModel):
     """Order information from an exchange."""
 
@@ -216,7 +239,7 @@ class ExchangeOrder(BaseModel):
     amount: float
     filled: float = 0.0
     remaining: Optional[float] = None
-    status: str = OrderStatus.OPEN
+    status: OrderStatus = OrderStatus.OPEN
     timestamp: float = Field(default_factory=time.time)
     average_price: Optional[float] = None
     fees: Optional[Dict[str, float]] = None
@@ -299,10 +322,9 @@ class WebsocketMessage(BaseModel):
     raw_message: Optional[str] = None
 
 
-class TradeExecutionResult(IdentifiableModel):
+class TradeExecutionResult(TradeExecutionResultModel):
     """Result of a trade execution."""
 
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     exchange: str
     symbol: str
     side: OrderSide
@@ -311,8 +333,7 @@ class TradeExecutionResult(IdentifiableModel):
     executed_amount: float
     price: Optional[float] = None
     average_price: Optional[float] = None
-    status: TradeStatus
-    timestamp: float = Field(default_factory=time.time)
+    status: OrderStatus
     fees: Optional[Dict[str, float]] = None
     trade_id: Optional[str] = None
     order_id: Optional[str] = None
@@ -321,6 +342,5 @@ class TradeExecutionResult(IdentifiableModel):
 
     # Fields from DB schema
     strategy_id: Optional[int] = None
-    trade_execution_id: Optional[str] = None
     exchange_id: Optional[int] = None
     trading_pair_id: Optional[int] = None

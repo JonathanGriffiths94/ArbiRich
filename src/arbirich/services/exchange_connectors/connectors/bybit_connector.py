@@ -14,8 +14,8 @@ import aiohttp
 import websockets
 
 from arbirich.services.exchange_connectors.connectors.base_connector import BaseExchangeConnector
+from src.arbirich.models import OrderBookUpdate, TradeRequest
 from src.arbirich.models.enums import OrderType
-from src.arbirich.models.models import OrderBookUpdate, TradeRequest
 
 
 class BybitConnector(BaseExchangeConnector):

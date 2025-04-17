@@ -8,7 +8,10 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Type, TypeVar
 
 from pydantic import BaseModel as PydanticBaseModel
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict
+from sqlalchemy import DateTime, Integer
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
 # Type variable for model classes
 T = TypeVar("T", bound="BaseModel")
@@ -63,20 +66,46 @@ class BaseModel(PydanticBaseModel):
         return cls.from_dict(data)
 
 
-class TimestampedModel(BaseModel):
-    """Base model with created_at and updated_at timestamps."""
-
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-
-
 class IdentifiableModel(BaseModel):
     """Base model with a unique identifier."""
 
-    id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=False)
+
+
+class UUIDModel(BaseModel):
+    """Base model with a UUID identifier."""
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
+
+
+class TimestampedModel(BaseModel):
+    """Base model with created_at and updated_at timestamps."""
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
 class StatusAwareModel(BaseModel):
     """Base model with an active/inactive status."""
 
-    is_active: bool = False
+    status: Mapped[str]
+    status_reason: Mapped[Optional[str]] = mapped_column(nullable=True)
+    status_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class TradeOpportunityModel(UUIDModel, TimestampedModel):
+    """Base model for trade opportunities."""
+
+    pass
+
+
+class TradeExecutionModel(UUIDModel, TimestampedModel):
+    """Base model for trade executions."""
+
+    pass
+
+
+class TradeExecutionResultModel(UUIDModel, TimestampedModel):
+    """Base model for trade execution results."""
+
+    pass

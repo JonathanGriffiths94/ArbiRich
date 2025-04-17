@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from src.arbirich.models.models import StrategyExchangeMetrics, StrategyMetrics, StrategyTradingPairMetrics
+from src.arbirich.models import StrategyExchangeMetrics, StrategyMetrics, StrategyTradingPairMetrics
 from src.arbirich.services.database.base_repository import BaseRepository
 
 

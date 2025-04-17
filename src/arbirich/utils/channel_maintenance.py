@@ -3,7 +3,7 @@ import threading
 import time
 
 from arbirich.core.state.system_state import is_system_shutting_down, mark_component_notified
-from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.config.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
@@ -117,24 +117,30 @@ class ChannelMaintenanceService:
         return channel_manager.get_all_system_channels()
 
     def get_all_system_channels(self):
-        """Get all standard system channels with consistent naming"""
+        """Get all standard system channels with consistent naming using only database"""
         channels = [ORDER_BOOK_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL, TRADE_EXECUTIONS_CHANNEL]
 
-        # Add strategy-specific channels
-        from src.arbirich.config.config import STRATEGIES
+        from src.arbirich.models.db.exchange import Exchange, TradingPair
+        from src.arbirich.models.db.strategy import Strategy
+        from src.arbirich.services.database.base_repository import BaseRepository
 
-        for strategy_name in STRATEGIES.keys():
-            channels.append(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy_name}")
-            channels.append(f"{TRADE_EXECUTIONS_CHANNEL}:{strategy_name}")
+        repo = BaseRepository()
 
-        # Add exchange-specific channels
-        from src.arbirich.config.config import EXCHANGES, PAIRS
+        # Get strategies from database
+        strategies = repo.get_all(Strategy)
+        for strategy in strategies:
+            channels.append(f"{TRADE_OPPORTUNITIES_CHANNEL}:{strategy.name}")
+            channels.append(f"{TRADE_EXECUTIONS_CHANNEL}:{strategy.name}")
 
-        for exchange in EXCHANGES:
-            channels.append(f"{ORDER_BOOK_CHANNEL}:{exchange}")
-            for base, quote in PAIRS:
-                symbol = f"{base}-{quote}"
-                channels.append(f"{ORDER_BOOK_CHANNEL}:{exchange}:{symbol}")
+        # Get exchanges and trading pairs from database
+        exchanges = repo.get_all(Exchange)
+        trading_pairs = repo.get_all(TradingPair)
+
+        for exchange in exchanges:
+            channels.append(f"{ORDER_BOOK_CHANNEL}:{exchange.name}")
+            for pair in trading_pairs:
+                symbol = f"{pair.base_asset}-{pair.quote_asset}"
+                channels.append(f"{ORDER_BOOK_CHANNEL}:{exchange.name}:{symbol}")
 
         return channels
 

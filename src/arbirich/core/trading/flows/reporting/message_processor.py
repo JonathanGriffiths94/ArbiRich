@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict
 
 from arbirich.core.state.system_state import is_system_shutting_down
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.models import TradeExecution, TradeOpportunity
 from src.arbirich.services.database.database_service import DatabaseService
 
 from .db_functions import check_opportunity_exists

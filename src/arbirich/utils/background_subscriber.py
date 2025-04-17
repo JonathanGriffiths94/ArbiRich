@@ -4,8 +4,8 @@ import threading
 import time
 
 from arbirich.core.state.system_state import is_system_shutting_down
-from src.arbirich.config.config import EXCHANGES, PAIRS, STRATEGIES
-from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.config.config import EXCHANGES, STRATEGIES, TRADING_PAIRS
+from src.arbirich.config.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 
 logger = logging.getLogger(__name__)
@@ -140,7 +140,7 @@ class BackgroundSubscriber:
             )
 
             # Then subscribe to specific pair channels
-            for base, quote in PAIRS:
+            for base, quote in TRADING_PAIRS:
                 symbol = f"{base}-{quote}"
                 channel = f"{ORDER_BOOK_CHANNEL}:{exchange}:{symbol}"
                 self._subscribe_channel(channel)

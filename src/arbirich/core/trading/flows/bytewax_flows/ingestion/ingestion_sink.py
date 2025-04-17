@@ -3,7 +3,7 @@ import threading
 from typing import Dict, Tuple
 
 from src.arbirich.core.state.system_state import is_system_shutting_down
-from src.arbirich.models.models import OrderBookUpdate
+from src.arbirich.models import OrderBookUpdate
 from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
 from src.arbirich.services.redis.redis_service import RedisService
 

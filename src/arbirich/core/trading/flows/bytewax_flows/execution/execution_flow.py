@@ -18,7 +18,7 @@ from src.arbirich.core.trading.flows.bytewax_flows.execution.execution_process i
 )
 from src.arbirich.core.trading.flows.bytewax_flows.execution.execution_source import RedisExecutionSource
 from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.models import TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

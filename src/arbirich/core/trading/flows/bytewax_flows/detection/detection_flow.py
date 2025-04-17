@@ -31,11 +31,9 @@ from src.arbirich.core.trading.flows.bytewax_flows.detection.detection_source im
     mark_detection_force_kill,
 )
 from src.arbirich.core.trading.flows.flow_manager import BytewaxFlowManager
-from src.arbirich.models.models import OrderBookState, TradeOpportunity
+from src.arbirich.models import OrderBookState, TradeOpportunity
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 flow_manager = BytewaxFlowManager.get_or_create("detection")
 
 _current_strategy_name = None
@@ -317,24 +315,7 @@ def process_output_opportunity(opportunity):
 
 
 if __name__ == "__main__":
-    # Change the default logging level to DEBUG
-    logging.basicConfig(
-        level=logging.DEBUG,  # Change from INFO to DEBUG
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
-    # Get the strategy name from command line args
-    if len(sys.argv) > 1:
-        strategy_name = sys.argv[1]
-    else:
-        # Get the first strategy from config
-        from src.arbirich.config.config import STRATEGIES
-
-        if not STRATEGIES:
-            logger.error("No strategies found in config. Please define at least one strategy.")
-            sys.exit(1)
-
-        strategy_name = next(iter(STRATEGIES.keys()))
+    strategy_name = sys.argv[1] if len(sys.argv) > 1 else next(iter(STRATEGIES.keys()))
 
     # Set current configuration
     _current_strategy_name = strategy_name

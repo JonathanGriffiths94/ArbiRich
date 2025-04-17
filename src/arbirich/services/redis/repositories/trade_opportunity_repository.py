@@ -5,9 +5,9 @@ from typing import List, Optional, Set
 
 from redis.exceptions import RedisError
 
-from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL, TRADE_OPPORTUNITY_KEY_PREFIX
+from src.arbirich.config.constants import TRADE_OPPORTUNITIES_CHANNEL, TRADE_OPPORTUNITY_KEY_PREFIX
+from src.arbirich.models import TradeOpportunity
 from src.arbirich.models.enums import ChannelName
-from src.arbirich.models.models import TradeOpportunity
 
 logger = logging.getLogger(__name__)
 

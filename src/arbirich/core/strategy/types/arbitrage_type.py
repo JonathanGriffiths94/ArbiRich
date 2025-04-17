@@ -4,9 +4,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import Dict
 
-from src.arbirich.models.config import ExecutionConfig
+from src.arbirich.models import BaseExecutionConfig, TradeExecution, TradeOpportunity
 from src.arbirich.models.execution import OrderBookState
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +202,7 @@ class ArbitrageType(ABC):
 
             # Create a proper ExecutionConfig object
             if isinstance(execution_config, dict):
-                pydantic_config = ExecutionConfig(**execution_config)
+                pydantic_config = BaseExecutionConfig(**execution_config)
             else:
                 # If it's already a Pydantic model, use it as is
                 pydantic_config = execution_config

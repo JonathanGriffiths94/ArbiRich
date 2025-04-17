@@ -576,7 +576,7 @@ class ReportingService:
         Returns:
             List of channel names
         """
-        from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+        from src.arbirich.config.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 
         channels = [
             TRADE_OPPORTUNITIES_CHANNEL,

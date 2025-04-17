@@ -6,8 +6,7 @@ from typing import ClassVar, Dict, Literal, Optional, Union
 from src.arbirich.core.strategy.execution.method import ExecutionMethod
 from src.arbirich.core.strategy.execution.parallel import ParallelExecution
 from src.arbirich.core.strategy.execution.staggered import StaggeredExecution
-from src.arbirich.models.config import ExecutionConfig
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.models import BaseExecutionConfig, TradeExecution, TradeOpportunity
 
 
 class ExecutionService:
@@ -21,7 +20,7 @@ class ExecutionService:
 
     @classmethod
     def get_instance(
-        cls, method_type: Literal["parallel", "staggered"] = "parallel", config: Union[Dict, ExecutionConfig] = None
+        cls, method_type: Literal["parallel", "staggered"] = "parallel", config: Union[Dict, BaseExecutionConfig] = None
     ) -> "ExecutionService":
         """
         Get or create an ExecutionService instance (singleton pattern).
@@ -54,7 +53,9 @@ class ExecutionService:
         cls._instances.clear()
 
     def __init__(
-        self, method_type: Literal["parallel", "staggered"] = "parallel", config: Union[Dict, ExecutionConfig] = None
+        self,
+        method_type: Literal["parallel", "staggered"] = "parallel",
+        config: Union[Dict, BaseExecutionConfig] = None,
     ):
         """
         Initialize the execution service.
@@ -68,9 +69,9 @@ class ExecutionService:
 
         # Always convert config to ExecutionConfig if it's a dictionary
         if isinstance(config, dict):
-            self.config = ExecutionConfig(**config)
+            self.config = BaseExecutionConfig(**config)
         else:
-            self.config = config or ExecutionConfig()  # Use default config if none provided
+            self.config = config or BaseExecutionConfig()  # Use default config if none provided
 
         self.execution_method: Optional[ExecutionMethod] = None
         self._initialized = False

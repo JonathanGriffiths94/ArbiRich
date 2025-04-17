@@ -42,9 +42,9 @@ class ArbitrageStrategy:
             execution_method = execution_config.get("method", "parallel")
 
             # Import execution methods
-            from src.arbirich.core.trading.strategy.execution.parallel import ParallelExecution
-            from src.arbirich.core.trading.strategy.execution.risk_aware_execution import RiskAwareExecution
-            from src.arbirich.core.trading.strategy.execution.staggered import StaggeredExecution
+            from src.arbirich.core.strategy.execution.parallel import ParallelExecution
+            from src.arbirich.core.strategy.execution.risk_aware_execution import RiskAwareExecution
+            from src.arbirich.core.strategy.execution.staggered import StaggeredExecution
 
             # Create the appropriate execution method
             if execution_method == "staggered":

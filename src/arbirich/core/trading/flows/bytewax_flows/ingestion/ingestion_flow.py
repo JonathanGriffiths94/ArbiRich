@@ -87,12 +87,12 @@ def build_ingestion_flow(exchange=None, trading_pair=None, debug_mode=False):
         logger.info(f"🔧 Building multi-exchange ingestion flow with existing configuration: {exchanges_and_pairs}")
     else:
         # Use default configuration if none was provided
-        from src.arbirich.config.config import EXCHANGES, PAIRS
+        from src.arbirich.config.config import EXCHANGES, TRADING_PAIRS
 
         exchanges_and_pairs = {}
         for exch in EXCHANGES:
             exchanges_and_pairs[exch] = []
-            for base, quote in PAIRS:
+            for base, quote in TRADING_PAIRS:
                 exchanges_and_pairs[exch].append(f"{base}-{quote}")
 
         _current_exchanges_and_pairs = exchanges_and_pairs
@@ -115,7 +115,7 @@ def build_ingestion_flow(exchange=None, trading_pair=None, debug_mode=False):
                 logger.warning(f"⚠️ [{flow_id}] Received None data from source")
                 return None
 
-            from src.arbirich.models.models import OrderBookUpdate
+            from src.arbirich.models import OrderBookUpdate
 
             # Process tuple data with OrderBookUpdate
             if isinstance(data, tuple) and len(data) == 3:
@@ -144,7 +144,7 @@ def build_ingestion_flow(exchange=None, trading_pair=None, debug_mode=False):
             if order_book is None:
                 return None
 
-            from src.arbirich.models.models import OrderBookUpdate
+            from src.arbirich.models import OrderBookUpdate
 
             if isinstance(order_book, OrderBookUpdate):
                 logger.info(f"📡 [{flow_id}] Publishing order book: {order_book.exchange}:{order_book.symbol}")

@@ -2,10 +2,10 @@ import logging
 from typing import Any, Dict
 
 from src.arbirich.config.config import get_strategy_config
-from src.arbirich.core.trading.strategy.types.basic import BasicArbitrage
-from src.arbirich.core.trading.strategy.types.liquidity_adjusted import LiquidityAdjustedArbitrage
-from src.arbirich.core.trading.strategy.types.mid_price import MidPriceArbitrage
-from src.arbirich.core.trading.strategy.types.vwap import VWAPArbitrage
+from src.arbirich.core.strategy.types.basic import BasicArbitrage
+from src.arbirich.core.strategy.types.liquidity_adjusted import LiquidityAdjustedArbitrage
+from src.arbirich.core.strategy.types.mid_price import MidPriceArbitrage
+from src.arbirich.core.strategy.types.vwap import VWAPArbitrage
 from src.arbirich.models.enums import StrategyType
 
 logger = logging.getLogger(__name__)

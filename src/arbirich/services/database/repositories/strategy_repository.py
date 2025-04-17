@@ -12,22 +12,24 @@ from arbirich.models.db.schema import (
     exchanges,
     risk_profiles,
     strategies,
-    strategy_exchange_pair_mappings,
-    strategy_execution_mapping,
     strategy_parameters,
     strategy_type_parameters,
     strategy_types,
     trading_pairs,
 )
-from src.arbirich.models.models import (
+from src.arbirich.models import (
     RiskProfile,
     Strategy,
     StrategyExchangePairMapping,
     StrategyExecutionMapping,
     StrategyParameters,
-    StrategyType,
     StrategyTypeParameters,
 )
+from src.arbirich.models.db.schema import (
+    strategy_exchange_pair_mapping,
+    strategy_execution_mapping,
+)
+from src.arbirich.models.strategy import StrategyTypeModel
 from src.arbirich.services.database.base_repository import BaseRepository
 
 T = TypeVar("T", bound=BaseModel)
@@ -44,7 +46,7 @@ class StrategyRepository(BaseRepository[Strategy]):
         self.strategy_types_table = strategy_types
         self.risk_profiles_table = risk_profiles
         self.exec_mapping_table = strategy_execution_mapping
-        self.exchange_pair_mapping_table = strategy_exchange_pair_mappings
+        self.exchange_pair_mapping_table = strategy_exchange_pair_mapping
         self.exchanges_table = exchanges
         self.trading_pairs_table = trading_pairs
 
@@ -850,26 +852,24 @@ class StrategyRepository(BaseRepository[Strategy]):
 
     def _get_strategy_parameters(self, conn: Connection, strategy_id: int) -> Optional[StrategyParameters]:
         """Get strategy parameters for a strategy"""
-        try:
-            result = conn.execute(self.params_table.select().where(self.params_table.c.strategy_id == strategy_id))
-            row = result.first()
+        result = conn.execute(self.params_table.select().where(self.params_table.c.strategy_id == strategy_id))
+        row = result.first()
 
-            if not row:
-                raise ValueError(f"No parameters found for strategy ID {strategy_id}")
+        if not row:
+            raise ValueError(f"Strategy parameters not found for strategy ID {strategy_id}. Parameters are required.")
 
-            # Convert row to dict
-            params_dict = row._asdict()
+        # Convert row to dict
+        params_dict = row._asdict()
 
-            # Parse the additional_parameters JSON if present
-            if "additional_parameters" in params_dict and params_dict["additional_parameters"]:
-                params_dict["additional_parameters"] = self._parse_json_field(params_dict["additional_parameters"])
-            else:
-                raise ValueError(f"Missing additional_parameters for strategy ID {strategy_id}")
+        # Validate required fields from schema
+        if params_dict["min_spread"] is None or params_dict["threshold"] is None:
+            raise ValueError(f"Required fields min_spread and threshold must not be null for strategy ID {strategy_id}")
 
-            return StrategyParameters.model_validate(params_dict)
-        except Exception as e:
-            self.logger.error(f"Error getting strategy parameters for strategy ID {strategy_id}: {e}", exc_info=True)
-            raise  # Re-raise the exception instead of returning None
+        # Parse the additional_parameters JSON if present
+        if "additional_parameters" in params_dict:
+            params_dict["additional_parameters"] = self._parse_json_field(params_dict.get("additional_parameters"))
+
+        return StrategyParameters.model_validate(params_dict)
 
     def _get_type_parameters(self, conn: Connection, strategy_id: int) -> Optional[StrategyTypeParameters]:
         """Get type parameters for a strategy"""
@@ -883,9 +883,9 @@ class StrategyRepository(BaseRepository[Strategy]):
 
         return self._row_to_model(row, StrategyTypeParameters)
 
-    def _get_strategy_type(self, conn: Connection, strategy_type_id: int) -> Optional[StrategyType]:
+    def _get_strategy_type(self, conn: Connection, strategy_type_id: int) -> Optional[StrategyTypeModel]:
         """Get strategy type by ID"""
-        return self._get_model_by_id(conn, self.strategy_types_table, StrategyType, strategy_type_id)
+        return self._get_model_by_id(conn, self.strategy_types_table, StrategyTypeModel, strategy_type_id)
 
     def _get_risk_profile(self, conn: Connection, risk_profile_id: int) -> Optional[RiskProfile]:
         """Get risk profile by ID"""
@@ -897,7 +897,7 @@ class StrategyRepository(BaseRepository[Strategy]):
         query = sa.text("""
             SELECT sem.*, es.name as execution_name, es.description as execution_description
             FROM strategy_execution_mapping sem
-            JOIN execution_strategies es ON sem.execution_strategy_id = es.id
+            JOIN execution_methods es ON sem.execution_strategy_id = es.id
             WHERE sem.strategy_id = :strategy_id
             ORDER BY sem.priority ASC
         """)
@@ -945,7 +945,7 @@ class StrategyRepository(BaseRepository[Strategy]):
                     tp.symbol as pair_symbol,
                     tp.base_currency,
                     tp.quote_currency
-                FROM strategy_exchange_pair_mappings sepm
+                FROM strategy_exchange_pair_mapping sepm
                 JOIN exchanges e ON sepm.exchange_id = e.id
                 JOIN trading_pairs tp ON sepm.trading_pair_id = tp.id
                 WHERE sepm.strategy_id = :strategy_id

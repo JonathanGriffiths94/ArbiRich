@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Optional
 
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.models import TradeExecution, TradeOpportunity
 
 from ..parameters.configuration import ConfigurationParameters
 from ..risk.management import RiskManagement

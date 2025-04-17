@@ -10,7 +10,7 @@ import time
 import uuid
 from typing import Dict
 
-from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.config.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 from src.arbirich.core.trading.flows.flow_manager import FlowManager
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 

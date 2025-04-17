@@ -1,11 +1,9 @@
-# trading/strategy/types/basic.py
 import logging
 import time
 import uuid
 from typing import Dict, Optional, Union
 
-from src.arbirich.models.enums import StrategyType
-from src.arbirich.models.models import OrderBookState, TradeOpportunity
+from src.arbirich.models import OrderBookState, StrategyType, TradeOpportunity
 
 from .arbitrage_type import ArbitrageType
 

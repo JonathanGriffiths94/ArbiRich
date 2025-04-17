@@ -33,7 +33,7 @@ async def persist_data():
 
             if redis_client:
                 # Check main opportunity and execution channels
-                from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+                from src.arbirich.config.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 
                 pubsub = redis_client.client.pubsub()
 

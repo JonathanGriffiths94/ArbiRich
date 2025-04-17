@@ -8,9 +8,9 @@ import redis
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from fastapi.responses import JSONResponse
 
+from arbirich.config.model_registry import ConfigModelRegistry
+from arbirich.config.validator import BasicStrategyConfig
 from src.arbirich.config.config import get_all_strategy_names, get_strategy_config
-from src.arbirich.core.config.model_registry import ConfigModelRegistry
-from src.arbirich.core.config.validator import BasicStrategyConfig
 from src.arbirich.core.trading.trading_service import get_trading_service
 from src.arbirich.models import (
     ChartData,

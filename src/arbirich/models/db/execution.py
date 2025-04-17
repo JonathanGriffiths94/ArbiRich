@@ -9,14 +9,14 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, 
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from src.arbirich.models.db.base import Base
-from src.arbirich.models.enums import OrderType, TradeStatus
+from src.arbirich.models import Base
+from src.arbirich.models.db.schema import trade_execution_result_mapping
 
 
-class ExecutionStrategy(Base):
+class ExecutionMethod(Base):
     """Database model for execution strategies."""
 
-    __tablename__ = "execution_strategies"
+    __tablename__ = "execution_methods"
 
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
@@ -31,7 +31,7 @@ class ExecutionStrategy(Base):
     strategy_mappings = relationship("StrategyExecutionMapping", back_populates="execution_strategy")
 
     def __repr__(self):
-        return f"<ExecutionStrategy(id={self.id}, name={self.name})>"
+        return f"<ExecutionMethod(id={self.id}, name={self.name})>"
 
     def to_dict(self):
         """Convert execution strategy to dictionary."""
@@ -54,23 +54,23 @@ class StrategyExecutionMapping(Base):
 
     id = Column(Integer, primary_key=True)
     strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
-    execution_strategy_id = Column(Integer, ForeignKey("execution_strategies.id"), nullable=False)
+    execution_strategy_id = Column(Integer, ForeignKey("execution_methods.id"), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     priority = Column(Integer, nullable=False, default=100)
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
     strategy = relationship("Strategy", back_populates="execution_mappings")
-    execution_strategy = relationship("ExecutionStrategy", back_populates="strategy_mappings")
+    execution_strategy = relationship("ExecutionMethod", back_populates="strategy_mappings")
 
     def __repr__(self):
         return f"<StrategyExecutionMapping(id={self.id}, strategy_id={self.strategy_id})>"
 
 
 class StrategyExchangePairMapping(Base):
-    """Database model for strategy-exchange-pair mappings."""
+    """Database model for strategy-exchange-pair mapping."""
 
-    __tablename__ = "strategy_exchange_pair_mappings"
+    __tablename__ = "strategy_exchange_pair_mapping"
 
     id = Column(Integer, primary_key=True)
     strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
@@ -81,9 +81,9 @@ class StrategyExchangePairMapping(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     # Relationships
-    strategy = relationship("Strategy", back_populates="exchange_pair_mappings")
-    exchange = relationship("Exchange", back_populates="exchange_pair_mappings")
-    trading_pair = relationship("TradingPair", back_populates="exchange_pair_mappings")
+    strategy = relationship("Strategy", back_populates="exchange_pair_mapping")
+    exchange = relationship("Exchange", back_populates="exchange_pair_mapping")
+    trading_pair = relationship("TradingPair", back_populates="exchange_pair_mapping")
 
     def __repr__(self):
         return f"<StrategyExchangePairMapping(id={self.id}, strategy_id={self.strategy_id})>"
@@ -120,6 +120,51 @@ class TradeOpportunity(Base):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
+class TradeExecutionResult(Base):
+    """Database model for trade execution results."""
+
+    __tablename__ = "trade_execution_results"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    exchange_id = Column(Integer, ForeignKey("exchanges.id"), nullable=False)
+    trading_pair_id = Column(Integer, ForeignKey("trading_pairs.id"), nullable=False)
+    side = Column(String, nullable=False)  # buy or sell
+    order_type = Column(String, nullable=False)
+    requested_amount = Column(Numeric(18, 8), nullable=False)
+    executed_amount = Column(Numeric(18, 8), nullable=False)
+    price = Column(Numeric(18, 8))
+    average_price = Column(Numeric(18, 8))
+    status = Column(String, nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+    fees = Column(String)  # JSON stored as string
+    trade_id = Column(String)
+    order_id = Column(String)
+    error = Column(String)
+    raw_response = Column(String)  # JSON stored as string
+    strategy_id = Column(Integer, ForeignKey("strategies.id"))
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships through mapping table
+    executions = relationship("TradeExecution", secondary=trade_execution_result_mapping, back_populates="results")
+
+    def __repr__(self):
+        return f"<TradeExecutionResult(id={self.id}, side={self.side})>"
+
+    def to_dict(self):
+        """Convert result to dictionary."""
+        result = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+        # Convert JSON strings to dictionaries
+        for field in ["fees", "raw_response"]:
+            if result[field]:
+                try:
+                    result[field] = json.loads(result[field])
+                except json.JSONDecodeError:
+                    result[field] = {}
+
+        return result
+
+
 class TradeExecution(Base):
     """Database model for trade executions."""
 
@@ -151,6 +196,11 @@ class TradeExecution(Base):
     sell_exchange = relationship("Exchange", foreign_keys=[sell_exchange_id])
     orders = relationship("Order", back_populates="trade_execution")
 
+    # Relationship through mapping table
+    results = relationship(
+        "TradeExecutionResult", secondary=trade_execution_result_mapping, back_populates="executions"
+    )
+
     def __repr__(self):
         return f"<TradeExecution(id={self.id}, strategy_id={self.strategy_id})>"
 
@@ -179,11 +229,11 @@ class Order(Base):
     trading_pair_id = Column(Integer, ForeignKey("trading_pairs.id"), nullable=False)
     symbol = Column(String, nullable=False)
     side = Column(String, nullable=False)  # OrderSide enum value
-    type = Column(String, nullable=False, default=OrderType.MARKET.value)  # OrderType enum value
+    type = Column(String, nullable=False, default="market")  # OrderType enum value
     price = Column(Numeric(18, 8), nullable=True)
     quantity = Column(Numeric(18, 8), nullable=False)
     filled_quantity = Column(Numeric(18, 8), nullable=False, default=0)
-    status = Column(String, nullable=False, default=TradeStatus.PENDING.value)  # TradeStatus enum value
+    status = Column(String, nullable=False, default="pending")  # OrderStatus enum value
     exchange_order_id = Column(String, nullable=True)
     error_message = Column(String, nullable=True)
     created_at = Column(DateTime, default=func.now())

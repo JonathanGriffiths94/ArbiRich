@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from src.arbirich.core.config.validator import (
+from arbirich.config.validator import (
     BasicStrategyConfig,
     ConfigValidator,
     DetectionComponentConfig,

@@ -36,6 +36,25 @@ ALL_EXCHANGES = {
         "api_response_time": 100,
         "mapping": {},
         "additional_info": {"connection_count": 1},
+        "api_key": None,
+        "api_secret": None,
+        "enabled": True,
+        "paper_trading": True,
+        "fetch_fees_on_startup": True,
+        "dynamic_fee_updates": True,
+        "fee_update_interval": 3600,
+        "api_endpoints": {
+            "trading_fees": "/spot/v3/private/account",
+            "withdrawal_fees": "/asset/v3/private/coin-info/query",
+            "trading_rules": "/spot/v3/public/symbols",
+            "symbols": "/spot/v3/public/symbols",
+        },
+        "api_timeouts": {"default": 5000, "fees": 10000, "trades": 3000, "orders": 3000},
+        "rate_limits": {
+            "public": {"requests_per_minute": 120},
+            "private": {"requests_per_minute": 60},
+            "orders": {"requests_per_minute": 30},
+        },
     },
     "cryptocom": {
         "name": "cryptocom",
@@ -48,6 +67,25 @@ ALL_EXCHANGES = {
         "api_response_time": 200,
         "mapping": {},
         "additional_info": {"connection_count": 1},
+        "api_key": None,
+        "api_secret": None,
+        "enabled": True,
+        "paper_trading": True,
+        "fetch_fees_on_startup": True,
+        "dynamic_fee_updates": True,
+        "fee_update_interval": 3600,
+        "api_endpoints": {
+            "trading_fees": "/api/v1/private/account",
+            "withdrawal_fees": "/api/v1/private/coin-info",
+            "trading_rules": "/api/v1/public/symbols",
+            "symbols": "/api/v1/public/symbols",
+        },
+        "api_timeouts": {"default": 5000, "fees": 10000, "trades": 3000, "orders": 3000},
+        "rate_limits": {
+            "public": {"requests_per_minute": 100},
+            "private": {"requests_per_minute": 50},
+            "orders": {"requests_per_minute": 25},
+        },
     },
     "binance": {
         "name": "binance",
@@ -60,6 +98,25 @@ ALL_EXCHANGES = {
         "api_response_time": 50,
         "mapping": {"USDT": "USDT"},
         "additional_info": {"connection_count": 2},
+        "api_key": None,
+        "api_secret": None,
+        "enabled": True,
+        "paper_trading": True,
+        "fetch_fees_on_startup": True,
+        "dynamic_fee_updates": True,
+        "fee_update_interval": 3600,
+        "api_endpoints": {
+            "trading_fees": "/api/v3/account",
+            "withdrawal_fees": "/sapi/v1/capital/config/getall",
+            "trading_rules": "/api/v3/exchangeInfo",
+            "symbols": "/api/v3/exchangeInfo",
+        },
+        "api_timeouts": {"default": 5000, "fees": 10000, "trades": 3000, "orders": 3000},
+        "rate_limits": {
+            "public": {"requests_per_minute": 1200},
+            "private": {"requests_per_minute": 600},
+            "orders": {"requests_per_minute": 100},
+        },
     },
 }
 
@@ -70,43 +127,91 @@ EXCHANGES = {
 }
 
 # Trading pairs configuration - Updated with mid-cap cryptos
-ALL_PAIRS = {
+ALL_TRADING_PAIRS = {
     "ATOM-USDT": {
         "base_currency": "ATOM",
         "quote_currency": "USDT",
+        "min_qty": 0.0,
+        "max_qty": 0.0,
+        "price_precision": 8,
+        "qty_precision": 8,
+        "min_notional": 0.0,
+        "enabled": True,
     },
     "LINK-USDT": {
         "base_currency": "LINK",
         "quote_currency": "USDT",
+        "min_qty": 0.0,
+        "max_qty": 0.0,
+        "price_precision": 8,
+        "qty_precision": 8,
+        "min_notional": 0.0,
+        "enabled": True,
     },
     "AVAX-USDT": {
         "base_currency": "AVAX",
         "quote_currency": "USDT",
+        "min_qty": 0.0,
+        "max_qty": 0.0,
+        "price_precision": 8,
+        "qty_precision": 8,
+        "min_notional": 0.0,
+        "enabled": True,
     },
     "MATIC-USDT": {
         "base_currency": "MATIC",
         "quote_currency": "USDT",
+        "min_qty": 0.0,
+        "max_qty": 0.0,
+        "price_precision": 8,
+        "qty_precision": 8,
+        "min_notional": 0.0,
+        "enabled": True,
     },
     "DOT-USDT": {
         "base_currency": "DOT",
         "quote_currency": "USDT",
+        "min_qty": 0.0,
+        "max_qty": 0.0,
+        "price_precision": 8,
+        "qty_precision": 8,
+        "min_notional": 0.0,
+        "enabled": True,
     },
     "NEAR-USDT": {
         "base_currency": "NEAR",
         "quote_currency": "USDT",
+        "min_qty": 0.0,
+        "max_qty": 0.0,
+        "price_precision": 8,
+        "qty_precision": 8,
+        "min_notional": 0.0,
+        "enabled": True,
     },
     "FTM-USDT": {
         "base_currency": "FTM",
         "quote_currency": "USDT",
+        "min_qty": 0.0,
+        "max_qty": 0.0,
+        "price_precision": 8,
+        "qty_precision": 8,
+        "min_notional": 0.0,
+        "enabled": True,
     },
     "ALGO-USDT": {
         "base_currency": "ALGO",
         "quote_currency": "USDT",
+        "min_qty": 0.0,
+        "max_qty": 0.0,
+        "price_precision": 8,
+        "qty_precision": 8,
+        "min_notional": 0.0,
+        "enabled": True,
     },
 }
 
-# Trading pairs - Updated with mid-cap cryptos
-PAIRS = [
+# Active trading pairs - Updated with mid-cap cryptos
+TRADING_PAIRS = [
     ("ATOM", "USDT"),  # Cosmos
     ("LINK", "USDT"),  # Chainlink
     ("AVAX", "USDT"),  # Avalanche
@@ -117,122 +222,169 @@ PAIRS = [
     ("ALGO", "USDT"),  # Algorand
 ]
 
-# Strategy configurations - Updated with new pairs
+# Map strategy types to default risk profiles
+STRATEGY_RISK_PROFILES = {
+    "basic": "moderate",
+    "mid_price": "conservative",
+    "vwap": "aggressive",
+    "liquidity_adjusted": "market_maker",
+}
+
+# Map strategy types to default execution methods
+STRATEGY_EXECUTION_METHODS = {
+    "basic": "parallel",
+    "mid_price": "staggered",
+    "vwap": "risk_aware",
+    "liquidity_adjusted": "risk_aware",
+}
+
+# Execution methods
+EXECUTION_METHODS = {
+    "parallel": {
+        "name": "parallel",
+        "description": "Execute trades simultaneously across exchanges",
+        "type": "parallel",
+        "method": "parallel",
+        "retry_attempts": 2,
+        "cleanup_failed_trades": True,
+        "stagger_delay": 500,
+        "abort_on_first_failure": True,
+        "leg_order": "buy_first",
+        "timeout": 3000,
+        "retry_delay": 200,
+        "max_slippage": 0.0005,
+        "max_concurrent_trades": 3,
+        "execution_timeout": 10.0,
+    },
+    "staggered": {
+        "name": "staggered",
+        "description": "Execute trades sequentially with configurable delays",
+        "type": "staggered",
+        "method": "staggered",
+        "retry_attempts": 3,
+        "cleanup_failed_trades": True,
+        "stagger_delay": 500,
+        "abort_on_first_failure": True,
+        "leg_order": "buy_first",
+        "timeout": 5000,
+        "retry_delay": 200,
+        "max_slippage": 0.0005,
+        "execution_order": "buy_first",
+        "delay_between_orders": 0.5,
+    },
+    "risk_aware": {
+        "name": "risk_aware",
+        "description": "Risk-aware execution with additional validations",
+        "type": "risk_aware",
+        "method": "risk_aware",
+        "retry_attempts": 2,
+        "cleanup_failed_trades": True,
+        "stagger_delay": 500,
+        "abort_on_first_failure": True,
+        "leg_order": "buy_first",
+        "timeout": 3000,
+        "retry_delay": 200,
+        "max_slippage": 0.0005,
+        "base_execution_type": "parallel",
+        "max_slippage_tolerance": 0.001,
+        "risk_check_timeout": 1.0,
+        "enable_pre_trade_validation": True,
+        "enable_post_trade_analysis": True,
+    },
+}
+
+# Strategy configurations - Updated with new pairs and execution methods
 ALL_STRATEGIES = {
     "basic_arbitrage": {
         "type": "basic",
-        "name": "basic_arbitrage",  # Added name field
+        "name": "basic_arbitrage",
         "starting_capital": 10000.0,
         "min_spread": 0.0001,
         "threshold": 0.0001,
         "exchanges": ["bybit", "cryptocom"],
-        "pairs": [("LINK", "USDT")],  # Updated pairs
-        "risk_management": {
-            "max_position_size": 50.0,  # In USDT equivalent
-            "max_daily_loss": 5.0,  # Percentage of capital
-            "max_consecutive_losses": 3,
-            "circuit_breaker_cooldown": 3600,  # 1 hour in seconds
-            "scale_by_spread": True,
-        },
-        "execution": {
-            "method": "parallel",  # Could be "parallel" or "staggered"
-            "timeout": 3000,  # Timeout in milliseconds
+        "pairs": [("LINK", "USDT")],
+        "risk_profile": "moderate",  # Reference to risk profile
+        "execution_method": "parallel",  # Reference to execution method
+        "execution_params": {  # Optional overrides
+            "timeout": 3000,
             "retry_attempts": 2,
             "max_slippage": 0.0005,
         },
         "additional_info": {
-            "min_volume": 10.0,  # Adjusted for mid-cap tokens
-            "max_slippage": 0.0005,
+            "min_volume": 10.0,
             "execution_delay": 0.1,
         },
     },
     "mid_price_arbitrage": {
         "type": "mid_price",
-        "name": "mid_price_arbitrage",  # Added name field
+        "name": "mid_price_arbitrage",
         "starting_capital": 5000.0,
         "min_spread": 0.0001,
         "threshold": 0.0001,
         "exchanges": ["bybit", "cryptocom"],
-        "pairs": [("ATOM", "USDT"), ("DOT", "USDT")],  # Updated pairs
-        "risk_management": {
-            "max_position_size": 40.0,  # In USDT equivalent
-            "max_daily_loss": 3.0,  # Percentage of capital
-            "max_consecutive_losses": 2,
-            "circuit_breaker_cooldown": 1800,  # 30 minutes in seconds
-            "scale_by_spread": True,
-        },
-        "execution": {
-            "method": "staggered",  # Staggered execution for more careful approach
-            "timeout": 5000,  # Longer timeout for staggered execution
+        "pairs": [("ATOM", "USDT"), ("DOT", "USDT")],
+        "risk_profile": "conservative",  # Reference to risk profile
+        "execution_method": "staggered",  # Reference to execution method
+        "execution_params": {  # Optional overrides
+            "timeout": 5000,
             "retry_attempts": 3,
             "max_slippage": 0.0003,
-            "stagger_delay": 500,  # Milliseconds between legs
+            "stagger_delay": 500,
         },
         "additional_info": {
             "min_depth": 10,
-            "max_slippage": 0.0003,
             "execution_delay": 0.2,
         },
     },
     "vwap_arbitrage": {
         "type": "vwap",
-        "name": "vwap_arbitrage",  # Updated name field
+        "name": "vwap_arbitrage",
         "starting_capital": 15000.0,
-        "min_spread": 0.0002,  # Higher spread requirement due to depth analysis
+        "min_spread": 0.0002,
         "threshold": 0.0002,
-        "target_volume": 100.0,  # Target volume in USDT equivalent for weighted calculation
-        "min_depth_percentage": 0.7,  # Minimum % of target volume that must be available
+        "target_volume": 100.0,
+        "min_depth_percentage": 0.7,
         "exchanges": ["bybit", "cryptocom"],
         "pairs": [("AVAX", "USDT"), ("NEAR", "USDT"), ("FTM", "USDT"), ("ALGO", "USDT")],
-        "risk_management": {
-            "max_position_size": 60.0,  # In USDT equivalent
-            "max_daily_loss": 4.0,
-            "max_consecutive_losses": 3,
-            "circuit_breaker_cooldown": 2700,  # 45 minutes in seconds
-            "scale_by_spread": True,
-            "exchange_risk_factors": {
-                "bybit": 0.9,  # Risk factor for bybit (1.0 = full trust)
-                "cryptocom": 0.8,  # Risk factor for crypto.com
-            },
+        "risk_profile": "aggressive",  # Reference to risk profile
+        "execution_method": "risk_aware",  # Reference to execution method
+        "execution_params": {  # Optional overrides
+            "timeout": 4000,
+            "retry_attempts": 2,
+            "max_slippage": 0.0004,
         },
-        "execution": {"method": "parallel", "timeout": 4000, "retry_attempts": 2, "max_slippage": 0.0004},
         "additional_info": {
-            "min_volume": 15.0,  # Adjusted for mid-cap tokens
-            "liquidity_factor": 0.8,  # Reduce volume based on liquidity
-            "depth_scaling": True,  # Scale position size based on order book depth
+            "min_volume": 15.0,
+            "liquidity_factor": 0.8,
+            "depth_scaling": True,
         },
     },
     "liquidity_adjusted_arbitrage": {
         "type": "liquidity_adjusted",
         "name": "liquidity_adjusted_arbitrage",
         "starting_capital": 20000.0,
-        "min_spread": 0.0015,  # Higher threshold to account for liquidity challenges
+        "min_spread": 0.0015,
         "threshold": 0.0015,
-        "target_volume": 100.0,  # Target volume in USDT
-        "min_depth_percentage": 0.7,  # Minimum % of target volume that must be available
-        "slippage_factor": 0.5,  # Weight for slippage consideration
-        "liquidity_multiplier": 1.5,  # Reward for higher liquidity
-        "dynamic_volume_adjust": True,  # Dynamically adjust position sizes
-        "max_slippage": 0.0006,  # Maximum tolerable slippage
-        "opportunity_timeout": 1.5,  # Shorter timeout for faster execution (seconds)
+        "target_volume": 100.0,
+        "min_depth_percentage": 0.7,
+        "slippage_factor": 0.5,
+        "liquidity_multiplier": 1.5,
+        "dynamic_volume_adjust": True,
+        "max_slippage": 0.0006,
+        "opportunity_timeout": 1.5,
         "exchanges": ["bybit", "cryptocom"],
         "pairs": [
             ("AVAX", "USDT"),
             ("NEAR", "USDT"),
             ("FTM", "USDT"),
         ],
-        "risk_management": {
-            "max_position_size": 80.0,  # In USDT equivalent
-            "max_daily_loss": 4.0,
-            "max_consecutive_losses": 3,
-            "circuit_breaker_cooldown": 1800,  # 30 minutes in seconds
-            "scale_by_spread": True,
-            "exchange_risk_factors": {
-                "bybit": 0.95,  # Risk factor for bybit
-                "cryptocom": 0.85,  # Risk factor for crypto.com
-            },
+        "risk_profile": "market_maker",  # Reference to risk profile
+        "execution_method": "risk_aware",  # Reference to execution method
+        "execution_params": {  # Optional overrides
+            "timeout": 3500,
+            "retry_attempts": 2,
+            "max_slippage": 0.0006,
         },
-        "execution": {"method": "parallel", "timeout": 3500, "retry_attempts": 2, "max_slippage": 0.0006},
         "additional_info": {
             "min_volume": 15.0,
             "liquidity_factor": 0.85,
@@ -249,131 +401,130 @@ STRATEGIES = {
     "liquidity_adjusted_arbitrage": ALL_STRATEGIES["liquidity_adjusted_arbitrage"],
 }
 
-# Execution method configurations
-EXECUTION_METHODS = {
-    "parallel": {
-        "timeout": 3000,  # Milliseconds
-        "retry_attempts": 2,
-        "cleanup_failed_trades": True,
+# Add metrics tracking configuration
+METRICS_CONFIG = {
+    "tracking_enabled": True,
+    "tracking_interval": 300,  # 5 minutes
+    "metrics_retention_days": 30,
+    "performance_tracking": {
+        "track_fees": True,
+        "track_execution_time": True,
+        "track_market_conditions": True,
     },
-    "staggered": {
-        "timeout": 5000,  # Milliseconds
-        "retry_attempts": 3,
-        "stagger_delay": 500,  # Milliseconds between trade legs
-        "abort_on_first_failure": True,
+    "alert_thresholds": {
+        "max_drawdown_percentage": 10.0,
+        "min_win_rate": 40.0,
+        "max_consecutive_losses": 5,
+    },
+}
+
+# Risk profiles for different strategy types
+RISK_PROFILES = {
+    "conservative": {
+        "name": "conservative",
+        "description": "Low risk profile with small position sizes and tight controls",
+        "max_position_size_percentage": 2.0,  # 2% of capital per trade
+        "max_drawdown_percentage": 5.0,  # 5% max drawdown
+        "max_exposure_per_asset_percentage": 10.0,  # 10% max per asset
+        "circuit_breaker_conditions": {
+            "max_consecutive_losses": 2,
+            "cooldown_period": 3600,  # 1 hour cooldown
+            "daily_loss_limit": 3.0,  # 3% daily loss limit
+            "max_trades_per_hour": 10,
+        },
+        "metrics_thresholds": {
+            "max_drawdown_percentage": 5.0,
+            "min_win_rate": 50.0,
+            "max_consecutive_losses": 3,
+        },
+    },
+    "moderate": {
+        "name": "moderate",
+        "description": "Balanced risk profile for steady returns",
+        "max_position_size_percentage": 5.0,  # 5% of capital per trade
+        "max_drawdown_percentage": 10.0,  # 10% max drawdown
+        "max_exposure_per_asset_percentage": 20.0,  # 20% max per asset
+        "circuit_breaker_conditions": {
+            "max_consecutive_losses": 3,
+            "cooldown_period": 1800,  # 30 min cooldown
+            "daily_loss_limit": 5.0,  # 5% daily loss limit
+            "max_trades_per_hour": 20,
+        },
+    },
+    "aggressive": {
+        "name": "aggressive",
+        "description": "High risk profile for maximum returns",
+        "max_position_size_percentage": 10.0,  # 10% of capital per trade
+        "max_drawdown_percentage": 20.0,  # 20% max drawdown
+        "max_exposure_per_asset_percentage": 40.0,  # 40% max per asset
+        "circuit_breaker_conditions": {
+            "max_consecutive_losses": 5,
+            "cooldown_period": 900,  # 15 min cooldown
+            "daily_loss_limit": 8.0,  # 8% daily loss limit
+            "max_trades_per_hour": 30,
+        },
+    },
+    "market_maker": {
+        "name": "market_maker",
+        "description": "Specialized profile for market making strategies",
+        "max_position_size_percentage": 15.0,  # 15% of capital per trade
+        "max_drawdown_percentage": 15.0,  # 15% max drawdown
+        "max_exposure_per_asset_percentage": 50.0,  # 50% max per asset
+        "circuit_breaker_conditions": {
+            "max_consecutive_losses": 4,
+            "cooldown_period": 300,  # 5 min cooldown
+            "daily_loss_limit": 6.0,  # 6% daily loss limit
+            "max_trades_per_hour": 100,  # Higher frequency trading
+            "max_spread_multiplier": 2.0,  # Maximum spread multiplier
+        },
     },
 }
 
 
 # Helper functions
 def get_all_exchange_names():
+    """Get list of all exchange names"""
     return list(ALL_EXCHANGES.keys())
 
 
 def get_all_pair_symbols():
-    return list(ALL_PAIRS.keys())
-
-
-def get_all_strategy_names():
-    return list(ALL_STRATEGIES.keys())
+    """Get list of all trading pair symbols"""
+    return list(ALL_TRADING_PAIRS.keys())
 
 
 def get_exchange_config(exchange_name):
-    """
-    Get configuration for a specific exchange.
-
-    Args:
-        exchange_name: Name of the exchange
-
-    Returns:
-        Dict containing exchange configuration or None if not found
-    """
-    # Check in EXCHANGES first (active exchanges)
+    """Get configuration for a specific exchange"""
     if exchange_name in EXCHANGES:
         return EXCHANGES[exchange_name]
-
-    # Then check in ALL_EXCHANGES
-    if exchange_name in ALL_EXCHANGES:
-        return ALL_EXCHANGES[exchange_name]
-
-    # Not found
-    return None
+    return ALL_EXCHANGES.get(exchange_name)
 
 
 def get_pair_config(pair_symbol):
-    """
-    Get configuration for a specific trading pair.
+    """Get configuration for a specific trading pair"""
+    if pair_symbol in ALL_TRADING_PAIRS:
+        return ALL_TRADING_PAIRS[pair_symbol]
 
-    Args:
-        pair_symbol: Symbol of the trading pair (e.g., 'ATOM-USDT')
-
-    Returns:
-        Dict containing pair configuration or None if not found
-    """
-    # Check in ALL_PAIRS
-    if pair_symbol in ALL_PAIRS:
-        return ALL_PAIRS[pair_symbol]
-
-    # Not found by symbol, try constructing from currencies
-    for base, quote in PAIRS:
+    for base, quote in TRADING_PAIRS:
         constructed_symbol = f"{base}-{quote}"
         if constructed_symbol == pair_symbol:
-            # If found in PAIRS but not in ALL_PAIRS, create a config
             return {"base_currency": base, "quote_currency": quote, "symbol": constructed_symbol}
-
-    # Not found
     return None
 
 
 def get_strategy_config(strategy_name):
-    """
-    Get configuration for a specific strategy.
-
-    Args:
-        strategy_name: Name of the strategy
-
-    Returns:
-        Dict containing strategy configuration or None if not found
-    """
-    # Check in STRATEGIES first (active strategies)
+    """Get configuration for a specific strategy"""
     if strategy_name in STRATEGIES:
         return STRATEGIES[strategy_name]
-
-    # Then check in ALL_STRATEGIES
-    if strategy_name in ALL_STRATEGIES:
-        return ALL_STRATEGIES[strategy_name]
-
-    # Not found
-    return None
+    return ALL_STRATEGIES.get(strategy_name)
 
 
 def get_execution_method_config(method_name):
-    """
-    Get configuration for a specific execution method.
-
-    Args:
-        method_name: Name of the execution method
-
-    Returns:
-        Dict containing execution method configuration or None if not found
-    """
-    if method_name in EXECUTION_METHODS:
-        return EXECUTION_METHODS[method_name]
-
-    # Not found
-    return None
+    """Get configuration for a specific execution method"""
+    return EXECUTION_METHODS.get(method_name, EXECUTION_METHODS["parallel"])
 
 
 def get_strategy_params(strategy_name):
-    """
-    Extract strategy parameters suitable for database StrategyParameters entry.
-
-    Args:
-        strategy_name: Name of the strategy
-
-    Returns:
-        Dict with parameters that match the StrategyParameters table fields
-    """
+    """Extract strategy parameters suitable for database StrategyParameters entry"""
     strategy = get_strategy_config(strategy_name)
     if not strategy:
         return None
@@ -383,23 +534,17 @@ def get_strategy_params(strategy_name):
         "threshold": strategy.get("threshold", 0.001),
     }
 
-    # Add optional parameters if they exist
-    if "execution" in strategy and isinstance(strategy["execution"], dict):
-        if "max_slippage" in strategy["execution"]:
-            params["max_slippage"] = strategy["execution"]["max_slippage"]
-        if "timeout" in strategy["execution"]:
-            params["max_execution_time_ms"] = strategy["execution"]["timeout"]
+    if "execution_params" in strategy:
+        if "max_slippage" in strategy["execution_params"]:
+            params["max_slippage"] = strategy["execution_params"]["max_slippage"]
+        if "timeout" in strategy["execution_params"]:
+            params["max_execution_time_ms"] = strategy["execution_params"]["timeout"]
 
-    if "additional_info" in strategy and isinstance(strategy["additional_info"], dict):
+    if "additional_info" in strategy:
         if "min_volume" in strategy["additional_info"]:
             params["min_volume"] = strategy["additional_info"]["min_volume"]
 
-    # Add all remaining parameters as additional_parameters
-    additional = {}
-    for k, v in strategy.items():
-        if k not in ["name", "min_spread", "threshold"] and k not in params:
-            additional[k] = v
-
+    additional = {k: v for k, v in strategy.items() if k not in ["name", "min_spread", "threshold"] and k not in params}
     if additional:
         params["additional_parameters"] = additional
 
@@ -407,68 +552,46 @@ def get_strategy_params(strategy_name):
 
 
 def get_risk_profile_for_strategy(strategy_name):
-    """
-    Extract risk profile parameters for a strategy
-
-    Args:
-        strategy_name: Name of the strategy
-
-    Returns:
-        Dict suitable for RiskProfile model
-    """
+    """Extract risk profile parameters for a strategy"""
     strategy = get_strategy_config(strategy_name)
-    if not strategy or "risk_management" not in strategy:
+    if not strategy:
         return None
 
-    rm = strategy["risk_management"]
+    risk_profile_name = strategy.get("risk_profile", STRATEGY_RISK_PROFILES.get(strategy["type"], "moderate"))
+    risk_profile = RISK_PROFILES.get(risk_profile_name, RISK_PROFILES["moderate"]).copy()
+    risk_profile["name"] = f"{strategy_name}_risk_profile"
 
-    profile = {
-        "name": f"{strategy_name}_risk_profile",
-        "max_position_size_percentage": rm.get("max_position_size", 0) / 100
-        if isinstance(rm.get("max_position_size"), (int, float))
-        else None,
-        "max_drawdown_percentage": rm.get("max_daily_loss"),
-        "circuit_breaker_conditions": {
-            "max_consecutive_losses": rm.get("max_consecutive_losses"),
-            "cooldown": rm.get("circuit_breaker_cooldown"),
-        },
-    }
-
-    return profile
+    return risk_profile
 
 
 def get_execution_strategy_for_strategy(strategy_name):
-    """
-    Extract execution strategy parameters for a strategy
-
-    Args:
-        strategy_name: Name of the strategy
-
-    Returns:
-        Dict suitable for ExecutionStrategy model
-    """
+    """Extract execution strategy parameters for a strategy"""
     strategy = get_strategy_config(strategy_name)
-    if not strategy or "execution" not in strategy:
+    if not strategy:
         return None
 
-    execution = strategy["execution"]
+    execution_method_name = strategy.get(
+        "execution_method", STRATEGY_EXECUTION_METHODS.get(strategy["type"], "parallel")
+    )
+    execution_config = EXECUTION_METHODS[execution_method_name].copy()
 
-    # Get method details from EXECUTION_METHODS
-    method_name = execution.get("method", "parallel")
-    method_config = get_execution_method_config(method_name) or {}
+    if "execution_params" in strategy:
+        execution_config.update(strategy["execution_params"])
 
-    strategy = {
-        "name": f"{strategy_name}_{method_name}_execution",
-        "timeout": execution.get("timeout", method_config.get("timeout", 3000)),
-        "retry_attempts": execution.get("retry_attempts", method_config.get("retry_attempts", 2)),
-        "parameters": {
-            "method": method_name,
-            "max_slippage": execution.get("max_slippage", 0.0005),
-        },
-    }
+    execution_config["name"] = f"{strategy_name}_{execution_config['method']}_execution"
+    return execution_config
 
-    # Add method-specific parameters
-    if method_name == "staggered" and "stagger_delay" in execution:
-        strategy["parameters"]["stagger_delay"] = execution["stagger_delay"]
 
-    return strategy
+def get_risk_profile(profile_name: str) -> dict:
+    """Get a risk profile configuration by name"""
+    return RISK_PROFILES.get(profile_name, RISK_PROFILES["moderate"])
+
+
+def get_metrics_config():
+    """Get metrics tracking configuration"""
+    return METRICS_CONFIG
+
+
+def get_all_strategy_names():
+    """Get list of all strategy names"""
+    return list(ALL_STRATEGIES.keys())

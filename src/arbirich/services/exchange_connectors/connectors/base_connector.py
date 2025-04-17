@@ -6,7 +6,7 @@ import abc
 import logging
 from typing import Any, Callable, Dict
 
-from src.arbirich.models.models import OrderBookUpdate, TradeRequest
+from src.arbirich.models import OrderBookUpdate, TradeRequest
 
 
 class BaseExchangeConnector(abc.ABC):

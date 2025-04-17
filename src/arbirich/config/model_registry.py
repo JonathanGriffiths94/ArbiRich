@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, Type
 
-from src.arbirich.core.config.validator import (
+from arbirich.config.validator import (
     BaseComponentConfig,
     BaseStrategyConfig,
     BasicStrategyConfig,
@@ -13,7 +13,7 @@ from src.arbirich.core.config.validator import (
     LiquidityAdjustedStrategyConfig,
     MidPriceStrategyConfig,
     ReportingComponentConfig,
-    VwapStrategyConfig,
+    VWAPStrategyConfig,
 )
 from src.arbirich.models.enums import StrategyType  # Use StrategyType from enums
 
@@ -37,7 +37,7 @@ class ConfigModelRegistry:
     _strategy_models = {
         StrategyType.BASIC: BasicStrategyConfig,
         StrategyType.MID_PRICE: MidPriceStrategyConfig,
-        StrategyType.VWAP: VwapStrategyConfig,
+        StrategyType.VWAP: VWAPStrategyConfig,
         StrategyType.LIQUIDITY_ADJUSTED: LiquidityAdjustedStrategyConfig,
         "base": BaseStrategyConfig,  # Keep 'base' as string - it's not an enum value
     }

@@ -4,7 +4,7 @@ Prefill Database Script - Initializes the database with configurations from the 
 
 This script populates the database with:
 1. Exchanges defined in ALL_EXCHANGES
-2. Trading pairs defined in ALL_PAIRS
+2. Trading pairs defined in ALL_TRADING_PAIRS
 3. Strategies defined in ALL_STRATEGIES
 
 Usage:
@@ -25,14 +25,16 @@ import sqlalchemy as sa
 
 from src.arbirich.config.config import (
     ALL_EXCHANGES,
-    ALL_PAIRS,
     ALL_STRATEGIES,
-    PAIRS,
+    ALL_TRADING_PAIRS,
+    EXECUTION_METHODS,
+    RISK_PROFILES,
     STRATEGIES,
+    TRADING_PAIRS,
     get_all_exchange_names,
     get_all_strategy_names,
 )
-from src.arbirich.models.models import TradingPair  # Import the TradingPair model
+from src.arbirich.models import TradingPair
 from src.arbirich.services.database.database_service import DatabaseService
 
 # Set up logging
@@ -102,6 +104,128 @@ def get_active_strategy_dependencies():
     logger.debug(f"Active strategies from config: {active_strategies}")
 
     return active_exchanges, active_trading_pairs, active_strategies
+
+
+def create_risk_profiles(db_service):
+    """Create or update risk profiles from config"""
+    logger.info("Creating risk profiles...")
+    created_profiles = []
+
+    try:
+        with db_service.engine.begin() as conn:
+            for profile_name, profile_config in RISK_PROFILES.items():
+                # Prepare data for insert/update
+                profile_data = {
+                    "name": profile_name,
+                    "description": profile_config.get("description"),
+                    "max_position_size_percentage": profile_config.get("max_position_size_percentage"),
+                    "max_drawdown_percentage": profile_config.get("max_drawdown_percentage"),
+                    "max_exposure_per_asset_percentage": profile_config.get("max_exposure_per_asset_percentage"),
+                    "circuit_breaker_conditions": json.dumps(profile_config.get("circuit_breaker_conditions", {})),
+                }
+
+                # Check if profile exists
+                result = conn.execute(
+                    sa.text("SELECT id FROM risk_profiles WHERE name = :name"), {"name": profile_name}
+                )
+                existing = result.first()
+
+                if existing:
+                    # Update existing profile
+                    conn.execute(
+                        sa.text("""
+                            UPDATE risk_profiles
+                            SET description = :description,
+                                max_position_size_percentage = :max_position_size_percentage,
+                                max_drawdown_percentage = :max_drawdown_percentage,
+                                max_exposure_per_asset_percentage = :max_exposure_per_asset_percentage,
+                                circuit_breaker_conditions = :circuit_breaker_conditions
+                            WHERE name = :name
+                        """),
+                        profile_data,
+                    )
+                    logger.debug(f"Updated risk profile: {profile_name}")
+                else:
+                    # Create new profile
+                    result = conn.execute(
+                        sa.text("""
+                            INSERT INTO risk_profiles
+                            (name, description, max_position_size_percentage, max_drawdown_percentage, 
+                             max_exposure_per_asset_percentage, circuit_breaker_conditions)
+                            VALUES
+                            (:name, :description, :max_position_size_percentage, :max_drawdown_percentage,
+                             :max_exposure_per_asset_percentage, :circuit_breaker_conditions)
+                            RETURNING id
+                        """),
+                        profile_data,
+                    )
+                    created_profiles.append(profile_name)
+                    logger.debug(f"Created risk profile: {profile_name}")
+
+        logger.info(f"Created/updated {len(created_profiles)} risk profiles")
+        return created_profiles
+    except Exception as e:
+        logger.error(f"Error creating risk profiles: {e}", exc_info=True)
+        raise
+
+
+def create_execution_methods(db_service):
+    """Create or update execution strategies from config"""
+    logger.info("Creating execution strategies...")
+    created_strategies = []
+
+    try:
+        with db_service.engine.begin() as conn:
+            for method_name, method_config in EXECUTION_METHODS.items():
+                # Prepare data for insert/update
+                strategy_data = {
+                    "name": method_name,
+                    "description": method_config.get("description"),
+                    "timeout": method_config.get("timeout", 3000),
+                    "retry_attempts": method_config.get("retry_attempts", 2),
+                    "parameters": json.dumps(method_config),
+                }
+
+                # Check if strategy exists
+                result = conn.execute(
+                    sa.text("SELECT id FROM execution_methods WHERE name = :name"), {"name": method_name}
+                )
+                existing = result.first()
+
+                if existing:
+                    # Update existing strategy
+                    conn.execute(
+                        sa.text("""
+                            UPDATE execution_methods
+                            SET description = :description,
+                                timeout = :timeout,
+                                retry_attempts = :retry_attempts,
+                                parameters = :parameters
+                            WHERE name = :name
+                        """),
+                        strategy_data,
+                    )
+                    logger.debug(f"Updated execution strategy: {method_name}")
+                else:
+                    # Create new strategy
+                    result = conn.execute(
+                        sa.text("""
+                            INSERT INTO execution_methods
+                            (name, description, timeout, retry_attempts, parameters)
+                            VALUES
+                            (:name, :description, :timeout, :retry_attempts, :parameters)
+                            RETURNING id
+                        """),
+                        strategy_data,
+                    )
+                    created_strategies.append(method_name)
+                    logger.debug(f"Created execution strategy: {method_name}")
+
+        logger.info(f"Created/updated {len(created_strategies)} execution strategies")
+        return created_strategies
+    except Exception as e:
+        logger.error(f"Error creating execution strategies: {e}", exc_info=True)
+        raise
 
 
 def create_strategies(db_service, activate=False, smart_activate=False):
@@ -218,7 +342,7 @@ def create_strategies(db_service, activate=False, smart_activate=False):
                         update_strategy_parameters(conn, strategy_id, config)
 
                         # Create strategy-exchange-pair mappings
-                        create_strategy_exchange_pair_mappings(conn, strategy_id, config)
+                        create_strategy_exchange_pair_mapping(conn, strategy_id, config)
 
                         # Create a simple dict for the response
                         created_strategies.append(
@@ -271,7 +395,7 @@ def create_strategies(db_service, activate=False, smart_activate=False):
                         update_strategy_parameters(conn, strategy_id, config)
 
                         # Create strategy-exchange-pair mappings
-                        create_strategy_exchange_pair_mappings(conn, strategy_id, config)
+                        create_strategy_exchange_pair_mapping(conn, strategy_id, config)
 
                         # Create a simple dict for the response
                         created_strategies.append(
@@ -470,7 +594,7 @@ def update_strategy_parameters(conn, strategy_id, config):
 def get_or_create_execution_strategy(conn, execution_method):
     """Get or create an execution strategy and return its ID."""
     # First, try to get the existing execution strategy
-    select_stmt = sa.text("SELECT id FROM execution_strategies WHERE name = :name")
+    select_stmt = sa.text("SELECT id FROM execution_methods WHERE name = :name")
     result = conn.execute(select_stmt, {"name": execution_method})
     execution = result.first()
 
@@ -480,7 +604,7 @@ def get_or_create_execution_strategy(conn, execution_method):
     # If not found, create a new one
     insert_stmt = sa.text(
         """
-        INSERT INTO execution_strategies 
+        INSERT INTO execution_methods 
         (name, description, timeout, retry_attempts, parameters)
         VALUES (:name, :description, :timeout, :retry_attempts, :parameters)
         RETURNING id
@@ -488,8 +612,6 @@ def get_or_create_execution_strategy(conn, execution_method):
     )
 
     # Get execution config from EXECUTION_METHODS if available
-    from src.arbirich.config.config import EXECUTION_METHODS
-
     execution_config = EXECUTION_METHODS.get(execution_method, {})
 
     result = conn.execute(
@@ -506,7 +628,7 @@ def get_or_create_execution_strategy(conn, execution_method):
     return result.scalar()
 
 
-def create_strategy_exchange_pair_mappings(conn, strategy_id, config):
+def create_strategy_exchange_pair_mapping(conn, strategy_id, config):
     """
     Create mappings between strategy, exchanges, and trading pairs.
 
@@ -560,7 +682,7 @@ def create_strategy_exchange_pair_mappings(conn, strategy_id, config):
                 # Check if mapping already exists
                 mapping_result = conn.execute(
                     sa.text("""
-                        SELECT id FROM strategy_exchange_pair_mappings 
+                        SELECT id FROM strategy_exchange_pair_mapping 
                         WHERE strategy_id = :strategy_id 
                         AND exchange_id = :exchange_id 
                         AND trading_pair_id = :trading_pair_id
@@ -573,7 +695,7 @@ def create_strategy_exchange_pair_mappings(conn, strategy_id, config):
                     # Update existing mapping
                     conn.execute(
                         sa.text("""
-                            UPDATE strategy_exchange_pair_mappings
+                            UPDATE strategy_exchange_pair_mapping
                             SET is_active = TRUE
                             WHERE id = :id
                         """),
@@ -584,7 +706,7 @@ def create_strategy_exchange_pair_mappings(conn, strategy_id, config):
                     # Create new mapping
                     conn.execute(
                         sa.text("""
-                            INSERT INTO strategy_exchange_pair_mappings
+                            INSERT INTO strategy_exchange_pair_mapping
                             (strategy_id, exchange_id, trading_pair_id, is_active)
                             VALUES
                             (:strategy_id, :exchange_id, :trading_pair_id, TRUE)
@@ -738,13 +860,13 @@ def create_trading_pairs(db_service, activate=False, smart_activate=False):
     created_count = 0
     updated_count = 0
 
-    # Use PAIRS list instead of ALL_PAIRS.keys()
-    for base_currency, quote_currency in PAIRS:
+    # Use TRADING_PAIRS list instead of ALL_TRADING_PAIRS.keys()
+    for base_currency, quote_currency in TRADING_PAIRS:
         # Construct the symbol
         symbol = f"{base_currency}-{quote_currency}"
 
         # Get full configuration data
-        trading_pair_config = ALL_PAIRS.get(symbol.upper(), {})
+        trading_pair_config = ALL_TRADING_PAIRS.get(symbol.upper(), {})
         if not trading_pair_config:
             # Create basic config if not found
             trading_pair_config = {
@@ -821,15 +943,22 @@ def prefill_database(activate=False, smart_activate=False):
 
         try:
             with DatabaseService() as db_service:
-                # Create entities in the correct order (exchanges and trading pairs first, then strategies)
+                # Create entities in the correct order
+                # 1. Risk profiles and execution strategies first
+                risk_profiles = create_risk_profiles(db_service)
+                execution_methods = create_execution_methods(db_service)
+
+                # 2. Then exchanges and trading pairs
                 exchanges = create_exchanges(db_service, activate, smart_activate)
                 trading_pairs = create_trading_pairs(db_service, activate, smart_activate)
-                strategies = create_strategies(
-                    db_service, activate, smart_activate
-                )  # Pass smart_activate to create_strategies
+
+                # 3. Finally create strategies that reference the above entities
+                strategies = create_strategies(db_service, activate, smart_activate)
 
                 # Final summary
                 logger.info("Database prefill complete!")
+                logger.info(f"Created/updated {len(risk_profiles)} risk profiles")
+                logger.info(f"Created/updated {len(execution_methods)} execution strategies")
                 logger.info(f"Created/updated {len(exchanges)} exchanges")
                 logger.info(f"Created/updated {trading_pairs} trading pairs")
                 logger.info(f"Created/updated {len(strategies)} strategies")

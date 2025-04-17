@@ -12,8 +12,8 @@ sys.path.insert(0, str(project_root))
 # Now import project modules
 import redis
 
-from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
-from src.arbirich.models.models import TradeExecution, TradeOpportunity
+from src.arbirich.config.constants import TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.models import TradeExecution, TradeOpportunity
 from src.arbirich.services.redis.redis_channel_manager import get_channel_manager
 from src.arbirich.services.redis.redis_service import get_shared_redis_client
 

@@ -10,7 +10,7 @@ from broadcaster import Broadcast
 from fastapi import WebSocket
 
 from src.arbirich.config.config import REDIS_CONFIG, REDIS_DB, REDIS_HOST, REDIS_PASSWORD, REDIS_PORT
-from src.arbirich.constants import (
+from src.arbirich.config.constants import (
     TRADE_EXECUTIONS_CHANNEL,
     TRADE_OPPORTUNITIES_CHANNEL,
     WEBSOCKET_CHANNELS,  # Use the constant from constants.py

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from src.arbirich.models.base import BaseModel
-from src.arbirich.models.enums import StrategyType as EnumStrategyType
+from src.arbirich.models.enums import StrategyType
 from src.arbirich.models.risk import RiskProfile
 
 
@@ -52,15 +52,15 @@ class StrategyTypeModel(BaseModel):
     created_at: Optional[datetime] = None
 
     @property
-    def strategy_type_enum(self) -> Optional[EnumStrategyType]:
+    def strategy_type_enum(self) -> Optional[StrategyType]:
         """Get the corresponding enum value for this strategy type."""
         try:
-            return EnumStrategyType(self.name)
+            return StrategyType(self.name)
         except ValueError:
             return None
 
     @classmethod
-    def from_enum(cls, enum_value: EnumStrategyType, **kwargs) -> "StrategyTypeModel":
+    def from_enum(cls, enum_value: StrategyType, **kwargs) -> "StrategyTypeModel":
         """Create a StrategyTypeModel from an enum value."""
         return cls(name=enum_value.value, implementation_class=f"{enum_value.value.title()}Strategy", **kwargs)
 
@@ -151,3 +151,13 @@ class Strategy(BaseModel):
             "created_by": self.created_by,
             "additional_info": json.dumps(self.additional_info) if self.additional_info else None,
         }
+
+
+__all__ = [
+    "Strategy",
+    "StrategyParameters",
+    "StrategyTypeParameters",
+    "StrategyTypeModel",
+    "StrategyExecutionMapping",
+    "StrategyExchangePairMapping",
+]

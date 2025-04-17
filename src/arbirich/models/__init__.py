@@ -5,7 +5,38 @@ This module imports all models from the various model files.
 
 from typing import Callable, Dict, Type
 
-# Import API models
+from arbirich.models.base import BaseModel, IdentifiableModel, StatusAwareModel, TimestampedModel
+from arbirich.models.configs import (
+    AppConfig,
+    BaseComponentConfig,
+    BaseExecutionConfig,
+    BaseStrategyConfig,
+    BasicStrategyConfig,
+    DetectionComponentConfig,
+    ExchangeConfig,
+    ExecutionComponentConfig,
+    IngestionComponentConfig,
+    LiquidityAdjustedStrategyConfig,
+    MidPriceStrategyConfig,
+    ReportingComponentConfig,
+    RiskConfig,
+    TradingPairConfig,
+    VWAPStrategyConfig,
+)
+from arbirich.models.exchange import (
+    AccountBalances,
+    CandlestickData,
+    Exchange,
+    ExchangeBalance,
+    ExchangeInfo,
+    ExchangeOrder,
+    OrderResponse,
+    SymbolInfo,
+    TickerData,
+    TradeExecutionResult,
+    WebsocketMessage,
+)
+from arbirich.models.trading_pair import TradingPair
 from src.arbirich.models.api.requests import (
     ExchangeCreateRequest,
     RiskProfileCreateRequest,
@@ -21,35 +52,14 @@ from src.arbirich.models.api.responses import (
     StatusResponse,
     TradingStatusResponse,
 )
-
-# Import base models
-from src.arbirich.models.base import (
-    BaseModel,
-    IdentifiableModel,
-    StatusAwareModel,
-    TimestampedModel,
-)
-
-# Import configuration models
-from src.arbirich.models.config import (
-    AppConfig,
-    ExchangeConfig,
-    ExecutionConfig,
-    RiskConfig,
-    StrategyConfig,
-    TradingPairConfig,
-)
-
-# Import DB models (optional, typically accessed through repositories instead)
 from src.arbirich.models.db.base import Base
-
-# Import all enumerations
 from src.arbirich.models.enums import (
     ChannelName,
     ExchangeType,
     LogLevel,
     OperationalConstants,
     OrderSide,
+    OrderStatus,
     OrderType,
     PairType,
     RedisKeyPrefix,
@@ -57,39 +67,8 @@ from src.arbirich.models.enums import (
     StrategyType,
     TableName,
     TimeConstants,
-    TradeStatus,
-)
-
-# Import exchange models
-from src.arbirich.models.exchange import (
-    AccountBalances,
-    CandlestickData,
-    Exchange,
-    ExchangeBalance,
-    ExchangeInfo,
-    ExchangeOrder,
-    OrderResponse,
-    OrderStatus,
-    SymbolInfo,
-    TickerData,
-    TradeExecutionResult,
-    WebsocketMessage,
-)
-
-# Import execution models
-from src.arbirich.models.execution import (
-    ExecutionResult,
-    ExecutionStrategy,
-    Order,
-    TradeExecution,
-    TradeOpportunity,
 )
 from src.arbirich.models.metrics import StrategyExchangeMetrics, StrategyMetrics, StrategyTradingPairMetrics
-
-# Import system health model
-from src.arbirich.models.models import SystemHealthCheck
-
-# Import order book models
 from src.arbirich.models.order_book import (
     MarketDepth,
     MarketDepthLevel,
@@ -99,8 +78,6 @@ from src.arbirich.models.order_book import (
     market_depth_to_order_book,
     order_book_to_market_depth,
 )
-
-# Import risk models
 from src.arbirich.models.risk import (
     RiskAssessment,
     RiskProfile,
@@ -110,15 +87,16 @@ from src.arbirich.models.strategy import (
     StrategyExchangePairMapping,
     StrategyExecutionMapping,
     StrategyParameters,
-    StrategyTypeModel,  # Strategy type model class
+    StrategyTypeModel,
     StrategyTypeParameters,
 )
-
-# Import trading models
 from src.arbirich.models.trading import (
-    OrderBook,
-    OrderBookEntry,
-    TradingPair,
+    Order,
+    TradeExecution,
+    TradeOpportunity,
+    TradeRequest,
+    TradeResponse,
+    TradeResultReference,
 )
 
 # Create registries for different types of models
@@ -134,7 +112,7 @@ model_registry: Dict[str, Type] = {
     "Status": Status,
     "StrategyType": StrategyType,
     "TableName": TableName,
-    "TradeStatus": TradeStatus,
+    "OrderStatus": OrderStatus,
     "OperationalConstants": OperationalConstants,
     "TimeConstants": TimeConstants,
     # Base models
@@ -144,10 +122,19 @@ model_registry: Dict[str, Type] = {
     "TimestampedModel": TimestampedModel,
     # Config models
     "AppConfig": AppConfig,
-    "ExecutionConfig": ExecutionConfig,
+    "ExecutionConfig": BaseExecutionConfig,
     "ExchangeConfig": ExchangeConfig,
     "RiskConfig": RiskConfig,
-    "StrategyConfig": StrategyConfig,
+    "BaseStrategyConfig": BaseStrategyConfig,
+    "BasicStrategyConfig": BasicStrategyConfig,
+    "MidPriceStrategyConfig": MidPriceStrategyConfig,
+    "VWAPStrategyConfig": VWAPStrategyConfig,
+    "BaseComponentConfig": BaseComponentConfig,
+    "ExecutionComponentConfig": ExecutionComponentConfig,
+    "LiquidityAdjustedStrategyConfig": LiquidityAdjustedStrategyConfig,
+    "DetectionComponentConfig": DetectionComponentConfig,
+    "IngestionComponentConfig": IngestionComponentConfig,
+    "ReportingComponentConfig": ReportingComponentConfig,
     "TradingPairConfig": TradingPairConfig,
     # Exchange models
     "AccountBalances": AccountBalances,
@@ -157,14 +144,11 @@ model_registry: Dict[str, Type] = {
     "ExchangeInfo": ExchangeInfo,
     "ExchangeOrder": ExchangeOrder,
     "OrderResponse": OrderResponse,
-    "OrderStatus": OrderStatus,
     "SymbolInfo": SymbolInfo,
     "TickerData": TickerData,
     "TradeExecutionResult": TradeExecutionResult,
     "WebsocketMessage": WebsocketMessage,
-    # Trading models
-    "OrderBook": OrderBook,
-    "OrderBookEntry": OrderBookEntry,
+    # Trading pair models
     "TradingPair": TradingPair,
     # Order book models
     "MarketDepth": MarketDepth,
@@ -172,10 +156,11 @@ model_registry: Dict[str, Type] = {
     "OrderBookState": OrderBookState,
     "OrderBookUpdate": OrderBookUpdate,
     "OrderLevel": OrderLevel,
-    # Execution models
-    "ExecutionResult": ExecutionResult,
-    "ExecutionStrategy": ExecutionStrategy,
     "Order": Order,
+    # Trade models
+    "TradeRequest": TradeRequest,
+    "TradeResponse": TradeResponse,
+    "TradeResultReference": TradeResultReference,
     "TradeExecution": TradeExecution,
     "TradeOpportunity": TradeOpportunity,
     # Risk models
@@ -189,7 +174,7 @@ model_registry: Dict[str, Type] = {
     "StrategyMetrics": StrategyMetrics,
     "StrategyParameters": StrategyParameters,
     "StrategyTradingPairMetrics": StrategyTradingPairMetrics,
-    "StrategyTypeModel": StrategyTypeModel,  # Strategy type model class
+    "StrategyTypeModel": StrategyTypeModel,
     "StrategyTypeParameters": StrategyTypeParameters,
     # API models - Requests
     "ExchangeCreateRequest": ExchangeCreateRequest,
@@ -206,8 +191,6 @@ model_registry: Dict[str, Type] = {
     "TradingStatusResponse": TradingStatusResponse,
     # Database models
     "Base": Base,
-    # System health models
-    "SystemHealthCheck": SystemHealthCheck,
 }
 
 # Register utility functions

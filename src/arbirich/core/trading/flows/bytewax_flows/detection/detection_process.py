@@ -3,8 +3,8 @@ import time
 from typing import Optional, Tuple
 
 from src.arbirich.core.strategy.strategy_factory import get_strategy
+from src.arbirich.models import TradeOpportunity
 from src.arbirich.models.execution import OrderBookState, OrderBookUpdate
-from src.arbirich.models.models import TradeOpportunity
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

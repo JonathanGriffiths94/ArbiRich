@@ -3,7 +3,7 @@ import time
 import uuid
 from typing import Dict, Optional
 
-from src.arbirich.models.models import OrderBookState, TradeOpportunity
+from src.arbirich.models import OrderBookState, TradeOpportunity
 
 from .arbitrage_type import ArbitrageType
 

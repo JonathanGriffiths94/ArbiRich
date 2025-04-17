@@ -375,15 +375,15 @@ def get_repository(repo_type: str, component_id: str) -> Optional[Any]:
                     # Get the publish channel(s) from the repository
                     channels = []
                     if repo_type == "trade_opportunity":
-                        from src.arbirich.constants import TRADE_OPPORTUNITIES_CHANNEL
+                        from src.arbirich.config.constants import TRADE_OPPORTUNITIES_CHANNEL
 
                         channels.append(TRADE_OPPORTUNITIES_CHANNEL)
                     elif repo_type == "trade_execution":
-                        from src.arbirich.constants import TRADE_EXECUTIONS_CHANNEL
+                        from src.arbirich.config.constants import TRADE_EXECUTIONS_CHANNEL
 
                         channels.append(TRADE_EXECUTIONS_CHANNEL)
                     elif repo_type == "order_book":
-                        from src.arbirich.constants import ORDER_BOOK_CHANNEL
+                        from src.arbirich.config.constants import ORDER_BOOK_CHANNEL
 
                         # For order books, need exchange and symbol
                         if isinstance(data, dict) and "exchange" in data and "symbol" in data:

@@ -4,8 +4,8 @@ from typing import List, Optional
 
 from redis.exceptions import RedisError
 
-from src.arbirich.constants import TRADE_EXECUTION_KEY_PREFIX, TRADE_EXECUTIONS_CHANNEL
-from src.arbirich.models.models import TradeExecution
+from src.arbirich.config.constants import TRADE_EXECUTION_KEY_PREFIX, TRADE_EXECUTIONS_CHANNEL
+from src.arbirich.models import TradeExecution
 
 logger = logging.getLogger(__name__)
 

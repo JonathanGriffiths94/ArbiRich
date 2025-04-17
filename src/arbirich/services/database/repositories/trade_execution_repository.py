@@ -5,7 +5,7 @@ from uuid import UUID
 import sqlalchemy as sa
 
 from arbirich.models.db.schema import exchanges, strategies, trade_executions, trading_pairs
-from src.arbirich.models.models import TradeExecution
+from src.arbirich.models import TradeExecution
 from src.arbirich.services.database.base_repository import BaseRepository
 from src.arbirich.services.database.utils.timestamp_converter import convert_unix_timestamp_for_db
 

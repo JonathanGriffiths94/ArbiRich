@@ -5,7 +5,7 @@ from typing import Dict, List
 import redis
 
 from src.arbirich.config.config import REDIS_CONFIG
-from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
+from src.arbirich.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 from src.arbirich.services.redis.repositories.metrics_repository import MetricsRepository
 from src.arbirich.services.redis.repositories.order_book_repository import OrderBookRepository
 from src.arbirich.services.redis.repositories.trade_execution_repository import TradeExecutionRepository

@@ -2,7 +2,7 @@ import logging
 from typing import Dict, List
 
 from src.arbirich.config.config import STRATEGIES, get_strategy_config
-from src.arbirich.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
+from src.arbirich.config.constants import ORDER_BOOK_CHANNEL, TRADE_EXECUTIONS_CHANNEL, TRADE_OPPORTUNITIES_CHANNEL
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

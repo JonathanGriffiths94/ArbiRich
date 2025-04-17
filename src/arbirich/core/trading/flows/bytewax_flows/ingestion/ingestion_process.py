@@ -1,7 +1,7 @@
 import logging
 from typing import Optional, Tuple
 
-from src.arbirich.models.models import OrderBookUpdate
+from src.arbirich.models import OrderBookUpdate
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

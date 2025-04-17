@@ -1,8 +1,3 @@
-"""
-Order book models for the ArbiRich application.
-This module contains models related to order book updates and state.
-"""
-
 import hashlib
 import json
 import time
@@ -10,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import Field, computed_field
 
-from src.arbirich.models.base import BaseModel, IdentifiableModel
+from src.arbirich.models.base import BaseModel, UUIDModel
 
 
 class OrderLevel(BaseModel):
@@ -20,7 +15,7 @@ class OrderLevel(BaseModel):
     quantity: float
 
 
-class OrderBookUpdate(IdentifiableModel):
+class OrderBookUpdate(UUIDModel):
     """An update to an order book."""
 
     exchange: str
@@ -29,6 +24,9 @@ class OrderBookUpdate(IdentifiableModel):
     asks: Dict[float, float] = Field(default_factory=dict)
     timestamp: float
     sequence: Optional[int] = None
+    exchange_id: Optional[int] = None
+    trading_pair_id: Optional[int] = None
+    hash_value: Optional[str] = None
 
     @computed_field
     def hash(self) -> str:
@@ -99,6 +97,8 @@ class OrderBookState(BaseModel):
     """Collection of order books indexed by symbol and exchange."""
 
     symbols: Dict[str, Dict[str, OrderBookUpdate]] = Field(default_factory=dict)
+    strategy: Optional[str] = None
+    threshold: float = 0.001
 
     @property
     def prices(self) -> set:

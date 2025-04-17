@@ -5,8 +5,8 @@ import uuid
 from typing import Dict, List
 
 from src.arbirich.core.trading.strategy.execution.method import ExecutionMethod
+from src.arbirich.models import TradeExecution, TradeOpportunity, TradeRequest
 from src.arbirich.models.enums import OrderSide
-from src.arbirich.models.models import TradeExecution, TradeOpportunity, TradeRequest
 
 
 class StaggeredExecution(ExecutionMethod):

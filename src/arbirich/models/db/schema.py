@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     MetaData,
     Numeric,
@@ -62,6 +63,9 @@ trading_pairs = Table(
     Column("qty_precision", Integer, server_default=text("8")),
     Column("min_notional", Numeric(18, 8), server_default=text("0")),
     Column("enabled", Boolean, server_default=text("true")),
+    Column("status", String, server_default=text("'inactive'")),
+    Column("status_reason", String),
+    Column("status_changed_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
     UniqueConstraint("base_currency", "quote_currency", name="uix_pair_base_quote"),
 )
 
@@ -90,8 +94,8 @@ risk_profiles = Table(
     Column("updated_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP")),
 )
 
-execution_strategies = Table(
-    "execution_strategies",
+execution_methods = Table(
+    "execution_methods",
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("name", String, nullable=False, unique=True),  # 'Parallel', 'Sequential', 'Staged', etc.
@@ -154,32 +158,6 @@ strategy_type_parameters = Table(
     UniqueConstraint("strategy_id", name="uix_strategy_type_parameters"),
 )
 
-# Mapping tables
-strategy_execution_mapping = Table(
-    "strategy_execution_mapping",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("strategy_id", Integer, ForeignKey("strategies.id"), nullable=False),
-    Column("execution_strategy_id", Integer, ForeignKey("execution_strategies.id"), nullable=False),
-    Column("is_active", Boolean, nullable=False, server_default=text("true")),
-    Column("priority", Integer, nullable=False, server_default=text("100")),  # Lower numbers = higher priority
-    Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
-    UniqueConstraint("strategy_id", "execution_strategy_id", name="uix_strategy_execution"),
-)
-
-strategy_exchange_pair_mappings = Table(
-    "strategy_exchange_pair_mappings",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("strategy_id", Integer, ForeignKey("strategies.id"), nullable=False),
-    Column("exchange_id", Integer, ForeignKey("exchanges.id"), nullable=False),
-    Column("trading_pair_id", Integer, ForeignKey("trading_pairs.id"), nullable=False),
-    Column("is_active", Boolean, nullable=False, server_default=text("true")),
-    Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
-    Column("updated_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP")),
-    UniqueConstraint("strategy_id", "exchange_id", "trading_pair_id", name="uix_strat_exchange_pair"),
-)
-
 # Trading data tables
 trade_opportunities = Table(
     "trade_opportunities",
@@ -214,8 +192,6 @@ trade_executions = Table(
     Column("opportunity_id", UUID, ForeignKey("trade_opportunities.id")),
     Column("profit", Numeric(18, 8)),
     Column("status", String, server_default=text("'completed'")),
-    Column("buy_execution_result_id", UUID, ForeignKey("trade_execution_results.id")),
-    Column("sell_execution_result_id", UUID, ForeignKey("trade_execution_results.id")),
 )
 
 trade_execution_results = Table(
@@ -239,7 +215,6 @@ trade_execution_results = Table(
     Column("raw_response", JSON),
     Column("strategy_id", Integer, ForeignKey("strategies.id")),
     Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
-    Column("trade_execution_id", UUID, ForeignKey("trade_executions.id")),
 )
 
 orders = Table(
@@ -294,6 +269,12 @@ strategy_metrics = Table(
     # Market condition metrics
     Column("market_volatility", Numeric(8, 4), nullable=True),
     Column("correlation_to_market", Numeric(5, 2), nullable=True),
+    # Tracking fields
+    Column("total_trades", Integer, nullable=False, server_default=text("0")),
+    Column("successful_trades", Integer, nullable=False, server_default=text("0")),
+    Column("failed_trades", Integer, nullable=False, server_default=text("0")),
+    Column("total_fees", Numeric(18, 8), nullable=False, server_default=text("0")),
+    Column("average_execution_time", Integer, nullable=False, server_default=text("0")),
     Column("created_at", DateTime, server_default=func.now()),
     Column("updated_at", DateTime, server_default=func.now(), onupdate=func.now()),
 )
@@ -354,14 +335,43 @@ system_health_checks = Table(
     Column("overall_health", Boolean, nullable=False),
 )
 
-order_book_snapshots = Table(
-    "order_book_snapshots",
+Index("idx_health_checks_timestamp", system_health_checks.c.timestamp)
+
+Index("idx_strategy_metrics_period", strategy_metrics.c.period_start, strategy_metrics.c.period_end)
+Index("idx_strategy_metrics_strategy", strategy_metrics.c.strategy_id)
+
+# Mapping tables
+trade_execution_result_mapping = Table(
+    "trade_execution_result_mapping",
     metadata,
-    Column("id", UUID, primary_key=True, default=uuid.uuid4),
+    Column("execution_id", UUID, ForeignKey("trade_executions.id"), primary_key=True),
+    Column("result_id", UUID, ForeignKey("trade_execution_results.id"), primary_key=True),
+    Column("side", String, nullable=False),  # 'buy' or 'sell'
+    Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
+)
+
+# Mapping tables
+strategy_execution_mapping = Table(
+    "strategy_execution_mapping",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("strategy_id", Integer, ForeignKey("strategies.id"), nullable=False),
+    Column("execution_strategy_id", Integer, ForeignKey("execution_methods.id"), nullable=False),
+    Column("is_active", Boolean, nullable=False, server_default=text("true")),
+    Column("priority", Integer, nullable=False, server_default=text("100")),  # Lower numbers = higher priority
+    Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
+    UniqueConstraint("strategy_id", "execution_strategy_id", name="uix_strategy_execution"),
+)
+
+strategy_exchange_pair_mapping = Table(
+    "strategy_exchange_pair_mapping",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("strategy_id", Integer, ForeignKey("strategies.id"), nullable=False),
     Column("exchange_id", Integer, ForeignKey("exchanges.id"), nullable=False),
     Column("trading_pair_id", Integer, ForeignKey("trading_pairs.id"), nullable=False),
-    Column("timestamp", TIMESTAMP, nullable=False),
-    Column("sequence", Integer),
-    Column("data", JSON, nullable=False),  # Serialized order book state
-    Column("hash_value", String),  # Renamed from hash to avoid conflict
+    Column("is_active", Boolean, nullable=False, server_default=text("true")),
+    Column("created_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP")),
+    Column("updated_at", TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP")),
+    UniqueConstraint("strategy_id", "exchange_id", "trading_pair_id", name="uix_strat_exchange_pair"),
 )

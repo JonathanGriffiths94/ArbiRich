@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import sqlalchemy as sa
 
-from src.arbirich.models.models import Strategy
+from src.arbirich.models import Strategy
 from src.arbirich.services.database.repositories.strategy_repository import StrategyRepository
 
 from .base import Component
@@ -474,11 +474,11 @@ class IngestionComponent(Component):
         exchange_pairs = {}
 
         try:
-            from src.arbirich.config.config import EXCHANGES, PAIRS
+            from src.arbirich.config.config import EXCHANGES, TRADING_PAIRS
 
             for exchange in EXCHANGES:
                 exchange_pairs[exchange] = []
-                for base, quote in PAIRS:
+                for base, quote in TRADING_PAIRS:
                     exchange_pairs[exchange].append(f"{base}-{quote}")
 
             self.logger.info(f"Using configured exchanges and pairs: {exchange_pairs}")

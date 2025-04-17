@@ -1,8 +1,8 @@
 import logging
 import threading
 
+from src.arbirich.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 from src.arbirich.models.enums import ChannelName
-from src.arbirich.models.models import OrderBookUpdate, TradeExecution, TradeOpportunity
 
 logger = logging.getLogger(__name__)
 

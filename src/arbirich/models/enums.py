@@ -29,15 +29,18 @@ class OrderType(StrEnum):
     STOP_LIMIT = "stop_limit"
 
 
-class TradeStatus(StrEnum):
-    """Status of a trade execution."""
+class OrderStatus(str, Enum):
+    """
+    Standardized order statuses across exchanges.
+    """
 
-    PENDING = "pending"
-    EXECUTED = "executed"
-    PARTIALLY_EXECUTED = "partially_executed"
-    FAILED = "failed"
+    OPEN = "open"
+    PARTIAL = "partially_filled"
+    FILLED = "filled"
     CANCELED = "canceled"
     REJECTED = "rejected"
+    EXPIRED = "expired"
+    UNKNOWN = "unknown"
 
 
 class Status(str, Enum):
@@ -64,6 +67,30 @@ class ExchangeType(StrEnum):
     OKX = "okx"
     GEMINI = "gemini"
     CRYPTOCOM = "cryptocom"
+
+    @classmethod
+    def get_processor_class(cls, exchange_name: str) -> str:
+        """Get the processor name for a given exchange.
+
+        Args:
+            exchange_name: The name of the exchange
+
+        Returns:
+            The processor name for the exchange
+        """
+        exchange_map = {
+            cls.BINANCE: "BinanceOrderBookProcessor",
+            cls.COINBASE: "CoinbaseOrderBookProcessor",
+            cls.KRAKEN: "KrakenOrderBookProcessor",
+            cls.KUCOIN: "KucoinOrderBookProcessor",
+            cls.HUOBI: "HuobiOrderBookProcessor",
+            cls.BYBIT: "BybitOrderBookProcessor",
+            cls.BITFINEX: "BitfinexOrderBookProcessor",
+            cls.OKX: "OKXOrderBookProcessor",
+            cls.GEMINI: "GeminiOrderBookProcessor",
+            cls.CRYPTOCOM: "CryptocomOrderBookProcessor",
+        }
+        return exchange_map.get(exchange_name, "UnknownProcessor")
 
 
 class StrategyType(StrEnum):
@@ -137,10 +164,10 @@ class TableName(str, Enum):
     STRATEGY_TYPES = "strategy_types"
     STRATEGY_PARAMETERS = "strategy_parameters"
     STRATEGY_TYPE_PARAMETERS = "strategy_type_parameters"
-    STRATEGY_EXCHANGE_PAIR_MAPPINGS = "strategy_exchange_pair_mappings"
+    STRATEGY_EXCHANGE_PAIR_MAPPING = "strategy_exchange_pair_mapping"
     STRATEGY_EXECUTION_MAPPING = "strategy_execution_mapping"
     RISK_PROFILES = "risk_profiles"
-    EXECUTION_STRATEGIES = "execution_strategies"
+    EXECUTION_METHODS = "execution_methods"
     SYSTEM_HEALTH_CHECKS = "system_health_checks"
 
 
@@ -164,3 +191,9 @@ class TimeConstants:
     DEBOUNCE_TTL = 1.0  # seconds
     HEALTH_CHECK_INTERVAL = 30  # seconds
     RECONNECT_DELAY = 5  # seconds
+
+
+class TradingPairStatus(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"

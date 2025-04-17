@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from src.arbirich.models.models import Strategy
+from src.arbirich.models import Strategy
 from src.arbirich.services.database.repositories.strategy_repository import StrategyRepository
 
 from .base import Component

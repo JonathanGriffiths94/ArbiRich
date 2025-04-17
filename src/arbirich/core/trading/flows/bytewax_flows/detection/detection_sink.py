@@ -1,25 +1,9 @@
 import logging
-import sys
 import time
 from typing import Any, Dict, Optional, Tuple
 
 from src.arbirich.core.trading.flows.bytewax_flows.common.redis_utils import get_repository, publish_message
-from src.arbirich.models.enums import ChannelName
-from src.arbirich.models.models import TradeOpportunity
-
-# Fix the formatting string - there was a syntax error with duplicate formatter
-root_logger = logging.getLogger()
-if not root_logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# Print direct console output to verify execution
-print("DETECTION_SINK MODULE LOADED")
+from src.arbirich.models import ChannelName, TradeOpportunity
 
 # Maintain a cache of recently seen opportunities to avoid duplicates
 opportunity_cache = {}
@@ -32,6 +16,9 @@ DEBUG_DISABLE_DEBOUNCE = True
 # Add a set to track recently published opportunity IDs
 _recently_published_ids = set()
 _MAX_RECENT_IDS = 1000  # Maximum number of IDs to track
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def log_opportunity_details(opportunity: TradeOpportunity, prefix: str = "OPPORTUNITY") -> None:

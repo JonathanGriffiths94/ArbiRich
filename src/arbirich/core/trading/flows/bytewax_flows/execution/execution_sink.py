@@ -1,8 +1,7 @@
 import logging
 
 from src.arbirich.core.trading.flows.bytewax_flows.common.redis_utils import get_redis_client
-from src.arbirich.models.enums import ChannelName
-from src.arbirich.models.models import TradeExecution
+from src.arbirich.models import ChannelName, TradeExecution
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
